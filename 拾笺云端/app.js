@@ -2792,5 +2792,8 @@
   window.SJState = state;
   window.SJNotes = () => state.notes;
   window.SJPlain = plainText;
+  /* v1.8.0：增强模块（冲突 / 加密）用到的弹窗助手 */
+  window.openModal = openModal;
+  window.closeModal = closeModal;
   boot().catch((e) => console.error('启动失败', e));
 })();

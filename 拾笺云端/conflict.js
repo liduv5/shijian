@@ -26,9 +26,9 @@
       + '<div class="hist-foot"><span id="cfHint">未选择将以「保留我的」处理</span>'
       + '<button class="btn primary" id="cfOk">应用</button></div>';
 
-    var m = (window.openModal || openModal)(html);
+    var m = window.openModal(html);
     m.classList.add('wide');
-    m.querySelector('[data-act="close"]').addEventListener('click', window.closeModal || closeModal);
+    m.querySelector('[data-act="close"]').addEventListener('click', window.closeModal);
 
     m.querySelector('#cfOk').addEventListener('click', function () {
       var res = {};
@@ -36,7 +36,7 @@
         var sel = m.querySelector('input[name="cf' + i + '"]:checked');
         res[c.id] = sel ? sel.value : 'mine';
       });
-      (window.closeModal || closeModal)();
+      window.closeModal();
       if (apply) apply(res);
     });
   }

@@ -174,6 +174,10 @@
           (gcN ? '<button class="auth-btn ghost" id="syncGc">清理云端无用附件（' + gcN + '）</button>' : '') +
           '<button class="auth-btn ghost" id="syncLogout">退出登录</button>'
         : '<div class="sync-info">用 QQ 邮箱登录后，电脑和手机共用同一份笔记。</div>' +
+          '<div class="auth-tabs">' +
+          '  <button type="button" class="auth-tab active" data-tab="otp">验证码登录</button>' +
+          '  <button type="button" class="auth-tab" data-tab="pwd">口令登录</button>' +
+          '</div>' +
           '<form id="syncLoginForm" novalidate>' +
           '  <label class="auth-label">QQ 邮箱</label>' +
           '  <div class="auth-row">' +
@@ -184,7 +188,18 @@
           '  <input class="auth-input" id="syncCode" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 位数字">' +
           '  <p class="auth-msg" id="syncMsg"></p>' +
           '  <button class="auth-btn" type="submit" id="syncLoginBtn">登录 / 注册</button>' +
-          '</form>');
+          '</form>' +
+          '<div id="pwdBox" class="hidden">' +
+          '  <form id="syncPwdForm" novalidate>' +
+          '    <label class="auth-label">QQ 邮箱</label>' +
+          '    <input class="auth-input" id="syncEmail2" type="email" inputmode="email" autocomplete="username" placeholder="123456@qq.com">' +
+          '    <label class="auth-label">同步口令</label>' +
+          '    <input class="auth-input" id="syncPwd" type="password" autocomplete="current-password" placeholder="设置过的同步口令">' +
+          '    <p class="auth-msg" id="syncMsg2"></p>' +
+          '    <button class="auth-btn" type="submit" id="syncPwdBtn">邮箱 + 口令登录</button>' +
+          '  </form>' +
+          '  <p class="auth-hint">还没有口令？先完成一次验证码登录，再点 <a href="javascript:void(0)" id="openSetPwd">设置同步口令</a>。</p>' +
+          '</div>');
 
     const close = $('#syncClose'); if (close) close.onclick = closePanel;
     // renderPanel 会重建 innerHTML，上一次的结果提示要按缓存补回来
@@ -201,6 +216,17 @@
     } else {
       const codeBtn = $('#syncCodeBtn'); if (codeBtn) codeBtn.onclick = () => sendCode($('#syncEmail').value.trim(), codeBtn);
       const form = $('#syncLoginForm'); if (form) form.onsubmit = (e) => { e.preventDefault(); doLogin(); };
+      document.querySelectorAll('.auth-tab').forEach((t) => {
+        t.onclick = () => {
+          document.querySelectorAll('.auth-tab').forEach((x) => x.classList.remove('active'));
+          t.classList.add('active');
+          const tab = t.dataset.tab;
+          const f = $('#syncLoginForm'); if (f) f.classList.toggle('hidden', tab !== 'otp');
+          const p = $('#pwdBox'); if (p) p.classList.toggle('hidden', tab !== 'pwd');
+        };
+      });
+      const pwdForm = $('#syncPwdForm'); if (pwdForm) pwdForm.onsubmit = (e) => { e.preventDefault(); doLoginPwd(); };
+      const setBtn = $('#openSetPwd'); if (setBtn) setBtn.onclick = () => openSetPwd();
     }
   }
 
@@ -260,6 +286,78 @@
     lastMsg = ''; lastKind = '';
     await renderPanel();
     toast('已退出登录');
+  }
+
+  /* ---------------------------------------------------------- 登录：口令直登 */
+  function syncMsgTo(elId, text, kind) {
+    const el = $('#' + elId);
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = 'auth-msg' + (kind ? ' ' + kind : ' err');
+  }
+  async function doLoginPwd() {
+    const email = $('#syncEmail2').value.trim();
+    const pwd = $('#syncPwd').value;
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return syncMsgTo('syncMsg2', '请填写正确的邮箱');
+    if (!pwd) return syncMsgTo('syncMsg2', '请输入同步口令');
+    const btn = $('#syncPwdBtn'); btn.disabled = true; btn.textContent = '登录中…';
+    const r = await cloud.auth.signInWithPassword({ email, password: pwd });
+    btn.disabled = false; btn.textContent = '邮箱 + 口令登录';
+    if (r.error) return syncMsgTo('syncMsg2', friendly(r.error));
+    session = normSession(await cloud.auth.getSession());
+    localStorage.setItem(LS_KEY, email);
+    lastMsg = ''; lastKind = '';
+    await renderPanel();
+    toast('登录成功，可以同步了');
+  }
+  function openSetPwd() {
+    const email0 = (($('#syncEmail2') || {}).value || ($('#syncEmail') || {}).value || '').trim();
+    const m = window.openModal(
+      '<div class="hist-head"><div><h3>设置同步口令</h3><p>设置后可用「邮箱 + 口令」登录，免收验证码</p></div>' +
+      '<button class="icon-btn" data-act="close" title="关闭">✕</button></div>' +
+      '<div class="e2ee-body">' +
+      '<div class="e2ee-row"><label class="auth-label">QQ 邮箱</label>' +
+      '<input class="auth-input" id="spEmail" type="email" value="' + escapeHtml(email0) + '" placeholder="123456@qq.com"></div>' +
+      '<div class="e2ee-row"><button class="btn ghost block" id="spCode" type="button">获取验证码</button></div>' +
+      '<div class="e2ee-row"><label class="auth-label">邮箱验证码</label>' +
+      '<input class="auth-input" id="spOtp" inputmode="numeric" maxlength="6" placeholder="6 位数字"></div>' +
+      '<div class="e2ee-row"><label class="auth-label">新同步口令（至少 6 位）</label>' +
+      '<input class="auth-input" id="spPwd" type="password" placeholder="设置口令"></div>' +
+      '<div class="e2ee-row"><button class="btn primary block" id="spSave">设置口令</button></div>' +
+      '<div id="spMsg" class="e2ee-msg"></div></div>');
+    m.classList.add('wide');
+    m.querySelector('[data-act="close"]').addEventListener('click', window.closeModal);
+    const msg = (t, ok) => { const e = m.querySelector('#spMsg'); e.textContent = t; e.style.color = ok ? '#2f6f5e' : '#c0392b'; };
+    m.querySelector('#spCode').addEventListener('click', async () => {
+      const em = m.querySelector('#spEmail').value.trim();
+      if (!em || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return msg('请填写正确的邮箱');
+      const b = m.querySelector('#spCode'); b.disabled = true; b.textContent = '发送中…';
+      const r = await cloud.auth.resetPasswordForEmail({ email: em });
+      b.disabled = false; b.textContent = '重新获取';
+      if (r.error) return msg('发送失败：' + friendly(r.error));
+      m._updateUser = r.data && r.data.updateUser;
+      msg('验证码已发送到邮箱', true);
+    });
+    m.querySelector('#spSave').addEventListener('click', async () => {
+      const em = m.querySelector('#spEmail').value.trim();
+      const otp = m.querySelector('#spOtp').value.trim();
+      const pwd = m.querySelector('#spPwd').value;
+      if (!m._updateUser) return msg('请先获取验证码');
+      if (!/^\d{4,8}$/.test(otp)) return msg('请填写验证码');
+      if (pwd.length < 6) return msg('口令至少 6 位');
+      const b = m.querySelector('#spSave'); b.disabled = true; b.textContent = '设置中…';
+      try {
+        const r = await m._updateUser({ nonce: otp, password: pwd });
+        if (r.error) return msg('失败：' + friendly(r.error));
+        session = normSession(await cloud.auth.getSession());
+        localStorage.setItem(LS_KEY, em);
+        lastMsg = ''; lastKind = '';
+        window.closeModal();
+        await renderPanel();
+        toast('同步口令已设置，已自动登录');
+      } catch (e) { msg('失败：' + (e.message || e)); }
+      finally { b.disabled = false; b.textContent = '设置口令'; }
+    });
   }
 
   /* ---------------------------------------------------------- 上传：本地 → 云端 */
@@ -404,6 +502,29 @@
     }
   }
 
+  /* ---------------------------------------------------------- 同步冲突检测 */
+  function computeConflicts(cloudNotes) {
+    const st = (window.SJLocal && window.SJLocal.getState && window.SJLocal.getState()) || null;
+    if (!st || !st.notes) return [];
+    const last = lastSyncAt();
+    if (!last) return []; // 首次同步无法判定「上次同步后修改」，不做冲突提示，走 LWW
+    const localMap = {};
+    st.notes.forEach((n) => { localMap[n.id] = n; });
+    const out = [];
+    cloudNotes.forEach((c) => {
+      const l = localMap[c.id];
+      if (!l) return;
+      const localEdited = Number(l.updatedAt) > last;
+      const cloudEdited = Number(c.updatedAt) > last;
+      const changed = (l.content || '').toString() !== (c.content || '').toString()
+        || (l.title || '').toString() !== (c.title || '').toString();
+      if (localEdited && cloudEdited && changed) {
+        out.push({ id: c.id, title: c.title || l.title || '无标题' });
+      }
+    });
+    return out;
+  }
+
   /* ---------------------------------------------------------- 下载：云端 → 本地 */
   /* 彻底删除笔记时，sjplus.js 会把对应的云端附件路径记进待清理队列。
      这里用直连 DELETE 清掉（和上传一样绕开 SDK 的 CORS 限制），
@@ -455,6 +576,33 @@
       if (notesRes.error) throw new Error(friendly(notesRes.error));
       const cats = (catsRes.data || []).map(rowToCat);
       const notes = (notesRes.data || []).map(rowToNote);
+
+      /* 同步冲突预检：同一篇在「上次同步后两端都改过且内容不同」则不再静默覆盖，
+         交给 window.SJConflict 让用户选择保留哪一侧。 */
+      const conflicts = computeConflicts(notes);
+      if (conflicts.length && window.SJConflict) {
+        await new Promise((resolve) => {
+          window.SJConflict.show(conflicts, (res) => {
+            res = res || {};
+            for (let i = conflicts.length - 1; i >= 0; i--) {
+              const c = conflicts[i];
+              const choice = res[c.id] || 'mine';
+              const idx = notes.findIndex((x) => x.id === c.id);
+              if (choice === 'mine') {
+                if (idx >= 0) notes.splice(idx, 1); // 保留本地：移除云端该条，导入不会覆盖
+              } else if (choice === 'both') {
+                const copy = Object.assign({}, notes[idx]);
+                copy.id = c.id + '-conflict-' + Date.now();
+                copy.title = (copy.title || '无标题') + '（冲突副本）';
+                notes.push(copy); // 云端版本另存副本，本地版本保留
+              }
+              // 'cloud' 保持原样
+            }
+            resolve();
+          });
+        });
+      }
+
       const payload = { categories: cats, notes };
       const r = await fetch('/api/import?mode=lww', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),

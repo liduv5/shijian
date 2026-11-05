@@ -1841,3 +1841,59 @@ img.sj-img-picked {
     -webkit-touch-callout: none;
   }
 }
+
+/* ============ 增强模块样式（v1.8.0，移植自云端） ============ */
+/* 登录：验证码 / 口令 双标签 */
+.auth-tabs { display: flex; gap: 6px; margin: 10px 0 4px; }
+.auth-tab { flex: 1; padding: 7px 0; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); border-radius: 9px; cursor: pointer; font-size: 13px; }
+.auth-tab.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.auth-hint { font-size: 12px; color: var(--text-3); margin: 10px 2px 0; line-height: 1.6; }
+.auth-hint a { color: var(--accent); cursor: pointer; }
+
+/* 双向链接 */
+.bj-panel { border-top: 1px solid var(--border); padding: 14px 18px 6px; background: var(--surface-2); }
+.bj-head { font-size: 12.5px; font-weight: 600; color: var(--text-2); margin-bottom: 8px; letter-spacing: .03em; }
+.bj-list { display: flex; flex-direction: column; gap: 6px; }
+.bj-item { padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); cursor: pointer; transition: border-color .15s; }
+.bj-item:hover { border-color: var(--accent); }
+.bj-item-title { display: block; font-size: 13.5px; color: var(--text-1); }
+.bj-item-sub { display: block; font-size: 12px; color: var(--text-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bj-link { color: var(--accent); border-bottom: 1px dashed var(--accent); cursor: pointer; text-decoration: none; }
+.bj-missing { color: #c0392b; border-bottom-color: #c0392b; }
+
+/* 版本对比 */
+.diff-controls { display: flex; gap: 10px; align-items: center; padding: 12px 14px; flex-wrap: wrap; }
+.diff-controls label { font-size: 13px; color: var(--text-2); }
+.diff-controls select { margin-left: 6px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text-1); }
+.diff-out { padding: 0 14px 16px; max-height: 56vh; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.6; }
+.diff-sum { font-size: 12px; color: var(--text-3); margin-bottom: 8px; }
+.diff-add { background: rgba(47,111,94,.12); color: #1f6f54; padding: 0 6px; white-space: pre-wrap; }
+.diff-del { background: rgba(192,57,43,.10); color: #c0392b; padding: 0 6px; white-space: pre-wrap; }
+.diff-same { color: var(--text-3); padding: 0 6px; white-space: pre-wrap; }
+
+/* 同步冲突 */
+.cf-list { padding: 6px 14px 4px; max-height: 60vh; overflow: auto; }
+.cf-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.cf-title { font-size: 14px; font-weight: 600; color: var(--text-1); margin-bottom: 6px; }
+.cf-opts { display: flex; gap: 16px; flex-wrap: wrap; }
+.cf-opt { font-size: 13px; color: var(--text-2); cursor: pointer; }
+
+/* 加密备份 */
+.e2ee-body { padding: 14px 16px 18px; }
+.e2ee-warn { font-size: 12.5px; color: #b8860b; background: rgba(184,134,11,.10); padding: 8px 10px; border-radius: 8px; margin: 0 0 12px; }
+.e2ee-row { margin-bottom: 10px; }
+.e2ee-file { font-size: 13px; color: var(--text-2); display: block; }
+.e2ee-msg { font-size: 12.5px; margin-top: 6px; min-height: 16px; }
+
+/* 链接即口令提示 */
+.pwd-tip { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9000; display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; background: #2f6f5e; color: #fff; font-size: 13px; box-shadow: 0 -4px 16px rgba(0,0,0,.12); }
+.pwd-tip span { flex: 1; line-height: 1.5; }
+.pwd-tip button { flex: none; border: 0; background: rgba(255,255,255,.18); color: #fff; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+.pwd-tip button:hover { background: rgba(255,255,255,.3); }
+
+/* PDF 合集打印 */
+.pdf-cover { text-align: center; margin: 40px 0; }
+.pdf-note { page-break-inside: avoid; margin-bottom: 24px; }
+.pdf-meta { color: #888; font-size: 12px; margin: 4px 0 10px; }
+#printArea { display: none; }

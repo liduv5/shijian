@@ -448,7 +448,14 @@
   function notesInScope() {
     let list = state.notes;
     if (state.search.trim()) {
-      /* 空格分隔多个词 = AND；tag:xxx 只按标签筛；命中关键词由 sjplus.js 高亮 */
+      /* 优先走全文检索（中文分词 + 相关度排序，支持 tag: 过滤、多词共现）。
+         若 fts.js 未加载，回退到原来的子串匹配。 */
+      if (window.SJFts) {
+        const ids = window.SJFts.rank(state.search, state.notes);
+        const map = new Map(state.notes.map((n) => [n.id, n]));
+        const ranked = ids.map((id) => map.get(id)).filter(Boolean);
+        return ranked.length ? ranked : state.notes.slice();
+      }
       const terms = state.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
       list = list.filter((n) => {
         const hay = (n.title + ' ' + (n.tags || []).join(' ') + ' ' + plainText(n)).toLowerCase();
@@ -970,6 +977,7 @@
     renderAttachments();
     renderNoteTags();
     renderList();
+    if (window.SJBacklinks) window.SJBacklinks.refresh(note);
     updateAttachBadge();
     wordCount();
 
@@ -2031,6 +2039,7 @@
     const prevEl = body.querySelector('#histPreview');
     const restoreBtn = m.querySelector('#histRestore');
     const hint = m.querySelector('#histHint');
+    if (window.SJDiff) window.SJDiff.attach(note, versions, { openModal, closeModal, api, fmtFull, closeIcon: I.x });
     let picked = null;
     let pickedEl = null;
 
@@ -2094,6 +2103,8 @@
       { label: '导出为 Word (.docx)', icon: I.doc, onClick: () => doExport('docx') },
       { label: '导出为 PDF（打印）', icon: I.eye, onClick: () => doExport('pdf') },
       { label: '导出为 Markdown (.md)', icon: I.code, onClick: () => doExport('md') },
+      { label: '导出全部为 PDF（合集）', icon: I.grid, onClick: () => { if (window.SJPdf) window.SJPdf.exportAll(); } },
+      { label: '🔒 加密备份（.vault）', icon: I.lock || I.doc, onClick: () => { if (window.SJE2EE) window.SJE2EE.openPanel(); } },
     ]);
   }
 
@@ -2556,6 +2567,10 @@
     e.target.value = '';
     if (!file) return;
     if (file.size > 40 * 1024 * 1024) return toast('备份文件超过 40MB，无法导入');
+    if (file.name.toLowerCase().endsWith('.vault')) {
+      if (window.SJE2EE && window.SJE2EE.importVaultFile) return window.SJE2EE.importVaultFile(file);
+      return toast('加密备份模块未加载');
+    }
 
     openConfirm({
       title: '导入备份',
@@ -2665,10 +2680,26 @@
 
   boot();
 
-  // 供同步模块（sync.js）调用
+  // 供增强模块（fts/backlinks/diffview/pdfexport/conflict/e2ee）与同步模块调用
+  window.SJNotes = () => state.notes;
+  window.SJState = state;
+  window.SJApi = api;
+  window.openModal = openModal;
+  window.closeModal = closeModal;
   window.SJLocal = {
     refresh() { renderTree(); renderList(); },
     saveNow() { if (typeof saveNow === 'function') saveNow(); },
+    getState() { return state; },
+    async importBackup(backup) {
+      await api('/api/import', { method: 'POST', body: backup });
+      const s2 = await api('/api/state');
+      state.categories = s2.categories || [];
+      state.notes = s2.notes || [];
+      state.selCat = 'all';
+      state.selNote = null;
+      closeEditor();
+      renderTree(); renderList(); renderTags();
+    },
   };
   /* 供 sjplus.js（回收站 / 回顾 / 整库导出）调用 */
   window.SJRefresh = () => { renderTree(); renderList(); };

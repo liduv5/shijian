@@ -87,7 +87,7 @@
   }
 
   function openPanel() {
-    var m = (window.openModal || openModal)(`
+    var m = window.openModal(`
       <div class="hist-head"><div><h3>🔒 加密备份（端到端加密）</h3>
         <p>导出的 .vault 文件需口令才能解开，可安全存到网盘 / 邮件</p></div>
         <button class="icon-btn" data-act="close" title="关闭">✕</button></div>
@@ -102,7 +102,7 @@
         <div id="e2eeMsg" class="e2ee-msg"></div>
       </div>`);
     m.classList.add('wide');
-    m.querySelector('[data-act="close"]').addEventListener('click', window.closeModal || closeModal);
+    m.querySelector('[data-act="close"]').addEventListener('click', window.closeModal);
     var msg = function (t, ok) { var e = m.querySelector('#e2eeMsg'); e.textContent = t; e.style.color = ok ? '#2f6f5e' : '#c0392b'; };
 
     m.querySelector('#e2eeExport').addEventListener('click', async function () {
