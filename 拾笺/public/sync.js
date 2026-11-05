@@ -172,6 +172,7 @@
           '<button class="auth-btn" id="syncPush">上传本地笔记到云端</button>' +
           '<button class="auth-btn ghost" id="syncPull">从云端拉取到本地</button>' +
           (gcN ? '<button class="auth-btn ghost" id="syncGc">清理云端无用附件（' + gcN + '）</button>' : '') +
+          '<button class="auth-btn ghost" id="syncSetPwd">设置 / 修改同步口令</button>' +
           '<button class="auth-btn ghost" id="syncLogout">退出登录</button>'
         : '<div class="sync-info">用 QQ 邮箱登录后，电脑和手机共用同一份笔记。</div>' +
           '<div class="auth-tabs">' +
@@ -198,7 +199,7 @@
           '    <p class="auth-msg" id="syncMsg2"></p>' +
           '    <button class="auth-btn" type="submit" id="syncPwdBtn">邮箱 + 口令登录</button>' +
           '  </form>' +
-          '  <p class="auth-hint">还没有口令？先完成一次验证码登录，再点 <a href="javascript:void(0)" id="openSetPwd">设置同步口令</a>。</p>' +
+          '  <p class="auth-hint">还没有同步口令？点 <a href="javascript:void(0)" id="openSetPwd">设置同步口令</a>（登录后也能在面板内设置）。</p>' +
           '</div>');
 
     const close = $('#syncClose'); if (close) close.onclick = closePanel;
@@ -213,6 +214,7 @@
       const pull = $('#syncPull'); if (pull) pull.onclick = () => doPull();
       const out = $('#syncLogout'); if (out) out.onclick = () => doLogout();
       const gc = $('#syncGc'); if (gc) gc.onclick = () => doGc();
+      const setPwd = $('#syncSetPwd'); if (setPwd) setPwd.onclick = () => openSetPwd();
     } else {
       const codeBtn = $('#syncCodeBtn'); if (codeBtn) codeBtn.onclick = () => sendCode($('#syncEmail').value.trim(), codeBtn);
       const form = $('#syncLoginForm'); if (form) form.onsubmit = (e) => { e.preventDefault(); doLogin(); };
@@ -311,7 +313,7 @@
     toast('登录成功，可以同步了');
   }
   function openSetPwd() {
-    const email0 = (($('#syncEmail2') || {}).value || ($('#syncEmail') || {}).value || '').trim();
+    const email0 = (session && session.user && session.user.email) || (($('#syncEmail2') || {}).value || ($('#syncEmail') || {}).value || '').trim();
     const m = window.openModal(
       '<div class="hist-head"><div><h3>设置同步口令</h3><p>设置后可用「邮箱 + 口令」登录，免收验证码</p></div>' +
       '<button class="icon-btn" data-act="close" title="关闭">✕</button></div>' +
