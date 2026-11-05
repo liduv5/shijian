@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<script>
+/* 访问码自愈 + 加载兜底（必须内联、必须最先执行）
+   站点静态资源要求带 ?sharecode=。手机浏览器若丢失访问码 cookie，
+   HTML 能显示但所有 js/css 会 403，表现为「进度条卡住、按钮点不动」。
+   这里不依赖任何外部资源：补参数、注册 SW、加载失败时自动重载一次并给出入口。 */
+(function () {
+  var SC = 'FKSO3QK6B4';
+  var u = new URL(location.href);
+  var hadCode = !!u.searchParams.get('sharecode');
+  var fixed = false, reloaded = false;
+  try {
+    fixed = sessionStorage.getItem('sj_sc_fixed') === '1';
+    reloaded = sessionStorage.getItem('sj_boot_reload') === '1';
+  } catch (_) {}
+  if (!hadCode && !fixed) {
+    try { sessionStorage.setItem('sj_sc_fixed', '1'); } catch (_) {}
+    u.searchParams.set('sharecode', SC);
+    location.replace(u.toString());
+    return;
+  }
+  /* 即使后面的脚本全挂，也要让 SW 有机会换掉坏缓存 */
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    try {
+      navigator.serviceWorker.register('/sw.js?sharecode=' + SC, { scope: '/' })
+        .catch(function () {});
+    } catch (_) {}
+  }
+  function showFail() {
+    if (document.getElementById('sjBootFail')) return;
+    var d = document.createElement('div');
+    d.id = 'sjBootFail';
+    d.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#f5f6fa;color:#1f2329;'
+      + 'font:15px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;'
+      + 'display:flex;align-items:center;justify-content:center;padding:24px';
+    d.innerHTML = '<div style="max-width:340px;background:#fff;border-radius:16px;padding:32px 26px;'
+      + 'text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.08)">'
+      + '<div style="font-size:19px;font-weight:600;margin-bottom:10px">拾笺没能加载完</div>'
+      + '<div style="font-size:13px;color:#4e5969;margin-bottom:20px">可能是网络不稳，或访问链接不完整。'
+      + '点下面的按钮用完整链接重新打开。</div>'
+      + '<button id="sjBootRetry" style="width:100%;padding:12px;border:0;border-radius:10px;'
+      + 'background:#2f6f5e;color:#fff;font-size:15px">重新打开拾笺</button></div>';
+    document.body.appendChild(d);
+    var btn = document.getElementById('sjBootRetry');
+    if (btn) btn.onclick = function () {
+      try { sessionStorage.removeItem('sj_sc_fixed'); sessionStorage.removeItem('sj_boot_reload'); } catch (_) {}
+      location.replace(u.origin + '/?sharecode=' + SC);
+    };
+  }
+  function watch() {
+    var tries = 0, panel = null;
+    var timer = setInterval(function () {
+      tries++;
+      var ready = !!(window.SJLocal && window.SJLocal.api);
+      if (ready) {
+        if (panel) panel.remove();
+        clearInterval(timer);
+        return;
+      }
+      if (tries === 6 && !reloaded) {
+        try { sessionStorage.setItem('sj_boot_reload', '1'); } catch (_) {}
+        clearInterval(timer);
+        location.reload();
+        return;
+      }
+      if (tries >= 8 && !panel) { showFail(); panel = document.getElementById('sjBootFail'); }
+      if (tries >= 30) clearInterval(timer);
+    }, 1000);
+  }
+  if (document.readyState === 'complete') watch();
+  else window.addEventListener('load', watch);
+})();
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#faf7f2">
+<meta name="color-scheme" content="light dark">
+<title>拾笺 · 云端笔记库</title>
+<link rel="stylesheet" href="/style.css?sharecode=FKSO3QK6B4">
+<link rel="stylesheet" href="/sjplus.css?sharecode=FKSO3QK6B4">
+<link rel="stylesheet" href="/vendor/github-dark.min.css?sharecode=FKSO3QK6B4">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23b04932'/><rect x='9' y='9' width='82' height='82' rx='15' fill='none' stroke='%23ffffff' stroke-opacity='.6' stroke-width='2'/><text y='70' x='50' font-size='56' text-anchor='middle' fill='%23fff' font-family='KaiTi,STKaiti,serif'>拾</text></svg>">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png?sharecode=FKSO3QK6B4">
+
+<!-- ============ 添加到手机桌面（PWA） ============
+     注意：这个站点的静态资源需要访问码才放行（裸路径一律 403），
+     manifest / 图标 / apple-touch-icon 都必须自带 ?sharecode=，
+     否则浏览器拿到的是一页 403 HTML，manifest 解析直接报语法错误、
+     装到桌面时没有图标。换访问码时这几处要一起改。 -->
+<link rel="manifest" href="/manifest.webmanifest?sharecode=FKSO3QK6B4">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?sharecode=FKSO3QK6B4">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="拾笺">
+<meta name="application-name" content="拾笺">
+<meta name="format-detection" content="telephone=no">
+</head>
+<body>
+<!-- ============ 手机端顶栏（仅窄屏显示） ============ -->
+<header class="m-bar" id="mBar">
+  <button class="icon-btn" id="mTreeBtn" aria-label="打开目录" title="目录">
+    <svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+  </button>
+  <div class="m-bar-title" id="mBarTitle">拾笺</div>
+  <button class="icon-btn" id="mSyncBtn" aria-label="同步到云端" title="同步到云端">
+    <svg viewBox="0 0 24 24" class="ico"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+  </button>
+  <button class="icon-btn" id="mNewBtn" aria-label="新建笔记" title="新建笔记">
+    <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+</header>
+<div class="m-mask" id="mMask"></div>
+
+<div class="app">
+
+  <!-- ============ 侧边栏 ============ -->
+  <aside class="sidebar">
+    <header class="brand">
+      <div class="logo" aria-hidden="true">拾</div>
+      <div class="brand-text">
+        <h1>拾笺<i class="seal" aria-hidden="true"></i></h1>
+        <span id="statText">云端笔记库</span>
+      </div>
+      <button class="icon-btn" id="themeBtn" title="切换主题" aria-label="切换主题">
+        <svg viewBox="0 0 24 24" class="ico ico-moon"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <svg viewBox="0 0 24 24" class="ico ico-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
+    </header>
+
+    <div class="search-box">
+      <svg viewBox="0 0 24 24" class="ico"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="searchInput" type="text" placeholder="搜索笔记…" autocomplete="off">
+      <kbd>⌘K</kbd>
+    </div>
+
+    <div class="tree-head">
+      <span>目录</span>
+      <div class="tree-head-actions">
+        <button class="icon-btn sm" id="collapseAllBtn" title="全部收起">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M4 9l8-6 8 6M4 15l8 6 8-6"/></svg>
+        </button>
+        <button class="icon-btn sm" id="addRootCatBtn" title="新建顶层类别">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <nav class="tree" id="tree"></nav>
+
+    <div class="tag-section" id="tagSection">
+      <div class="tree-head">
+        <span>标签</span>
+        <span class="tag-head-right">
+          <span class="tag-total" id="tagTotal"></span>
+          <button class="tag-manage" id="tagManageBtn" title="管理标签">管理</button>
+        </span>
+      </div>
+      <div class="tag-cloud" id="tagCloud"></div>
+    </div>
+
+    <footer class="sidebar-foot">
+      <button class="btn primary block" id="newNoteBtn">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
+        新建笔记
+      </button>
+      <button class="foot-tool" id="importBtn" title="导入备份（JSON）" aria-label="导入备份">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M12 3v10M8.5 9.5 12 13l3.5-3.5M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        <span>导入</span>
+      </button>
+      <button class="foot-tool" id="exportBtn" title="导出备份" aria-label="导出备份">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M12 13V3M8.5 6.5 12 3l3.5 3.5M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        <span>导出</span>
+      </button>
+      <button class="foot-tool" id="syncBtn" title="同步到云端" aria-label="同步到云端">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M20 12a8 8 0 0 0-13.7-5.7"/><path d="M6.3 2.5v3.8h3.8"/><path d="M4 12a8 8 0 0 0 13.7 5.7"/><path d="M17.7 21.5v-3.8h-3.8"/></svg>
+        <span>同步</span>
+      </button>
+      <button class="foot-tool" id="pdfAllBtn" title="导出全部笔记为 PDF（可存 PDF）" aria-label="导出全部为 PDF">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M6 2h9l5 5v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M14 2v6h6M8 13h8M8 17h8M8 9h4"/></svg>
+        <span>合集</span>
+      </button>
+      <input type="file" id="importInput" accept=".json,application/json,.vault" class="hidden">
+    </footer>
+  </aside>
+
+  <!-- ============ 笔记列表 ============ -->
+  <section class="list-pane">
+    <header class="list-head">
+      <div class="list-title-wrap">
+        <h2 id="listTitle">全部笔记</h2>
+        <span id="listCount"></span>
+      </div>
+      <button class="icon-btn sm" id="newNoteBtn2" title="新建笔记">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </header>
+    <div class="note-list" id="noteList"></div>
+  </section>
+
+  <!-- ============ 编辑区 ============ -->
+  <main class="editor-pane">
+    <div class="empty" id="emptyState">
+      <div class="empty-art">
+        <svg viewBox="0 0 200 160" fill="none">
+          <rect x="34" y="26" width="98" height="120" rx="8" stroke="currentColor" stroke-width="1.6" opacity=".28"/>
+          <rect x="46" y="14" width="98" height="120" rx="8" fill="var(--surface)" stroke="currentColor" stroke-width="1.6" opacity=".55"/>
+          <path d="M64 42h62M64 60h62M64 78h44M64 96h52" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity=".22"/>
+          <path d="M64 114h30" stroke="var(--accent)" stroke-width="2.8" stroke-linecap="round" opacity=".8"/>
+        </svg>
+      </div>
+      <h3>选择一篇笔记开始阅读</h3>
+      <p>或按 <kbd>⌘N</kbd> 新建，把想法先写下来</p>
+    </div>
+
+    <div class="editor-wrap hidden" id="editorWrap">
+      <header class="editor-head">
+        <input id="titleInput" class="title-input" placeholder="无标题笔记" spellcheck="false">
+        <div class="editor-actions">
+          <div class="segmented" id="formatSwitch">
+            <button data-format="md">Markdown</button>
+            <button data-format="rich">富文本</button>
+          </div>
+          <button class="icon-btn" id="starBtn" title="收藏">
+            <svg viewBox="0 0 24 24" class="ico"><path d="M12 3.6l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.8l5.9-.8z"/></svg>
+          </button>
+          <button class="icon-btn" id="historyBtn" title="历史版本">
+            <svg viewBox="0 0 24 24" class="ico"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3 4v5h5"/><path d="M12 8v4.5l3 1.8"/></svg>
+          </button>
+          <button class="icon-btn" id="imgBtn" title="插入图片（也可直接粘贴或拖拽图片）" aria-label="插入图片">
+            <svg viewBox="0 0 24 24" class="ico"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="M21 16l-4.5-4.5L11 17l-2-2-4 4"/></svg>
+          </button>
+          <button class="icon-btn" id="attachBtn" title="添加附件 / 图片">
+            <svg viewBox="0 0 24 24" class="ico"><path d="M21 11l-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 6"/></svg>
+          </button>
+          <button class="icon-btn" id="exportBtn2" title="导出">
+            <svg viewBox="0 0 24 24" class="ico"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg>
+          </button>
+          <button class="icon-btn danger-hover" id="deleteNoteBtn" title="删除笔记">
+            <svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="meta-row">
+        <span id="metaInfo"></span>
+        <span class="meta-dot">·</span>
+        <span id="saveState" class="save-state"></span>
+        <span class="spacer"></span>
+        <span id="wordCount" class="word-count"></span>
+      </div>
+
+      <div class="tag-row" id="tagRow">
+        <span class="tag-row-label">标签</span>
+        <div class="tag-list" id="tagList"></div>
+        <button class="tag-add" id="tagAddBtn">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <input class="tag-input hidden" id="tagInput" list="tagOptions" placeholder="输入标签，回车确认" maxlength="20" autocomplete="off">
+        <datalist id="tagOptions"></datalist>
+      </div>
+
+      <div class="toolbar" id="toolbar"></div>
+
+      <div class="editor-body" id="editorBody">
+        <div class="md-pane" id="mdPane">
+          <textarea id="mdInput" spellcheck="false" placeholder="用 Markdown 记录点什么…"></textarea>
+        </div>
+        <div class="preview-pane markdown-body" id="previewPane"></div>
+        <div class="rich-pane markdown-body" id="richPane" contenteditable="true" spellcheck="false"></div>
+      </div>
+
+      <div class="attach-panel hidden" id="attachPanel">
+        <div class="attach-head">
+          <span>附件 <em id="attCount">0</em></span>
+          <div class="attach-head-actions">
+            <button class="icon-btn sm" id="attachAddBtn" title="添加附件">
+              <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+            <button class="icon-btn sm" id="closeAttachBtn" title="收起">
+              <svg viewBox="0 0 24 24" class="ico"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="attach-list" id="attachList"></div>
+      </div>
+
+      <div class="drop-mask" id="dropMask"><span>松开即可添加附件</span></div>
+    </div>
+  </main>
+</div>
+
+<div class="ctx-menu hidden" id="ctxMenu"></div>
+<div class="toast" id="toast"></div>
+<div class="modal-root hidden" id="modalRoot"></div>
+<input type="file" id="fileInput" multiple hidden>
+
+<div id="pwdTip" class="pwd-tip hidden">
+  <span>🔐 这个访问链接就是拾笺的「口令」：谁拿到完整链接，谁就能查看和修改你的笔记。请勿把链接发到公开场合。</span>
+  <button id="pwdTipClose" aria-label="知道了">知道了</button>
+</div>
+<script>
+(function () {
+  try {
+    if (localStorage.getItem('sj_pwd_tip') !== '1') document.getElementById('pwdTip').classList.remove('hidden');
+    var c = document.getElementById('pwdTipClose');
+    if (c) c.addEventListener('click', function () {
+      try { localStorage.setItem('sj_pwd_tip', '1'); } catch (_) {}
+      document.getElementById('pwdTip').classList.add('hidden');
+    });
+  } catch (_) {}
+})();
+</script>
+
+<div class="print-area" id="printArea"></div>
+
+<script src="/vendor/workbuddy-cloud-sdk.js?sharecode=FKSO3QK6B4"></script>
+<script src="/vendor/docx.umd.js?sharecode=FKSO3QK6B4"></script>
+<script src="/vendor/marked.min.js?sharecode=FKSO3QK6B4"></script>
+<script src="/vendor/purify.min.js?sharecode=FKSO3QK6B4"></script>
+<script src="/vendor/turndown.js?sharecode=FKSO3QK6B4"></script>
+<script src="/vendor/turndown-plugin-gfm.js?sharecode=FKSO3QK6B4"></script>
+<script src="/vendor/highlight.min.js?sharecode=FKSO3QK6B4"></script>
+<script src="/export.js?sharecode=FKSO3QK6B4"></script>
+<script src="/attstore.js?sharecode=FKSO3QK6B4"></script>
+<script src="/local.js?sharecode=FKSO3QK6B4"></script>
+<script src="/mobilesync.js?sharecode=FKSO3QK6B4"></script>
+<!-- ============ v1.8.0 增强模块（全文检索 / 反向链接 / 版本对比 / PDF 合集 / 冲突 / 加密） ============ -->
+<script src="/fts.js?sharecode=FKSO3QK6B4"></script>
+<script src="/backlinks.js?sharecode=FKSO3QK6B4"></script>
+<script src="/diffview.js?sharecode=FKSO3QK6B4"></script>
+<script src="/pdfexport.js?sharecode=FKSO3QK6B4"></script>
+<script src="/conflict.js?sharecode=FKSO3QK6B4"></script>
+<script src="/e2ee.js?sharecode=FKSO3QK6B4"></script>
+<script src="/app.js?sharecode=FKSO3QK6B4"></script>
+<script src="/sjplus.js?sharecode=FKSO3QK6B4"></script>
+<script src="/pwa.js?sharecode=FKSO3QK6B4"></script>
+</body>
+</html>

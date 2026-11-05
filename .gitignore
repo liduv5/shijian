@@ -1,0 +1,13 @@
+# runtime / user data must not be committed
+拾笺/runtime/
+拾笺/data/
+*.genie
+
+# workbuddy internal memory
+.workbuddy/
+
+# OS / temp
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.tmp

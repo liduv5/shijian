@@ -1,0 +1,42 @@
+{
+  "id": "/?sharecode=FKSO3QK6B4",
+  "name": "拾笺 · 笔记库",
+  "short_name": "拾笺",
+  "description": "随手拾笺。本地优先的手机笔记，随时记、手动同步。",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "/?sharecode=FKSO3QK6B4&fs=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#faf7f2",
+  "theme_color": "#faf7f2",
+  "categories": ["productivity", "utilities"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/icons/icon-192.png?sharecode=FKSO3QK6B4", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png?sharecode=FKSO3QK6B4", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-192.png?sharecode=FKSO3QK6B4", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-maskable-512.png?sharecode=FKSO3QK6B4", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "新建笔记",
+      "short_name": "新建",
+      "url": "/?sharecode=FKSO3QK6B4&fs=pwa&action=new",
+      "icons": [{ "src": "/icons/icon-192.png?sharecode=FKSO3QK6B4", "sizes": "192x192" }]
+    },
+    {
+      "name": "随手记",
+      "short_name": "随手记",
+      "url": "/quick.html?sharecode=FKSO3QK6B4",
+      "icons": [{ "src": "/icons/icon-192.png?sharecode=FKSO3QK6B4", "sizes": "192x192" }]
+    }
+  ],
+  "share_target": {
+    "action": "/quick.html?sharecode=FKSO3QK6B4",
+    "method": "GET",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  }
+}

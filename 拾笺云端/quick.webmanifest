@@ -1,0 +1,28 @@
+{
+  "id": "/quick.html?sharecode=FKSO3QK6B4",
+  "name": "拾笺 · 随手记",
+  "short_name": "随手记",
+  "description": "随手一记，快速存进拾笺笔记库。",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "/quick.html?sharecode=FKSO3QK6B4",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#f4f3ef",
+  "theme_color": "#2f6f5e",
+  "categories": ["productivity", "utilities"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/icons/icon-192.png?sharecode=FKSO3QK6B4", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png?sharecode=FKSO3QK6B4", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-192.png?sharecode=FKSO3QK6B4", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-maskable-512.png?sharecode=FKSO3QK6B4", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "share_target": {
+    "action": "/quick.html?sharecode=FKSO3QK6B4",
+    "method": "GET",
+    "params": { "title": "title", "text": "text", "url": "url" }
+  }
+}

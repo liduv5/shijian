@@ -1,0 +1,106 @@
+/* sjplus.css — 更多工具：回收站 / 回顾 / Markdown 导出 / 搜索高亮 */
+.sjplus-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 320;
+  background: rgba(20, 22, 24, .38);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  animation: fade .16s;
+}
+.sjplus-dialog {
+  width: min(480px, 100%);
+  max-height: min(76vh, 640px);
+  overflow: auto;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 20px 20px 16px;
+}
+.sjplus-dialog h3 {
+  margin: 0 0 14px;
+  font-size: 15.5px;
+  font-weight: 650;
+}
+.sjplus-menu {
+  display: grid;
+  gap: 8px;
+}
+.sjplus-menu button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  padding: 11px 13px;
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  color: var(--text);
+  cursor: pointer;
+}
+.sjplus-menu button:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+.sjplus-menu b { font-size: 13.5px; font-weight: 600; }
+.sjplus-menu span { font-size: 12px; color: var(--text-2); line-height: 1.5; }
+.sjplus-list { display: grid; gap: 8px; margin-bottom: 14px; }
+.sjplus-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+}
+.sjplus-row-main { flex: 1; min-width: 0; }
+.sjplus-row-main b {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sjplus-row-main small { display: block; margin-top: 3px; font-size: 11.5px; color: var(--text-2); }
+.sjplus-row .btn { height: 28px; padding: 0 10px; font-size: 12px; flex: none; }
+.sjplus-row .btn.ghost.danger { color: var(--danger); background: transparent; }
+.sjplus-row .btn.ghost.danger:hover { background: rgba(192, 68, 47, .12); }
+.sjplus-empty, .sjplus-dialog p.sjplus-empty {
+  margin: 0 0 14px;
+  font-size: 12.8px;
+  line-height: 1.75;
+  color: var(--text-2);
+}
+.sjplus-review {
+  padding: 14px 15px;
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+  margin-bottom: 14px;
+}
+.sjplus-rew-title { font-size: 15px; font-weight: 600; margin-bottom: 5px; }
+.sjplus-rew-meta { font-size: 11.5px; color: var(--text-2); margin-bottom: 10px; }
+.sjplus-rew-body {
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-2);
+  max-height: 190px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.sjplus-dialog .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.sjplus-dialog .modal-actions .btn[disabled] { opacity: .45; pointer-events: none; }
+.note-card mark, .list-pane mark {
+  background: rgba(214, 158, 46, .28);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+@media (max-width: 720px) {
+  .sjplus-dialog { padding: 16px 14px 12px; }
+  .sjplus-row { flex-wrap: wrap; }
+  .sjplus-row-main { flex: 1 1 100%; }
+}

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f4f3ef">
+<link rel="manifest" href="/quick.webmanifest?sharecode=FKSO3QK6B4">
+<title>随手记 · 拾笺</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; padding: 24px 18px;
+    background: #f4f3ef; color: #22201c;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  .card {
+    width: min(520px, 100%); background: #fffefc; border: 1px solid #e2dfd6;
+    border-radius: 14px; padding: 22px 20px; box-shadow: 0 8px 28px -10px rgba(34,32,28,.18);
+  }
+  .brand { font-size: 12px; letter-spacing: .2em; color: #2f6f5e; margin-bottom: 14px; }
+  h1 { margin: 0 0 8px; font-size: 19px; font-weight: 600; }
+  p { margin: 0 0 16px; font-size: 13px; line-height: 1.7; color: #6c675d; }
+  .box {
+    background: #f4f3ef; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px;
+    font-size: 13px; line-height: 1.75; white-space: pre-wrap; word-break: break-word;
+    max-height: 260px; overflow: auto;
+  }
+  textarea {
+    width: 100%; min-height: 150px; padding: 12px 14px; margin-bottom: 14px;
+    border: 1px solid #d3cfc4; border-radius: 10px; background: #f4f3ef;
+    font: inherit; font-size: 14px; line-height: 1.7; color: #22201c; resize: vertical;
+  }
+  .row { display: flex; gap: 10px; }
+  button, a.btn {
+    flex: 1; display: inline-flex; align-items: center; justify-content: center;
+    height: 40px; padding: 0 16px; border-radius: 9px; font: inherit; font-size: 14px;
+    text-decoration: none; cursor: pointer; border: 1px solid #2f6f5e;
+  }
+  .primary { background: #2f6f5e; color: #fff; }
+  .ghost { background: transparent; color: #2f6f5e; }
+  .tip { margin-top: 16px; font-size: 11.5px; color: #9c968a; line-height: 1.6; }
+  .ok { color: #2f6f5e; font-size: 14px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">拾 笺</div>
+  <div id="view"></div>
+  <div class="tip">从其他 App 点「分享 → 拾笺」可以直接把文字和链接存进笔记；也可以把这个页面当随手速记本用。内容先存手机本地，同步方式和主程序一样。</div>
+</div>
+<script src="/attstore.js?sharecode=FKSO3QK6B4"></script>
+<script src="/local.js?sharecode=FKSO3QK6B4"></script>
+<script>
+(function () {
+  'use strict';
+  const SC = 'FKSO3QK6B4';
+  const qs = new URLSearchParams(location.search);
+  const view = document.getElementById('view');
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const openLink = '/?sharecode=' + SC + '&fs=pwa';
+
+  async function saveNote(title, content) {
+    if (!window.SJLocal || !window.SJLocal.api) throw new Error('本地数据层没加载成功');
+    if (window.SJLocal.ready) await window.SJLocal.ready;
+    return window.SJLocal.api('/api/notes', {
+      method: 'POST',
+      body: { title: title || '随手记', content: content || '', format: 'md' }
+    });
+  }
+
+  function done(title, content) {
+    view.innerHTML = '<div class="ok">✓ 已存进拾笺</div>' +
+      '<h1>' + esc(title) + '</h1>' +
+      '<div class="box">' + esc(content.slice(0, 600)) + '</div>' +
+      '<div class="row"><a class="btn primary" href="' + openLink + '">打开拾笺</a>' +
+      '<button class="ghost" id="again">再记一条</button></div>';
+    document.getElementById('again').onclick = () => location.replace('/quick.html?sharecode=' + SC);
+  }
+
+  function compose(text, url, title) {
+    let body = String(text || '').trim();
+    const link = String(url || '').trim();
+    if (link && body.indexOf(link) < 0) body = (body ? body + '\n\n' : '') + link;
+    if (!body) body = String(title || '').trim();
+    const t = String(title || '').trim() || (body.split('\n')[0] || '随手记').slice(0, 40) || '随手记';
+    return { title: t.slice(0, 60), content: body };
+  }
+
+  function editor() {
+    view.innerHTML = '<h1>随手记一笔</h1><p>写点什么，存进拾笺的本地笔记库。</p>' +
+      '<textarea id="qText" placeholder="想到什么就写什么…"></textarea>' +
+      '<div class="row"><button class="primary" id="qSave">存进拾笺</button>' +
+      '<a class="btn ghost" href="' + openLink + '">打开拾笺</a></div>';
+    const ta = document.getElementById('qText');
+    ta.focus();
+    document.getElementById('qSave').onclick = async () => {
+      const v = ta.value.trim();
+      if (!v) { ta.focus(); return; }
+      const c = compose(v, '', '');
+      try { await saveNote(c.title, c.content); done(c.title, c.content); }
+      catch (e) { document.getElementById('qSave').textContent = '保存失败：' + e.message; }
+    };
+  }
+
+  const text = qs.get('text') || '';
+  const url = qs.get('url') || '';
+  const title = qs.get('title') || '';
+  if (!text && !url && !title) { editor(); return; }
+
+  const c = compose(text, url, title);
+  const content = '# ' + c.title + '\n\n' + c.content;
+  const sig = [c.title, c.content].join('|');
+  const KEY = 'sj_quick_last';
+  let already = false;
+  try { already = localStorage.getItem(KEY) === sig; } catch (_) {}
+  if (already) { done(c.title, c.content); return; }
+  saveNote(c.title, content).then(() => {
+    try { localStorage.setItem(KEY, sig); } catch (_) {}
+    done(c.title, c.content);
+  }).catch((e) => {
+    view.innerHTML = '<h1>没能存下来</h1><p>' + esc(e.message) + '</p>' +
+      '<div class="row"><a class="btn primary" href="' + openLink + '">打开拾笺</a></div>';
+  });
+})();
+</script>
+<script>
+/* 注册 Service Worker，让本页也能被「添加到主屏幕」独立安装成 App */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js?sharecode=FKSO3QK6B4', { scope: '/' }).catch(function () {});
+}
+</script>
+</body>
+</html>
