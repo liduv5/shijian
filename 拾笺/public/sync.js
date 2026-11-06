@@ -327,7 +327,7 @@
       '<input class="auth-input" id="spPwd" type="password" placeholder="设置口令"></div>' +
       '<div class="e2ee-row"><button class="btn primary block" id="spSave">设置口令</button></div>' +
       '<div id="spMsg" class="e2ee-msg"></div></div>');
-    m.classList.add('wide');
+    m.classList.add('pwd-box');
     m.querySelector('[data-act="close"]').addEventListener('click', window.closeModal);
     const msg = (t, ok) => { const e = m.querySelector('#spMsg'); e.textContent = t; e.style.color = ok ? '#2f6f5e' : '#c0392b'; };
     m.querySelector('#spCode').addEventListener('click', async () => {

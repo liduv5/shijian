@@ -1063,7 +1063,7 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
   opacity: 0;
   pointer-events: none;
   transition: opacity .2s, transform .2s var(--ease);
-  z-index: 400;
+  z-index: 950; /* 必须高于弹层(900)，否则弹窗打开时提示会被盖住 */
   max-width: 70vw;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -1072,12 +1072,18 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
 .modal-root {
   position: fixed;
   inset: 0;
-  z-index: 300;
+  z-index: 900; /* 高于右下角同步面板(880)：弹窗必须压在悬浮面板之上 */
   background: rgba(20, 22, 24, .38);
   backdrop-filter: blur(2px);
   display: grid;
   place-items: center;
   animation: fade .16s;
+}
+/* 同步面板打开时，为它让出右侧空间，让窄弹窗在剩余区域居中，避免贴在一起。
+   只对「设置口令」这类窄弹窗生效——历史版本对比那种 820px 宽弹窗若也让位会被挤扁。 */
+.modal-root.with-side-panel:has(> .modal.pwd-box) { padding-right: 356px; }
+@media (max-width: 960px) {
+  .modal-root.with-side-panel:has(> .modal.pwd-box) { padding-right: 0; }
 }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
@@ -1263,6 +1269,51 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
   flex-direction: column;
   max-height: min(640px, 80vh);
 }
+
+/* 设置同步口令：窄弹窗（原先进程用的是 .wide 的 820px，会压到右下角同步面板） */
+.modal.pwd-box {
+  width: min(380px, calc(100vw - 32px));
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: min(560px, calc(100vh - 48px));
+}
+.modal.pwd-box .e2ee-body { overflow-y: auto; }
+/* 弹窗内的表单控件不在 .sync-panel 作用域下，需单独给样式，否则是浏览器默认小输入框 */
+.modal.pwd-box .auth-label {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-2);
+  margin: 0 0 6px;
+}
+.modal.pwd-box .auth-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color .16s, box-shadow .16s;
+}
+.modal.pwd-box .auth-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  background: var(--surface);
+}
+.modal.pwd-box .btn.block { width: 100%; flex: none; }
+/* 弹窗里的 ghost 按钮默认无边框、看着像一行纯文字，这里补成可见的次要按钮 */
+.modal.pwd-box .btn.ghost {
+  color: var(--accent);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+}
+.modal.pwd-box .btn.ghost:hover { background: var(--surface-2); color: var(--accent-hover); }
 .hist-head {
   display: flex;
   align-items: flex-start;

@@ -40,6 +40,27 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
+/* 主应用页的 CSP。已核实 index.html 全部为外链脚本、无内联事件，故 script-src 只放 'self'。
+   style-src 必须放 'unsafe-inline'：富文本与 Markdown 图片宽度靠内联 style 生效。
+   img-src 放行 https: 是为了让笔记里的外链图片能显示（图片不能执行脚本，风险可控）。
+   connect-src 是云同步用的域名，以后换云实例记得同步改这里。
+   注意：vendor/docx.umd.js 有个 setImmediate polyfill，仅在「传字符串」时用 new Function，
+   正常导出走函数分支不受影响，因此不放 'unsafe-eval'。
+   手机端登录页（loginPage）是单文件内联 HTML，不走这里，不受此策略约束。 */
+const APP_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "media-src 'self' blob: https:",
+  "connect-src 'self' https://*.workbuddy.host https://www.workbuddy.cn",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join('; ');
+
 // ---------------------------------------------------------------- 数据层
 let db = { categories: [], notes: [] };
 let saveTimer = null;
@@ -326,6 +347,7 @@ function sendHtml(res, filePath) {
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
+        'Content-Security-Policy': APP_CSP,
         'Content-Length': Buffer.byteLength(out),
       });
       res.end(out);

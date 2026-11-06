@@ -431,9 +431,10 @@
   function plainText(note) {
     let t = note.content || '';
     if (note.format === 'rich') {
-      const div = document.createElement('div');
-      div.innerHTML = t;
-      t = div.textContent || '';
+      /* 用 DOMParser 取纯文本：不挂载节点、不加载资源、不触发 onerror。
+         直接 innerHTML 会让 <img onerror> 在游离节点里也发起加载并执行，
+         恶意备份/云端数据可借此窃取全部笔记（存储型 XSS）。 */
+      t = new DOMParser().parseFromString(String(t), 'text/html').body.textContent || '';
     } else {
       t = t
         .replace(/```[\s\S]*?```/g, ' [代码] ')
@@ -1771,7 +1772,7 @@
     if (!note) return;
     openConfirm({
       title: '删除附件',
-      message: `「${a.name}」将从这条笔记中移除，磁盘上的文件也会一并删除，无法恢复。`,
+      message: `「${escapeHtml(a.name)}」将从这条笔记中移除，磁盘上的文件也会一并删除，无法恢复。`,
       confirmText: '删除',
       danger: true,
       onConfirm: async () => {
@@ -1789,12 +1790,17 @@
   function openModal(html) {
     const root = $('#modalRoot');
     root.innerHTML = `<div class="modal">${html}</div>`;
+    // 右下角同步面板开着时，弹层右移让位，免得弹窗与面板叠在一起（窄屏由 CSS 媒体查询自动取消）
+    const panel = $('#syncPanel');
+    const panelOpen = !!panel && !panel.classList.contains('hidden');
+    root.classList.toggle('with-side-panel', panelOpen);
     root.classList.remove('hidden');
     return root.querySelector('.modal');
   }
 
   function closeModal() {
     $('#modalRoot').classList.add('hidden');
+    $('#modalRoot').classList.remove('with-side-panel');
     $('#modalRoot').innerHTML = '';
   }
 
