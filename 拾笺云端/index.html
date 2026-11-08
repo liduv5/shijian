@@ -8,8 +8,17 @@
    HTML 能显示但所有 js/css 会 403，表现为「进度条卡住、按钮点不动」。
    这里不依赖任何外部资源：补参数、注册 SW、加载失败时自动重载一次并给出入口。 */
 (function () {
-  var SC = 'FKSO3QK6B4';
+  /* 访问码会随重新发布变化，写死迟早过期：优先用当前链接里的码并记住，
+     以后从桌面图标 / 裸链接打开时自动补回最新的那个。 */
+  var SC_LS = 'sj_sharecode';
   var u = new URL(location.href);
+  var fromUrl = u.searchParams.get('sharecode') || '';
+  var SC = fromUrl || '3J7BKHTGFD';
+  try {
+    var saved = localStorage.getItem(SC_LS) || '';
+    if (fromUrl && fromUrl !== saved) localStorage.setItem(SC_LS, fromUrl);
+    else if (!fromUrl && saved) SC = saved;
+  } catch (_) {}
   var hadCode = !!u.searchParams.get('sharecode');
   var fixed = false, reloaded = false;
   try {
@@ -78,19 +87,19 @@
 <meta name="theme-color" content="#faf7f2">
 <meta name="color-scheme" content="light dark">
 <title>拾笺 · 云端笔记库</title>
-<link rel="stylesheet" href="/style.css?sharecode=FKSO3QK6B4">
-<link rel="stylesheet" href="/sjplus.css?sharecode=FKSO3QK6B4">
-<link rel="stylesheet" href="/vendor/github-dark.min.css?sharecode=FKSO3QK6B4">
+<link rel="stylesheet" href="/style.css?sharecode=3J7BKHTGFD">
+<link rel="stylesheet" href="/sjplus.css?sharecode=3J7BKHTGFD">
+<link rel="stylesheet" href="/vendor/github-dark.min.css?sharecode=3J7BKHTGFD">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23b04932'/><rect x='9' y='9' width='82' height='82' rx='15' fill='none' stroke='%23ffffff' stroke-opacity='.6' stroke-width='2'/><text y='70' x='50' font-size='56' text-anchor='middle' fill='%23fff' font-family='KaiTi,STKaiti,serif'>拾</text></svg>">
-<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png?sharecode=FKSO3QK6B4">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png?sharecode=3J7BKHTGFD">
 
 <!-- ============ 添加到手机桌面（PWA） ============
      注意：这个站点的静态资源需要访问码才放行（裸路径一律 403），
      manifest / 图标 / apple-touch-icon 都必须自带 ?sharecode=，
      否则浏览器拿到的是一页 403 HTML，manifest 解析直接报语法错误、
      装到桌面时没有图标。换访问码时这几处要一起改。 -->
-<link rel="manifest" href="/manifest.webmanifest?sharecode=FKSO3QK6B4">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?sharecode=FKSO3QK6B4">
+<link rel="manifest" href="/manifest.webmanifest?sharecode=3J7BKHTGFD">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?sharecode=3J7BKHTGFD">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -103,6 +112,12 @@
 <header class="m-bar" id="mBar">
   <button class="icon-btn" id="mTreeBtn" aria-label="打开目录" title="目录">
     <svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+  </button>
+  <!-- 返回出口要一眼可见：以前和「目录」都是三条横线的纯图标，
+       打开笔记后用户找不到回列表的路，会以为页面卡住。 -->
+  <button class="icon-btn m-back" id="mListBtn" aria-label="返回笔记列表" title="返回笔记列表">
+    <svg viewBox="0 0 24 24" class="ico"><path d="M15 18l-6-6 6-6"/></svg>
+    <span class="m-back-label">列表</span>
   </button>
   <div class="m-bar-title" id="mBarTitle">拾笺</div>
   <button class="icon-btn" id="mSyncBtn" aria-label="同步到云端" title="同步到云端">
@@ -177,10 +192,6 @@
       <button class="foot-tool" id="syncBtn" title="同步到云端" aria-label="同步到云端">
         <svg viewBox="0 0 24 24" class="ico"><path d="M20 12a8 8 0 0 0-13.7-5.7"/><path d="M6.3 2.5v3.8h3.8"/><path d="M4 12a8 8 0 0 0 13.7 5.7"/><path d="M17.7 21.5v-3.8h-3.8"/></svg>
         <span>同步</span>
-      </button>
-      <button class="foot-tool" id="pdfAllBtn" title="导出全部笔记为 PDF（可存 PDF）" aria-label="导出全部为 PDF">
-        <svg viewBox="0 0 24 24" class="ico"><path d="M6 2h9l5 5v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M14 2v6h6M8 13h8M8 17h8M8 9h4"/></svg>
-        <span>合集</span>
       </button>
       <input type="file" id="importInput" accept=".json,application/json,.vault" class="hidden">
     </footer>
@@ -316,26 +327,25 @@
 
 <div class="print-area" id="printArea"></div>
 
-<script src="/vendor/workbuddy-cloud-sdk.js?sharecode=FKSO3QK6B4"></script>
-<script src="/vendor/docx.umd.js?sharecode=FKSO3QK6B4"></script>
-<script src="/vendor/marked.min.js?sharecode=FKSO3QK6B4"></script>
-<script src="/vendor/purify.min.js?sharecode=FKSO3QK6B4"></script>
-<script src="/vendor/turndown.js?sharecode=FKSO3QK6B4"></script>
-<script src="/vendor/turndown-plugin-gfm.js?sharecode=FKSO3QK6B4"></script>
-<script src="/vendor/highlight.min.js?sharecode=FKSO3QK6B4"></script>
-<script src="/export.js?sharecode=FKSO3QK6B4"></script>
-<script src="/attstore.js?sharecode=FKSO3QK6B4"></script>
-<script src="/local.js?sharecode=FKSO3QK6B4"></script>
-<script src="/mobilesync.js?sharecode=FKSO3QK6B4"></script>
-<!-- ============ v1.8.0 增强模块（全文检索 / 反向链接 / 版本对比 / PDF 合集 / 冲突 / 加密） ============ -->
-<script src="/fts.js?sharecode=FKSO3QK6B4"></script>
-<script src="/backlinks.js?sharecode=FKSO3QK6B4"></script>
-<script src="/diffview.js?sharecode=FKSO3QK6B4"></script>
-<script src="/pdfexport.js?sharecode=FKSO3QK6B4"></script>
-<script src="/conflict.js?sharecode=FKSO3QK6B4"></script>
-<script src="/e2ee.js?sharecode=FKSO3QK6B4"></script>
-<script src="/app.js?sharecode=FKSO3QK6B4"></script>
-<script src="/sjplus.js?sharecode=FKSO3QK6B4"></script>
-<script src="/pwa.js?sharecode=FKSO3QK6B4"></script>
+<script src="/vendor/workbuddy-cloud-sdk.js?sharecode=3J7BKHTGFD"></script>
+<script src="/vendor/docx.umd.js?sharecode=3J7BKHTGFD"></script>
+<script src="/vendor/marked.min.js?sharecode=3J7BKHTGFD"></script>
+<script src="/vendor/purify.min.js?sharecode=3J7BKHTGFD"></script>
+<script src="/vendor/turndown.js?sharecode=3J7BKHTGFD"></script>
+<script src="/vendor/turndown-plugin-gfm.js?sharecode=3J7BKHTGFD"></script>
+<script src="/vendor/highlight.min.js?sharecode=3J7BKHTGFD"></script>
+<script src="/export.js?sharecode=3J7BKHTGFD"></script>
+<script src="/attstore.js?sharecode=3J7BKHTGFD"></script>
+<script src="/local.js?sharecode=3J7BKHTGFD"></script>
+<script src="/mobilesync.js?sharecode=3J7BKHTGFD"></script>
+<!-- ============ v1.8.0 增强模块（全文检索 / 反向链接 / 版本对比 / 冲突 / 加密） ============ -->
+<script src="/fts.js?sharecode=3J7BKHTGFD"></script>
+<script src="/backlinks.js?sharecode=3J7BKHTGFD"></script>
+<script src="/diffview.js?sharecode=3J7BKHTGFD"></script>
+<script src="/conflict.js?sharecode=3J7BKHTGFD"></script>
+<script src="/e2ee.js?sharecode=3J7BKHTGFD"></script>
+<script src="/app.js?sharecode=3J7BKHTGFD"></script>
+<script src="/sjplus.js?sharecode=3J7BKHTGFD"></script>
+<script src="/pwa.js?sharecode=3J7BKHTGFD"></script>
 </body>
 </html>

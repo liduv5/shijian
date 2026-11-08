@@ -35,9 +35,53 @@
   /* ---------------------------------------------------------- 1. Service Worker */
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js?sharecode=FKSO3QK6B4', { scope: '/' }).catch((e) => {
-        console.warn('[拾笺] Service Worker 注册失败：', e && e.message);
-      });
+      /* 访问码从当前链接取，并同步给已装好的 SW：重新发布换码后不会 403。 */
+      let sc = new URLSearchParams(location.search).get('sharecode') || '';
+      try { sc = sc || localStorage.getItem('sj_sharecode') || ''; } catch (_) {}
+      sc = sc || '3J7BKHTGFD';
+      const pushCode = (reg) => {
+        const sw = reg && (reg.active || reg.waiting || reg.installing);
+        try {
+          if (sw) sw.postMessage({ type: 'sharecode', value: sc });
+          if (navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({ type: 'sharecode', value: sc });
+          }
+        } catch (_) {}
+      };
+      /* 注册 URL 带版本号：部分手机浏览器会长期缓存 sw.js 本身，脚本 URL
+         不变就根本不检查更新。每次发布改这个号，浏览器必然当成新脚本
+         重新 install → 换掉旧缓存。
+         发布清单三处同步改：sw.js 的 VERSION、mobilesync.js 的 BUILD、这里的 SW_BUILD。 */
+      const SW_BUILD = '2026-11-08-4';
+      navigator.serviceWorker.register('/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SW_BUILD, { scope: '/' })
+        .then((reg) => {
+          pushCode(reg);
+          /* 主动查一次更新：部分手机浏览器不会按时检查 sw.js，
+             不主动 update 就会一直跑几个月前缓存的旧代码。 */
+          try { if (reg.update) reg.update().catch(() => {}); } catch (_) {}
+          if (reg.waiting) { try { reg.waiting.postMessage('skip-waiting'); } catch (_) {} }
+          return navigator.serviceWorker.ready;
+        })
+        .then((reg) => { pushCode(reg); })
+        .catch((e) => {
+          console.warn('[拾笺] Service Worker 注册失败：', e && e.message);
+        });
+    });
+
+    /* 新版本接管后自动刷新一次，确保用户看到的是刚发布的界面。
+       15 秒内只允许一次，且正在输入 / 页面在后台时不刷新，避免打断编辑。 */
+    const RELOAD_KEY = 'sj_sw_reloaded_at';
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      try {
+        const ae = document.activeElement;
+        if (ae && /^(INPUT|TEXTAREA)$/.test(ae.tagName)) return;
+        if (document.visibilityState !== 'visible') return;
+        const t = Number(sessionStorage.getItem(RELOAD_KEY) || 0);
+        if (Date.now() - t < 15000) return;
+        sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
+        if (window.SJSaveNow) { try { window.SJSaveNow(); } catch (_) {} }
+        location.reload();
+      } catch (_) {}
     });
   }
 

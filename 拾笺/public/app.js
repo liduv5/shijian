@@ -620,7 +620,7 @@
         } else {
           note.tags = [...tags, value];
           note.updatedAt = Date.now();
-          scheduleSave();
+          markDirty();
           renderNoteTags();
           renderTags();
           renderList();
@@ -635,7 +635,7 @@
     if (!note) return;
     note.tags = (note.tags || []).filter((t) => t !== tag);
     note.updatedAt = Date.now();
-    scheduleSave();
+    markDirty();
     renderNoteTags();
     renderTags();
     renderList();
@@ -951,11 +951,28 @@
     $('#wordCount').textContent = `${t.length} 字`;
   }
 
+  /* 旧云端数据漏写 format 时，富文本正文会在 Markdown 编辑器里显示成源码。
+     打开时只在 format 缺失/非法时兜底改回 rich 并持久化，与手机端保持一致；
+     format 明确为 md 的笔记（含用户主动转换、正文带内联 <img>）不动。 */
+  function looksRichContent(content) {
+    return typeof content === 'string'
+      && /<img\s[^>]*src=["'](?:\/api\/files\/|data:image\/)/i.test(content);
+  }
+
   function openNote(id, { focusTitle = false } = {}) {
+    /* 离开当前笔记：先把脏数据落盘，再切换选中项。所有打开笔记的路径
+       （列表、搜索、双链、外部调用）都会经过这里，不用逐个补钩子。 */
+    if (state.selNote && state.selNote !== id) void saveNow();
     const note = noteById(id);
     if (!note) return;
+    if (note.format !== 'rich' && note.format !== 'md' && looksRichContent(note.content)) {
+      note.format = 'rich';
+      api(`/api/notes/${note.id}`, { method: 'PATCH', body: { format: 'rich' } }).catch(() => {});
+    }
     state.selNote = id;
     state.dirty = false;
+    savedSnapshot = snapshot(note);
+    viewFormat = note.format === 'rich' ? 'rich' : 'md';
 
     $('#emptyState').classList.add('hidden');
     $('#editorWrap').classList.remove('hidden');
@@ -963,17 +980,17 @@
     $('#titleInput').value = note.title || '';
     $('#starBtn').classList.toggle('on', !!note.starred);
 
-    $('#mdInput').value = note.format === 'rich' ? '' : note.content || '';
-    $('#richPane').innerHTML = note.format === 'rich' ? DOMPurify.sanitize(note.content || '') : '';
-    $('#richPane').classList.toggle('hidden', note.format !== 'rich');
-    $('#mdPane').classList.toggle('hidden', note.format !== 'md');
+    $('#mdInput').value = viewFormat === 'rich' ? '' : note.content || '';
+    $('#richPane').innerHTML = viewFormat === 'rich' ? DOMPurify.sanitize(note.content || '') : '';
+    $('#richPane').classList.toggle('hidden', viewFormat !== 'rich');
+    $('#mdPane').classList.toggle('hidden', viewFormat !== 'md');
 
     const cat = catMap().get(note.categoryId);
     $('#metaInfo').textContent = `${cat ? cat.name : '未分类'} · 创建于 ${fmtDate(note.createdAt)}`;
     setSaveState('', `已保存 ${new Date(note.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`);
 
-    applyFormat(note.format);
-    if (note.format === 'md') refreshPreview();
+    applyFormat(viewFormat);
+    if (viewFormat === 'md') refreshPreview();
     renderToolbar();
     renderAttachments();
     renderNoteTags();
@@ -1006,22 +1023,34 @@
 
   function refreshPreview() {
     const note = currentNote();
-    if (!note || note.format !== 'md') return;
+    if (!note || viewFormat !== 'md') return;
     const html = renderMarkdown($('#mdInput').value);
     const pane = $('#previewPane');
     pane.innerHTML = html;
     decorate(pane);
   }
 
-  /* 保存 */
-  let saveTimer = null;
-  function scheduleSave() {
+  /* 保存：编辑期间只标脏、不写盘；离开编辑页时统一落盘。
+     快照用来识别「改完又改回原样」——内容和已存版本一致就不写盘。
+     编辑模式属于视图状态：切换只改显示，不写回笔记、不标脏。 */
+  let savedSnapshot = '';
+  /* 编辑器当前显示的模式，可能与笔记数据里的 format 不同。
+     只有在新模式下真正输入，内容与模式才一起写回笔记。 */
+  let viewFormat = 'md';
+  function snapshot(n) {
+    return JSON.stringify([n.title || '', n.content || '', n.format || 'md',
+      n.categoryId || null, !!n.starred, n.tags || []]);
+  }
+  function markDirty() {
     const note = currentNote();
     if (!note) return;
+    if (snapshot(note) === savedSnapshot) {
+      state.dirty = false;
+      setSaveState('saved');
+      return;
+    }
     state.dirty = true;
-    setSaveState('saving');
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(saveNow, 650);
+    setSaveState('dirty', '未保存 · 离开时保存');
   }
 
   async function saveNow() {
@@ -1029,7 +1058,6 @@
     if (!note || !state.dirty) return;
     const savingId = note.id;
     state.dirty = false;
-    clearTimeout(saveTimer);
     try {
       const updated = await api(`/api/notes/${note.id}`, {
         method: 'PATCH',
@@ -1039,7 +1067,11 @@
         },
       });
       Object.assign(note, updated);
-      if (state.selNote === savingId) setSaveState('saved');
+      /* 已经切到别的笔记时，别用旧笔记的快照覆盖新笔记的。 */
+      if (state.selNote === savingId) {
+        savedSnapshot = snapshot(note);
+        setSaveState('saved');
+      }
       renderList();
     } catch (e) {
       state.dirty = true;
@@ -1048,53 +1080,54 @@
     }
   }
 
-  /* 正文输入 */
+  /* 正文输入：只有真正输入才把编辑器内容与该编辑器对应的模式写回笔记。
+     用字面格式而非 viewFormat：内容来自哪个编辑器，数据格式就必须是哪个，
+     即使有外部代码误触了隐藏编辑器的 input 事件也不会产生格式错配。 */
   function onMdInput() {
     const note = currentNote();
     if (!note) return;
     note.content = $('#mdInput').value;
+    note.format = 'md';
     note.updatedAt = Date.now();
     refreshPreview();
     wordCount();
-    scheduleSave();
+    markDirty();
   }
 
   function onRichInput() {
     const note = currentNote();
     if (!note) return;
     note.content = $('#richPane').innerHTML;
+    note.format = 'rich';
     note.updatedAt = Date.now();
     wordCount();
-    scheduleSave();
+    markDirty();
   }
 
-  /* 格式切换 */
+  /* 编辑模式是视图状态，不是内容修改：切换时只在编辑器 DOM 里转换显示，
+     不写回 note、不标脏、不改 updatedAt。只有在新模式下真正输入，
+     onMdInput / onRichInput 才把内容与模式一起写回并标脏。
+     因此单纯切模式（含来回切）离开时不会产生保存 / 同步 / 时间戳变化。 */
   async function switchFormat(target) {
-    const note = currentNote();
-    if (!note || note.format === target) return;
+    if (!currentNote() || viewFormat === target) return;
     if (target === 'rich') {
-      note.content = renderMarkdown($('#mdInput').value);
-      note.format = 'rich';
-      $('#richPane').innerHTML = DOMPurify.sanitize(note.content);
+      $('#richPane').innerHTML = DOMPurify.sanitize(renderMarkdown($('#mdInput').value));
       $('#mdPane').classList.add('hidden');
       $('#richPane').classList.remove('hidden');
     } else {
-      note.content = td.turndown($('#richPane').innerHTML)
+      $('#mdInput').value = td.turndown($('#richPane').innerHTML)
         .replace(/- {3}\[([ xX])\]/g, '- [$1]')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
-      note.format = 'md';
-      $('#mdInput').value = note.content;
       $('#richPane').classList.add('hidden');
       $('#mdPane').classList.remove('hidden');
-      refreshPreview();
     }
-    applyFormat(note.format);
+    viewFormat = target;
+    applyFormat(viewFormat);
     renderToolbar();
-    if (note.format === 'md') refreshPreview();
+    if (viewFormat === 'md') refreshPreview();
     else decorateRichAttachments();
-    scheduleSave();
-    toast(note.format === 'md' ? '已转为 Markdown，可查看源码' : '已转为富文本，可所见即所得编辑');
+    toast(viewFormat === 'md' ? '已转为 Markdown，可查看源码' : '已转为富文本，可所见即所得编辑');
   }
 
   function decorateRichAttachments() {
@@ -1124,7 +1157,7 @@
       bar.appendChild(s);
     };
 
-    if (note.format === 'md') {
+    if (viewFormat === 'md') {
       // 视图切换（窄屏不提供分屏，两栏放不下）
       const narrow = NARROW();
       const cur = narrow && state.viewMode === 'split' ? 'edit' : state.viewMode;
@@ -1137,7 +1170,7 @@
         btn(v.icon, v.t, () => {
           state.viewMode = v.k;
           localStorage.setItem('sj_view', v.k);
-          applyFormat('md');
+          applyFormat(viewFormat);
           renderToolbar();
         }, cur === v.k ? 'active' : '');
       });
@@ -1747,7 +1780,7 @@
     const note = currentNote();
     if (!note) return;
     const isImg = /^image\//.test(a.type);
-    if (note.format === 'rich') {
+    if (viewFormat === 'rich') {
       const pane = $('#richPane');
       pane.focus();
       const html = isImg
@@ -1968,8 +2001,13 @@
   }
 
   function closeEditor() {
+    /* 收起编辑器也是「离开」：先落盘。删除笔记时该篇已从 state 移除，
+       saveNow 会因找不到当前笔记直接返回，不会对已删记录发 PATCH。 */
+    void saveNow();
     state.selNote = null;
     state.dirty = false;
+    savedSnapshot = '';
+    viewFormat = 'md';
     closeTagInput();
     const tl = $('#tagList');
     if (tl) tl.innerHTML = '';
@@ -2109,7 +2147,6 @@
       { label: '导出为 Word (.docx)', icon: I.doc, onClick: () => doExport('docx') },
       { label: '导出为 PDF（打印）', icon: I.eye, onClick: () => doExport('pdf') },
       { label: '导出为 Markdown (.md)', icon: I.code, onClick: () => doExport('md') },
-      { label: '导出全部为 PDF（合集）', icon: I.grid, onClick: () => { if (window.SJPdf) window.SJPdf.exportAll(); } },
       { label: '🔒 加密备份（.vault）', icon: I.lock || I.doc, onClick: () => { if (window.SJE2EE) window.SJE2EE.openPanel(); } },
     ]);
   }
@@ -2306,7 +2343,7 @@
     note.updatedAt = Date.now();
     renderTree();
     renderList();
-    scheduleSave();
+    markDirty();
     toast('已移动到该类别');
   });
 
@@ -2397,11 +2434,14 @@
     el.textContent = note ? (note.title || '无标题笔记') : ($('#listTitle').textContent || '拾笺');
   }
 
+  /* 返回菜单 / 打开列表 = 离开编辑页，脏数据在这里落盘。 */
   $('#mTreeBtn').addEventListener('click', () => {
+    void saveNow();
     if (document.body.classList.contains('m-tree')) closeDrawer();
     else openDrawer('tree');
   });
   $('#mListBtn').addEventListener('click', () => {
+    void saveNow();
     if (document.body.classList.contains('m-list')) closeDrawer();
     else openDrawer('list');
   });
@@ -2416,7 +2456,7 @@
     if (now !== wasNarrow) {
       wasNarrow = now;
       const note = currentNote();
-      if (note) { applyFormat(note.format); renderToolbar(); }
+      if (note) { applyFormat(viewFormat); renderToolbar(); }
     }
   });
 
@@ -2438,14 +2478,14 @@
     if (!note) return;
     note.title = e.target.value;
     note.updatedAt = Date.now();
-    scheduleSave();
+    markDirty();
     renderList();
   });
 
   $('#titleInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (currentNote() && currentNote().format === 'md') $('#mdInput').focus();
+      if (currentNote() && viewFormat === 'md') $('#mdInput').focus();
       else $('#richPane').focus();
     }
   });
@@ -2463,7 +2503,7 @@
     if (!note) return;
     note.starred = !note.starred;
     $('#starBtn').classList.toggle('on', note.starred);
-    scheduleSave();
+    markDirty();
     renderTree();
     renderList();
     toast(note.starred ? '已加入收藏' : '已取消收藏');
@@ -2639,7 +2679,7 @@
     if (mod && (e.key === 'b' || e.key === 'i')) {
       const note = currentNote();
       if (!note) return;
-      if (note.format === 'md') {
+      if (viewFormat === 'md') {
         e.preventDefault();
         wrapSel(e.key === 'b' ? '**' : '*', e.key === 'b' ? '**' : '*', e.key === 'b' ? '粗体' : '斜体');
       }
@@ -2651,13 +2691,14 @@
     }
   });
 
-  /* 自动保存兜底 */
-  window.addEventListener('beforeunload', (e) => {
-    if (state.dirty) {
-      saveNow();
-      e.preventDefault();
-      e.returnValue = '';
-    }
+  /* 关页 / 切后台兜底：编辑期间没有定时写盘，这几个事件是最后的落盘机会。
+     手机端 beforeunload 常不触发，pagehide 与 visibilitychange 必须都挂；
+     不再弹原生确认框——内容已经自动存了，弹框只会挡住用户。 */
+  const saveOnHide = () => { if (state.dirty) void saveNow(); };
+  window.addEventListener('beforeunload', saveOnHide);
+  window.addEventListener('pagehide', saveOnHide);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveOnHide();
   });
 
   $('#modalRoot').addEventListener('click', (e) => {
@@ -2686,7 +2727,7 @@
 
   boot();
 
-  // 供增强模块（fts/backlinks/diffview/pdfexport/conflict/e2ee）与同步模块调用
+  // 供增强模块（fts/backlinks/diffview/conflict/e2ee）与同步模块调用
   window.SJNotes = () => state.notes;
   window.SJState = state;
   window.SJApi = api;

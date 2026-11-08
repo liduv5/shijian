@@ -612,7 +612,7 @@
         } else {
           note.tags = [...tags, value];
           note.updatedAt = Date.now();
-          scheduleSave();
+          markDirty();
           renderNoteTags();
           renderTags();
           renderList();
@@ -627,7 +627,7 @@
     if (!note) return;
     note.tags = (note.tags || []).filter((t) => t !== tag);
     note.updatedAt = Date.now();
-    scheduleSave();
+    markDirty();
     renderNoteTags();
     renderTags();
     renderList();
@@ -942,11 +942,34 @@
     $('#wordCount').textContent = `${t.length} 字`;
   }
 
+  /* 旧云端数据漏写 format 时，富文本正文会被当成 Markdown 显示成源码。
+     这个特征只用于 format 缺失/非法的兜底：Markdown 里内联 <img> 是合法写法
+     （富文本转 Markdown 会保留宽度），不能再凭它把 md 判回 rich。 */
+  function looksRichContent(content) {
+    return typeof content === 'string'
+      && /<img\s[^>]*src=["'](?:\/api\/files\/|data:image\/)/i.test(content);
+  }
+
   function openNote(id, { focusTitle = false } = {}) {
+    /* 离开当前笔记：先把脏数据落盘，再切换选中项。所有打开笔记的路径
+       （列表、搜索、双链、外部调用）都会经过这里，不用逐个补钩子。 */
+    if (state.selNote && state.selNote !== id) void saveNow();
     const note = noteById(id);
     if (!note) return;
+    /* 崩溃恢复标记：正常跑完会在函数末尾清掉。若上次打开这篇时
+       渲染卡死 / 抛异常，标记会留下，下次启动就跳过它，保证能进应用。 */
+    try { localStorage.setItem('sj_opening_note', String(id)); } catch (_) {}
+    /* 运行时兜底：local.js 已在读取入口批量修过，这里再兜一层
+       （同步 setState 灌进来的数据不经过 load）。只处理 format 缺失的旧数据，
+       并把修正持久化。 */
+    if (note.format !== 'rich' && note.format !== 'md' && looksRichContent(note.content)) {
+      note.format = 'rich';
+      api(`/api/notes/${note.id}`, { method: 'PATCH', body: { format: 'rich' } }).catch(() => {});
+    }
     state.selNote = id;
     state.dirty = false;
+    savedSnapshot = snapshot(note);
+    viewFormat = note.format === 'rich' ? 'rich' : 'md';
 
     $('#emptyState').classList.add('hidden');
     $('#editorWrap').classList.remove('hidden');
@@ -954,17 +977,19 @@
     $('#titleInput').value = note.title || '';
     $('#starBtn').classList.toggle('on', !!note.starred);
 
-    $('#mdInput').value = note.format === 'rich' ? '' : note.content || '';
-    $('#richPane').innerHTML = note.format === 'rich' ? DOMPurify.sanitize(note.content || '') : '';
-    $('#richPane').classList.toggle('hidden', note.format !== 'rich');
-    $('#mdPane').classList.toggle('hidden', note.format !== 'md');
+    $('#mdInput').value = viewFormat === 'rich' ? '' : note.content || '';
+    $('#richPane').innerHTML = viewFormat === 'rich' ? DOMPurify.sanitize(note.content || '') : '';
+    $('#richPane').classList.toggle('hidden', viewFormat !== 'rich');
+    $('#mdPane').classList.toggle('hidden', viewFormat !== 'md');
 
     const cat = catMap().get(note.categoryId);
     $('#metaInfo').textContent = `${cat ? cat.name : '未分类'} ▾ · 创建于 ${fmtDate(note.createdAt)}`;
     setSaveState('', `已保存 ${new Date(note.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`);
 
-    applyFormat(note.format);
-    if (note.format === 'md') refreshPreview();
+    applyFormat(viewFormat);
+    /* Markdown 预览在手机端本来就是隐藏的，没必要在打开笔记的同步路径里
+       跑一遍 marked + DOMPurify。挪到下一个宏任务，先让首屏可交互。 */
+    if (viewFormat === 'md') setTimeout(() => refreshPreview(), 0);
     renderToolbar();
     renderAttachments();
     renderNoteTags();
@@ -979,6 +1004,7 @@
       $('#titleInput').focus();
       $('#titleInput').select();
     }
+    try { localStorage.removeItem('sj_opening_note'); } catch (_) {}
   }
 
   function applyFormat(format) {
@@ -997,22 +1023,34 @@
 
   function refreshPreview() {
     const note = currentNote();
-    if (!note || note.format !== 'md') return;
+    if (!note || viewFormat !== 'md') return;
     const html = renderMarkdown($('#mdInput').value);
     const pane = $('#previewPane');
     pane.innerHTML = html;
     decorate(pane);
   }
 
-  /* 保存 */
-  let saveTimer = null;
-  function scheduleSave() {
+  /* 保存：编辑期间只标脏、不写盘；离开编辑页时统一落盘。
+     快照用来识别「改完又改回原样」——内容和已存版本一致就不写盘。
+     编辑模式属于视图状态：切换只改显示，不写回笔记、不标脏。 */
+  let savedSnapshot = '';
+  /* 编辑器当前显示的模式，可能与笔记数据里的 format 不同。
+     只有在新模式下真正输入，内容与模式才一起写回笔记。 */
+  let viewFormat = 'md';
+  function snapshot(n) {
+    return JSON.stringify([n.title || '', n.content || '', n.format || 'md',
+      n.categoryId || null, !!n.starred, n.tags || []]);
+  }
+  function markDirty() {
     const note = currentNote();
     if (!note) return;
+    if (snapshot(note) === savedSnapshot) {
+      state.dirty = false;
+      setSaveState('saved');
+      return;
+    }
     state.dirty = true;
-    setSaveState('saving');
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(saveNow, 650);
+    setSaveState('dirty', '未保存 · 离开时保存');
   }
 
   async function saveNow() {
@@ -1020,7 +1058,6 @@
     if (!note || !state.dirty) return;
     const savingId = note.id;
     state.dirty = false;
-    clearTimeout(saveTimer);
     try {
       const updated = await api(`/api/notes/${note.id}`, {
         method: 'PATCH',
@@ -1030,7 +1067,11 @@
         },
       });
       Object.assign(note, updated);
-      if (state.selNote === savingId) setSaveState('saved');
+      /* 已经切到别的笔记时，别用旧笔记的快照覆盖新笔记的。 */
+      if (state.selNote === savingId) {
+        savedSnapshot = snapshot(note);
+        setSaveState('saved');
+      }
       renderList();
     } catch (e) {
       state.dirty = true;
@@ -1039,53 +1080,54 @@
     }
   }
 
-  /* 正文输入 */
+  /* 正文输入：只有真正输入才把编辑器内容与该编辑器对应的模式写回笔记。
+     用字面格式而非 viewFormat：内容来自哪个编辑器，数据格式就必须是哪个，
+     即使有外部代码误触了隐藏编辑器的 input 事件也不会产生格式错配。 */
   function onMdInput() {
     const note = currentNote();
     if (!note) return;
     note.content = $('#mdInput').value;
+    note.format = 'md';
     note.updatedAt = Date.now();
     refreshPreview();
     wordCount();
-    scheduleSave();
+    markDirty();
   }
 
   function onRichInput() {
     const note = currentNote();
     if (!note) return;
     note.content = $('#richPane').innerHTML;
+    note.format = 'rich';
     note.updatedAt = Date.now();
     wordCount();
-    scheduleSave();
+    markDirty();
   }
 
-  /* 格式切换 */
+  /* 编辑模式是视图状态，不是内容修改：切换时只在编辑器 DOM 里转换显示，
+     不写回 note、不标脏、不改 updatedAt。只有在新模式下真正输入，
+     onMdInput / onRichInput 才把内容与模式一起写回并标脏。
+     因此单纯切模式（含来回切）离开时不会产生保存 / 同步 / 时间戳变化。 */
   async function switchFormat(target) {
-    const note = currentNote();
-    if (!note || note.format === target) return;
+    if (!currentNote() || viewFormat === target) return;
     if (target === 'rich') {
-      note.content = renderMarkdown($('#mdInput').value);
-      note.format = 'rich';
-      $('#richPane').innerHTML = DOMPurify.sanitize(note.content);
+      $('#richPane').innerHTML = DOMPurify.sanitize(renderMarkdown($('#mdInput').value));
       $('#mdPane').classList.add('hidden');
       $('#richPane').classList.remove('hidden');
     } else {
-      note.content = td.turndown($('#richPane').innerHTML)
+      $('#mdInput').value = td.turndown($('#richPane').innerHTML)
         .replace(/- {3}\[([ xX])\]/g, '- [$1]')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
-      note.format = 'md';
-      $('#mdInput').value = note.content;
       $('#richPane').classList.add('hidden');
       $('#mdPane').classList.remove('hidden');
-      refreshPreview();
     }
-    applyFormat(note.format);
+    viewFormat = target;
+    applyFormat(viewFormat);
     renderToolbar();
-    if (note.format === 'md') refreshPreview();
+    if (viewFormat === 'md') refreshPreview();
     else decorateRichAttachments();
-    scheduleSave();
-    toast(note.format === 'md' ? '已转为 Markdown，可查看源码' : '已转为富文本，可所见即所得编辑');
+    toast(viewFormat === 'md' ? '已转为 Markdown，可查看源码' : '已转为富文本，可所见即所得编辑');
   }
 
   function decorateRichAttachments() {
@@ -1115,7 +1157,7 @@
       bar.appendChild(s);
     };
 
-    if (note.format === 'md') {
+    if (viewFormat === 'md') {
       // 视图切换（窄屏不提供分屏，两栏放不下）
       const narrow = NARROW();
       const cur = narrow && state.viewMode === 'split' ? 'edit' : state.viewMode;
@@ -1128,7 +1170,7 @@
         btn(v.icon, v.t, () => {
           state.viewMode = v.k;
           localStorage.setItem('sj_view', v.k);
-          applyFormat('md');
+          applyFormat(viewFormat);
           renderToolbar();
         }, cur === v.k ? 'active' : '');
       });
@@ -1746,7 +1788,7 @@
     const note = currentNote();
     if (!note) return;
     const isImg = /^image\//.test(a.type);
-    if (note.format === 'rich') {
+    if (viewFormat === 'rich') {
       const pane = $('#richPane');
       pane.focus();
       const html = isImg
@@ -1961,7 +2003,7 @@
         closeModal();
         note.categoryId = id;
         note.updatedAt = Date.now();
-        scheduleSave();
+        markDirty();
         renderTree();
         renderList();
         const cat = catMap().get(id);
@@ -1998,8 +2040,13 @@
   }
 
   function closeEditor() {
+    /* 收起编辑器也是「离开」：先落盘。删除笔记时该篇已从 state 移除，
+       saveNow 会因找不到当前笔记直接返回，不会对已删记录发 PATCH。 */
+    void saveNow();
     state.selNote = null;
     state.dirty = false;
+    savedSnapshot = '';
+    viewFormat = 'md';
     closeTagInput();
     const tl = $('#tagList');
     if (tl) tl.innerHTML = '';
@@ -2341,7 +2388,7 @@
     note.updatedAt = Date.now();
     renderTree();
     renderList();
-    scheduleSave();
+    markDirty();
     toast('已移动到该类别');
   });
 
@@ -2435,12 +2482,19 @@
     el.textContent = note ? (note.title || '无标题笔记') : ($('#listTitle').textContent || '拾笺');
   }
 
+  /* 返回菜单 / 打开列表 = 离开编辑页，脏数据在这里落盘。 */
   $('#mTreeBtn').addEventListener('click', () => {
+    void saveNow();
     if (document.body.classList.contains('m-tree')) closeDrawer();
     else openDrawer('tree');
   });
-  /* 原先右侧的「笔记列表」按钮与左侧目录按钮功能接近、显得重复，
-     改为更常用的「新建笔记」操作，左侧目录里点任意分类依旧会滑出笔记列表。 */
+  /* 「笔记列表」是打开笔记后的返回出口：手机端三栏收成抽屉，
+     没有这个按钮用户会被困在编辑页，只能靠目录里的分类绕回去。 */
+  $('#mListBtn').addEventListener('click', () => {
+    void saveNow();
+    if (document.body.classList.contains('m-list')) closeDrawer();
+    else openDrawer('list');
+  });
   $('#mNewBtn').addEventListener('click', () => createNote());
   $('#mMask').addEventListener('click', closeDrawer);
 
@@ -2459,7 +2513,7 @@
     if (now !== wasNarrow) {
       wasNarrow = now;
       const note = currentNote();
-      if (note) { applyFormat(note.format); renderToolbar(); }
+      if (note) { applyFormat(viewFormat); renderToolbar(); }
     }
   });
 
@@ -2481,14 +2535,14 @@
     if (!note) return;
     note.title = e.target.value;
     note.updatedAt = Date.now();
-    scheduleSave();
+    markDirty();
     renderList();
   });
 
   $('#titleInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (currentNote() && currentNote().format === 'md') $('#mdInput').focus();
+      if (currentNote() && viewFormat === 'md') $('#mdInput').focus();
       else $('#richPane').focus();
     }
   });
@@ -2506,7 +2560,7 @@
     if (!note) return;
     note.starred = !note.starred;
     $('#starBtn').classList.toggle('on', note.starred);
-    scheduleSave();
+    markDirty();
     renderTree();
     renderList();
     toast(note.starred ? '已加入收藏' : '已取消收藏');
@@ -2724,7 +2778,7 @@
     if (mod && (e.key === 'b' || e.key === 'i')) {
       const note = currentNote();
       if (!note) return;
-      if (note.format === 'md') {
+      if (viewFormat === 'md') {
         e.preventDefault();
         wrapSel(e.key === 'b' ? '**' : '*', e.key === 'b' ? '**' : '*', e.key === 'b' ? '粗体' : '斜体');
       }
@@ -2736,13 +2790,14 @@
     }
   });
 
-  /* 自动保存兜底 */
-  window.addEventListener('beforeunload', (e) => {
-    if (state.dirty) {
-      saveNow();
-      e.preventDefault();
-      e.returnValue = '';
-    }
+  /* 关页 / 切后台兜底：编辑期间没有定时写盘，这几个事件是最后的落盘机会。
+     手机端 beforeunload 常不触发，pagehide 与 visibilitychange 必须都挂；
+     不再弹原生确认框——内容已经自动存了，弹框只会挡住用户。 */
+  const saveOnHide = () => { if (state.dirty) void saveNow(); };
+  window.addEventListener('beforeunload', saveOnHide);
+  window.addEventListener('pagehide', saveOnHide);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveOnHide();
   });
 
   $('#modalRoot').addEventListener('click', (e) => {
@@ -2757,7 +2812,14 @@
     /* 手机端附件二进制存在 IndexedDB，先把索引读进内存再渲染，
        否则首屏的图片拿不到地址、只会显示文件名。 */
     if (window.SJLocal && window.SJLocal.ready) {
-      try { await window.SJLocal.ready; } catch (_) {}
+      /* ready 可能永不 resolve（其他标签页 / 升级事务），最多等 1.5 秒，
+         附件仓随后按需补读，界面必须先出来。 */
+      try {
+        await Promise.race([
+          window.SJLocal.ready,
+          new Promise((r) => setTimeout(r, 1500)),
+        ]);
+      } catch (_) {}
     }
     try {
       const data = await api('/api/state');
@@ -2773,10 +2835,23 @@
 
     /* 同步拉取后要重渲染一次：优先留在用户原本正在看的那篇，
        找不到（被删）才退回最近修改的一篇。 */
+    let stuck = '';
+    try {
+      stuck = localStorage.getItem('sj_opening_note') || '';
+      localStorage.removeItem('sj_opening_note');
+    } catch (_) {}
     const want = keepId || state.selNote;
-    const first = state.notes.slice().sort((a, b) => b.updatedAt - a.updatedAt)[0];
-    const target = (want && state.notes.find((n) => n.id === want)) || first;
+    const sorted = state.notes.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+    let target = (want && state.notes.find((n) => n.id === want)) || sorted[0];
+    /* 上次启动卡在某一篇笔记的渲染里：这次跳过它，宁可停在列表也不让用户
+       每次重开都落在同一张「点不动」的页面上。清标记后恢复正常使用。 */
+    if (stuck && target && target.id === stuck) {
+      const bad = state.notes.find((n) => n.id === stuck);
+      target = sorted.find((n) => n.id !== stuck) || null;
+      toast('上次打开「' + ((bad && bad.title) || '一篇笔记') + '」没完成，已跳过；可在列表里删除它');
+    }
     if (target) openNote(target.id);
+    else $('#statText').textContent = `${state.notes.length} 篇 · ${state.categories.length} 个类别`;
     if (window.SJLocal) window.SJLocal.watchFiles();
   }
 

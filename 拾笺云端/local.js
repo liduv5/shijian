@@ -28,12 +28,28 @@
     } catch (e) {
       console.warn('读取本地数据失败', e);
     }
+    /* 旧云端数据漏写 format，富文本正文才会被当成 Markdown 显示成源码。
+       只在 format 缺失/非法时兜底；format 已是 md 的笔记（含用户主动从
+       富文本转过来、正文合法保留内联 <img> 的）必须尊重字段，否则会把
+       用户刚做的格式转换又改回去。 */
+    let healed = 0;
+    db.notes.forEach((n) => {
+      if (n && n.format !== 'rich' && n.format !== 'md' && looksRichContent(n.content)) {
+        n.format = 'rich'; healed++;
+      }
+    });
+    if (healed) save();
     purgeExpiredTrash();
   }
-  /* 落 localStorage 之前把附件的二进制摘出去。
-     data 有 3～8MB/张，留在 LS 里必然爆 5MB 配额，且失败静默——
-     这正是「手机端正文只显示图片名」的根因。现在二进制进 IndexedDB，
-     LS 只留 id/name/size/type/path，体积可忽略。 */
+
+  /* 富文本编辑器插入的图片固定写成 <img src="/api/files/…> 或 data:image/…。
+     只在 format 缺失/非法时用它兜底，不推翻明确的 format 字段。 */
+  function looksRichContent(content) {
+    return typeof content === 'string'
+      && /<img\s[^>]*src=["'](?:\/api\/files\/|data:image\/)/i.test(content);
+  }
+  /* 二进制进 IndexedDB，localStorage 只留附件元信息：
+     data 单张 3～8MB，写进 LS 必爆 5MB 配额且失败静默。 */
   const stored = new Set();   // 已确认写进附件仓的 id，避免每次 save 重复落库
   const pending = new Map();  // 正在写附件仓的数据，flushAtt / 上传时等它
   function stash(id, data) {
@@ -189,54 +205,87 @@
     return remotePath.get(id) || '';
   }
 
+  /* 附件仓读取兜底：Open 事件被手机浏览器吞掉时 ensureUrl 会一直挂着。
+     2.5 秒读不到就当本机没有这份图；读到后立刻清掉定时器，别让每次渲染
+     都在事件循环里留一个 2.5s 的尾巴。 */
+  function ensureUrlQuick(id) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => {
+        if (done) return;
+        done = true; clearTimeout(timer); resolve(v || '');
+      };
+      const timer = setTimeout(() => finish(''), 2500);
+      Promise.resolve().then(() => ensureUrl(id)).then(finish, () => finish(''));
+    });
+  }
+
   let paintTimer = 0;
-  /* 注意用 throttle 而不是 debounce：页面渲染时 DOM 变动很密集，
-     debounce 会一直被重置、永远等不到执行，图片就一直是原始地址。 */
+  let painting = false;
+  /* throttle 而不是 debounce：页面渲染 DOM 变动密集，debounce 会被一直重置。
+     painting 闸门要覆盖整段异步流程 —— paintTimer 在回调开始就清零，
+     不加锁的话 await 期间每次 DOM 变动都会再堆一个补图任务。 */
   function paintFiles() {
-    if (paintTimer) return;
+    if (paintTimer || painting) return;
     paintTimer = setTimeout(async () => {
       paintTimer = 0;
-      const els = [...document.querySelectorAll('[src^="/api/files/"], [href^="/api/files/"]')];
-      for (const el of els) {
-        if (el.tagName === 'IMG' && !el.dataset.imgBound) {
-          /* 签名地址过期 / 二进制丢了时浏览器只会显示一个破图图标，
-             这里换成一句人话，用户才知道点哪里。 */
-          el.dataset.imgBound = '1';
-          el.addEventListener('error', () => {
-            el.classList.add('img-missing');
-            el.setAttribute('alt', '图片没有加载成功，点右上「同步」→「从云端拉取」');
-          });
-          el.addEventListener('load', () => el.classList.remove('img-missing'));
-        }
-        const raw = el.getAttribute('src') || el.getAttribute('href');
-        const id = raw.split('/').pop();
-        const url = await ensureUrl(id);
-        if (!url) {
-          /* 本机没有这份二进制（老旧数据 / 上次同步没拉下来）：
-             别让浏览器只显示一串文件名，给一句能看懂的话。 */
-          if (el.tagName === 'IMG') {
-            el.setAttribute('alt', '图片暂未下载，点右上「同步」→「从云端拉取」');
-            el.classList.add('img-missing');
-          }
-          continue;
-        }
-        if (el.hasAttribute('src')) el.setAttribute('src', url);
-        else {
-          el.setAttribute('href', url);
-          el.setAttribute('target', '_blank');
-          el.setAttribute('rel', 'noopener');
-        }
-      }
+      if (painting) return;
+      painting = true;
+      try { await doPaint(); } finally { painting = false; }
     }, 60);
+  }
+
+  async function doPaint() {
+    const els = [...document.querySelectorAll('[src^="/api/files/"], [href^="/api/files/"]')];
+    for (const el of els) {
+      if (el.tagName === 'IMG' && !el.dataset.imgBound) {
+        /* 签名地址过期 / 二进制丢了时浏览器只会显示一个破图图标，
+           这里换成一句人话，用户才知道点哪里。 */
+        el.dataset.imgBound = '1';
+        el.addEventListener('error', () => {
+          el.classList.add('img-missing');
+          el.setAttribute('alt', '图片没有加载成功，点右上「同步」→「从云端拉取」');
+        });
+        el.addEventListener('load', () => el.classList.remove('img-missing'));
+      }
+      const raw = el.getAttribute('src') || el.getAttribute('href');
+      const id = raw.split('/').pop();
+      const url = await ensureUrlQuick(id);
+      if (!url) {
+        /* 本机没有这份二进制（老旧数据 / 上次同步没拉下来）：
+           别让浏览器只显示一串文件名，给一句能看懂的话。
+           打标记只处理一次 —— src 仍是 /api/files/，选择器每次都会命中它，
+           不去重的话每次 DOM 变动都要再查一遍附件仓。 */
+        if (el.dataset.attMissing === '1') continue;
+        el.dataset.attMissing = '1';
+        if (el.tagName === 'IMG') {
+          el.setAttribute('alt', '图片暂未下载，点右上「同步」→「从云端拉取」');
+          el.classList.add('img-missing');
+        }
+        continue;
+      }
+      delete el.dataset.attMissing;
+      /* 只有地址真的变了才写回，避免无谓的 DOM 操作和重复加载图片。 */
+      if (el.hasAttribute('src')) {
+        if (el.getAttribute('src') !== url) el.setAttribute('src', url);
+      } else if (el.getAttribute('href') !== url) {
+        el.setAttribute('href', url);
+        el.setAttribute('target', '_blank');
+        el.setAttribute('rel', 'noopener');
+      }
+    }
   }
   let watching = false;
   function watchFiles() {
     paintFiles();
     if (watching || !window.MutationObserver) return;
     watching = true;
-    new MutationObserver(paintFiles).observe(document.body, {
-      childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'href'],
-    });
+    /* 只认「新插入的节点」。doPaint 自己会 setAttribute('src', 地址)，
+       若同时监听 attributes，等于自己改完自己再触发一次 → 无限自激：
+       手机端表现为格式切换后主线程冻结、一直「保存中…」。 */
+    new MutationObserver((records) => {
+      if (records.some((r) => r.type === 'childList' && r.addedNodes.length)) paintFiles();
+    }).observe(document.body, { childList: true, subtree: true });
   }
 
   function descendants(cats, id) {

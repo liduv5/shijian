@@ -634,6 +634,7 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
 }
 .save-state.saving::before { background: var(--star); opacity: 1; }
 .save-state.saved::before { background: var(--accent); opacity: 1; }
+.save-state.dirty::before { background: var(--star); opacity: .85; }
 .word-count { font-variant-numeric: tabular-nums; }
 
 /* 工具栏 */
@@ -1443,6 +1444,13 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
     border-bottom: 1px solid var(--border);
   }
   .m-bar .icon-btn { flex: 0 0 auto; min-width: 42px; min-height: 42px; }
+  /* 「← 列表」带文字，与「目录」的三条横线明确区分，是手机端返回出口。 */
+  .m-bar .icon-btn.m-back {
+    width: auto; min-width: 0; padding: 0 8px 0 4px; gap: 2px;
+    display: inline-flex; align-items: center;
+    color: var(--accent, var(--text));
+  }
+  .m-back-label { font-size: 12px; font-weight: 600; white-space: nowrap; }
   .m-bar-title {
     flex: 1; min-width: 0; text-align: center;
     font-family: "Microsoft YaHei", "微软雅黑", "PingFang SC", "HarmonyOS Sans SC",
@@ -1698,6 +1706,8 @@ body.auth-locked .m-mask { display: none !important; }
 .sync-panel {
   position: fixed; right: 16px; bottom: 16px; z-index: 1200;
   width: 320px; max-width: calc(100vw - 32px);
+  /* 手机屏幕矮：登录表单一屏放不下时内部滚动，否则「设置同步口令」会被挤到屏幕外 */
+  max-height: calc(100dvh - 32px); overflow-y: auto;
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-lg); box-shadow: 0 18px 50px rgba(40, 33, 22, .22);
   padding: 16px; color: var(--text);
@@ -2270,6 +2280,38 @@ body.m-list .pwa-tip {
 .e2ee-row { margin-bottom: 10px; }
 .e2ee-file { font-size: 13px; color: var(--text-2); display: block; }
 .e2ee-msg { font-size: 12.5px; margin-top: 6px; min-height: 16px; }
+
+/* ===== 同步面板：验证码 / 口令 两种登录方式 ===== */
+.auth-tabs { display: flex; gap: 6px; margin: 10px 0 4px; }
+.auth-tab {
+  flex: 1; padding: 8px 0;
+  border: 1px solid var(--border); border-radius: 9px;
+  background: var(--surface); color: var(--text-2);
+  font: inherit; font-size: 13px; cursor: pointer;
+}
+.auth-tab.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.auth-hint { font-size: 12px; color: var(--text-3); margin: 10px 2px 0; line-height: 1.6; }
+.auth-hint a { color: var(--accent); cursor: pointer; }
+/* 同步面板底部的版本 / 阶段诊断，浅色小字，不抢视觉但截图能看清 */
+.sync-diag {
+  margin: 14px 0 0; padding-top: 10px; border-top: 1px solid var(--border, rgba(0,0,0,.08));
+  font-size: 11px; line-height: 1.5; color: var(--text-3); text-align: center;
+  word-break: break-all; opacity: .8; user-select: text;
+}
+/* 表单里的输入框不在 .auth-row 内，需显式撑满宽度 */
+#pwdBox .auth-input, .modal.pwd-box .auth-input {
+  width: 100%; box-sizing: border-box; display: block;
+}
+
+/* 设置同步口令：窄弹窗（打开前会先收起同步面板，避免被高层级面板盖住） */
+.modal.pwd-box {
+  width: min(380px, calc(100vw - 32px));
+  padding: 0; overflow: hidden;
+  display: flex; flex-direction: column;
+  max-height: min(560px, calc(100vh - 48px));
+}
+.modal.pwd-box .e2ee-body { overflow-y: auto; }
+.modal.pwd-box .auth-label { margin-top: 0; }
 
 /* 链接即口令提示 */
 .pwd-tip { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9000; display: flex; align-items: center; gap: 12px;

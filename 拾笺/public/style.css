@@ -634,6 +634,7 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
 }
 .save-state.saving::before { background: var(--star); opacity: 1; }
 .save-state.saved::before { background: var(--accent); opacity: 1; }
+.save-state.dirty::before { background: var(--star); opacity: .85; }
 .word-count { font-variant-numeric: tabular-nums; }
 
 /* 工具栏 */
@@ -1943,8 +1944,5 @@ img.sj-img-picked {
 .pwd-tip button { flex: none; border: 0; background: rgba(255,255,255,.18); color: #fff; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
 .pwd-tip button:hover { background: rgba(255,255,255,.3); }
 
-/* PDF 合集打印 */
-.pdf-cover { text-align: center; margin: 40px 0; }
-.pdf-note { page-break-inside: avoid; margin-bottom: 24px; }
-.pdf-meta { color: #888; font-size: 12px; margin: 4px 0 10px; }
+/* 打印区：单篇导出 PDF / Word 使用 */
 #printArea { display: none; }

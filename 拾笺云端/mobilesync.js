@@ -19,9 +19,57 @@
   const $ = (s, r) => (r || document).querySelector(s);
   const LS_EMAIL = 'sj_cloud_session_email';
   const LS_LAST = 'sj_last_sync';
+  /* 每次发布都改这个号（在下方诊断段统一定义）。面板底部会显示出来，
+     用户截图就能确认手机跑的是哪一版，不用再靠「连开两次」猜 SW 缓存。 */
+  const TRACE_KEY = 'sj_sync_trace';
+  const BUILD = '2026-11-08-4';
   let session = null;
   let pendingOtp = null;
   let cooldownTimer = null;
+
+  /* 阶段诊断：每步写 localStorage，同步期间显示「当前步骤 · 已等 Ns」。
+     秒数涨而步骤不动 = 网络挂起；秒数不涨 = 主线程被冻结。 */
+  let currentStep = '';
+  let diagClock = 0;
+  let diagStarted = 0;
+  function paintDiag() {
+    const el = $('#syncDiag');
+    if (!el) return;
+    const sec = diagClock ? Math.max(0, Math.round((Date.now() - diagStarted) / 1000)) : 0;
+    el.textContent = '版本 ' + BUILD + ' · 当前：' + currentStep
+      + (diagClock ? ' · 已等 ' + sec + 's' : '');
+  }
+  function stopDiagClock() {
+    if (diagClock) { clearInterval(diagClock); diagClock = 0; }
+  }
+  function startDiagClock(started) {
+    stopDiagClock();
+    diagStarted = started;
+    diagClock = setInterval(paintDiag, 1000);
+  }
+  function trace(step) {
+    currentStep = step;
+    const line = step + ' · ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    try { localStorage.setItem(TRACE_KEY, line); } catch (_) {}
+    paintDiag();   /* 每一步立刻可见，不等下一个整秒 */
+  }
+  function diagText() {
+    let last = '';
+    try { last = localStorage.getItem(TRACE_KEY) || ''; } catch (_) {}
+    return '版本 ' + BUILD + (last ? ' · 上次停在：' + last : '');
+  }
+
+  /* 直接灌进界面数据源（window.SJState 是 app.js 内 state 的同一引用），
+     调 SJRefresh 更新统计/树/列表，不依赖可能被 IndexedDB 就绪卡住的 boot()。 */
+  function refreshFromLocal(cats, notes) {
+    try {
+      if (!window.SJState || !window.SJRefresh) return false;
+      window.SJState.categories = cats;
+      window.SJState.notes = notes;
+      window.SJRefresh();
+      return true;
+    } catch (_) { return false; }
+  }
 
   function normSession(r) {
     if (!r) return null;
@@ -48,8 +96,7 @@
   function friendly(error) {
     if (!error) return '操作失败，请稍后再试';
     if (typeof error === 'string') return error;
-    /* 云端 API 出错时返回的是 { error, error_description }，没有 message 字段。
-       以前一律吞成「操作失败，请稍后再试」，用户和开发者都看不出原因。 */
+    /* 云端 API 返回 { error, error_description }，没有 message 字段。 */
     const kind = error.kind || error.code || error.error || '';
     if (kind === 'network') return '网络连接失败，请检查网络';
     if (kind === 'too_many_requests') return '操作太频繁，请稍后再试';
@@ -63,6 +110,65 @@
   }
   function escapeHtml(s) {
     return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+
+  /* 手机弱网、浏览器切后台、IndexedDB 被别的标签页堵住时，fetch / IDB 都可能
+     永远不 settle。同步里任何一处 await 没有超时，整场拉取就会永久停在
+     「拉取中…」（用户看到的就是进度不动、按钮一直禁用）。
+     统一约定：超时或报错都按「失败」处理，返回 fallback，绝不阻塞后续步骤。
+     p 可以是 Promise，也可以是无参函数（函数形式能连同步抛错一起兜住）。 */
+  function withTimeout(p, ms, fallback) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve(fallback);
+      }, ms);
+      Promise.resolve()
+        .then(() => (typeof p === 'function' ? p() : p))
+        .then(
+          (v) => { if (!settled) { settled = true; clearTimeout(timer); resolve(v); } },
+          () => { if (!settled) { settled = true; clearTimeout(timer); resolve(fallback); } }
+        );
+    });
+  }
+
+  /* ---------------------------------------------------------- 云端读取（直连优先）
+     用浏览器原生 AbortSignal.timeout 计时（不依赖可能被手机冻结的 JS 定时器），
+     老浏览器退回 AbortController；直连失败才回退 SDK。
+     走页面同源可省掉跨域预检，重新发布换域名也不用改代码。 */
+  const REST_BASE = (typeof location !== 'undefined' && location.origin) ? location.origin : '';
+  const REST_PK = 'wbpk_dI8FNrfPPUj38F8big7tnc_ppkTgPWXNyg4hg2VzRPCDCwMgQT2Qft7';
+  async function restRead(table, owner) {
+    const token = await withTimeout(() => gcToken(), 4000, '');
+    let signal, kill = null;
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      signal = AbortSignal.timeout(8000);
+    } else {
+      const ctrl = new AbortController();
+      signal = ctrl.signal;
+      kill = setTimeout(() => ctrl.abort(), 8000);
+    }
+    try {
+      const url = REST_BASE + '/.cloud/database/rest/' + table
+        + '?select=*&owner_id=eq.' + encodeURIComponent(owner);
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          Authorization: 'Bearer ' + token,
+          'x-wb-webapp-access-key': REST_PK,
+        },
+        signal,
+      });
+      if (!res || !res.ok) throw new Error('HTTP ' + (res ? res.status : '未知'));
+      const rows = await res.json();
+      if (!Array.isArray(rows)) throw new Error('云端返回格式不对');
+      return { data: rows, error: null };
+    } finally {
+      if (kill) clearTimeout(kill);
+    }
   }
 
   /* ---------------------------------------------------------- 行转换（云端 schema） */
@@ -109,11 +215,24 @@
     }
     return [];
   }
+  /* 早期云端数据漏列 format 时，富文本正文会在 Markdown 编辑器里显示成源码。
+     这个特征只在 format 缺失时兜底 —— Markdown 里内联 <img> 是合法写法，
+     不能再凭它推翻明确的 format 字段。 */
+  function looksRichContent(content) {
+    return typeof content === 'string'
+      && /<img\s[^>]*src=["'](?:\/api\/files\/|data:image\/)/i.test(content);
+  }
   function rowToNote(r) {
     const att = parseAtts(r.attachments);
+    /* format 明确时以字段为准：用户主动「富文本 → Markdown」后正文会合法
+       保留内联 <img>，不能再按内容把这类笔记判回 rich。只有旧数据漏列
+       （format 缺失）时才按内容兜底。 */
+    const fmt = (r.format === 'rich' || r.format === 'md')
+      ? r.format
+      : (looksRichContent(r.content) ? 'rich' : 'md');
     return {
       id: r.id, title: r.title, content: r.content,
-      format: r.format === 'rich' ? 'rich' : 'md',
+      format: fmt,
       categoryId: r.category_key || null, starred: !!r.starred,
       tags: Array.isArray(r.tags) ? r.tags : [], attachments: att,
       createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),
@@ -145,8 +264,8 @@
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         const ext = (a.name.match(/\.[A-Za-z0-9]{1,10}$/) || [''])[0];
         const path = cloud.storage.userPath(owner, `notes/${a.id}${ext}`);
-        const up = await cloud.storage.upload(path, new Blob([bytes], { type: a.type || 'application/octet-stream' }), { contentType: a.type, upsert: true });
-        if (up && up.error) throw new Error(up.error.message || '上传失败');
+        await attUploadRaw(path,
+          new Blob([bytes], { type: a.type || 'application/octet-stream' }), a.type);
         meta.path = path;
         out.push(meta);
       } catch (e) {
@@ -171,42 +290,116 @@
     return d.signedUrl || d.signedURL || d.url || '';
   }
 
-  /* 取云端一份附件，三条路依次退：
-     ① SDK 的 download(path)：带鉴权、同源 API，不受存储桶 CORS 与签名过期影响；
-     ② 签名地址 + fetch；
-     ③ 只剩签名地址（<img src> 不校验 CORS，至少能显示）。 */
+  /* 网络超时优先用浏览器原生的 AbortSignal.timeout：手机切后台时 JS 定时器
+     会被冻结，只有原生 signal 能真的把请求断掉。老浏览器退回 AbortController。 */
+  function timeoutSignal(ms) {
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      return AbortSignal.timeout(ms);
+    }
+    if (typeof AbortController !== 'undefined') {
+      const c = new AbortController();
+      setTimeout(() => { try { c.abort(); } catch (_) {} }, ms);
+      return c.signal;
+    }
+    return undefined;
+  }
+  /* 上传 / 下载都走页面同源的存储网关：与文字读取同一套鉴权、同一域名，
+     不经过 SDK 的跨域请求，也就不会撞上 CORS 白名单不放行的自定义头。 */
+  async function restDownload(att) {
+    const token = await withTimeout(() => gcToken(), 4000, '');
+    if (!token) return { why: '登录状态已失效' };
+    let res;
+    try {
+      res = await fetch(REST_BASE + '/.cloud/storage/object/runtime/' + att.path, {
+        headers: { Authorization: 'Bearer ' + token, 'x-wb-webapp-access-key': REST_PK },
+        signal: timeoutSignal(10000),
+      });
+    } catch (e) { return { why: (e && (e.name || e.message)) || '网络错误' }; }
+    if (!res.ok) return { why: 'HTTP ' + res.status };
+    try {
+      const blob = await res.blob();
+      if (!blob || !blob.size) return { why: '空文件' };
+      const data = await blobToDataUrl(blob);
+      return data ? { data } : { why: '转码失败' };
+    } catch (e) { return { why: (e && (e.name || e.message)) || '读取中断' }; }
+  }
+  /* 附件不可变（id 唯一），不需要 upsert；SDK 的 upload 会带 x-upsert，
+     存储网关的 CORS 预检不放行这个头，所以按对象路径自己发。 */
+  async function attUploadRaw(path, blob, type) {
+    const token = await withTimeout(() => gcToken(), 4000, '');
+    if (!token) throw new Error('登录状态已失效');
+    const url = REST_BASE + '/.cloud/storage/object/runtime/' + path;
+    const base = { Authorization: 'Bearer ' + token, 'x-wb-webapp-access-key': REST_PK };
+    let last = '';
+    try {
+      const fd = new FormData();
+      fd.append('', blob, String(path).split('/').pop() || 'file');
+      const r = await fetch(url, {
+        method: 'POST', headers: base, body: fd, signal: timeoutSignal(15000),
+      });
+      if (r.ok) return true;
+      const txt = await r.text().catch(() => '');
+      if (/exist|duplicate|already/i.test(txt)) return true;
+      last = 'POST ' + r.status + ' ' + txt.slice(0, 80);
+    } catch (e) { last = 'POST ' + ((e && e.message) || '网络错误'); }
+    const r2 = await fetch(url, {
+      method: 'PUT',
+      headers: Object.assign({ 'Content-Type': type || 'application/octet-stream' }, base),
+      body: blob, signal: timeoutSignal(15000),
+    });
+    if (r2.ok) return true;
+    throw new Error(last + ' / PUT ' + r2.status);
+  }
+
+  /* 取云端一份附件，四条路依次退：
+     ① 同源 REST 直连 GET；② SDK download；③ 签名地址 + fetch；
+     ④ 只剩签名地址（<img src> 不校验 CORS，至少能显示）。
+     每步各自限时；外层不再用比内部累计更短的硬超时把成功结果丢掉。 */
+  const ATT_MS = 8000;
+  const SIGN_MS = 3000;
   async function pullAttachment(att) {
-    if (!att || !att.path) return att;
+    if (!att || !att.path) return { why: '缺少云端路径' };
+    const why = [];
+
+    const d = await restDownload(att);
+    if (d.data) return { data: d.data, via: '直连' };
+    why.push('直连 ' + d.why);
 
     try {
-      const r = await cloud.storage.download(att.path);
+      const r = await withTimeout(() => cloud.storage.download(att.path), ATT_MS, null);
       if (r && r.data && r.data.size) {
-        return Object.assign({}, att, { data: await blobToDataUrl(r.data) });
+        const data = await withTimeout(() => blobToDataUrl(r.data), ATT_MS, '');
+        if (data) return { data, via: '组件' };
       }
-    } catch (e) { /* 换签名地址 */ }
+      why.push('组件 ' + ((r && r.error && r.error.message) || '无数据'));
+    } catch (e) { why.push('组件 ' + ((e && e.message) || '异常')); }
 
     let url = '';
     try {
-      url = signedUrlOf(await cloud.storage.createSignedUrl(att.path, 3600));
-    } catch (e) {
-      return att;
-    }
-    if (!url) return att;
+      const signed = await withTimeout(
+        () => cloud.storage.createSignedUrl(att.path, 3600), SIGN_MS, null);
+      url = signedUrlOf(signed);
+    } catch (e) { why.push('签名 ' + ((e && e.message) || '异常')); }
+    if (!url) return { why: why.join(' / ') };
+
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: timeoutSignal(ATT_MS) });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const blob = await res.blob();
-      if (!blob.size) throw new Error('空文件');
-      return Object.assign({}, att, { data: await blobToDataUrl(blob) });
+      if (!blob || !blob.size) throw new Error('空文件');
+      const data = await blobToDataUrl(blob);
+      if (!data) throw new Error('转码失败');
+      return { data, via: '签名直取' };
     } catch (e) {
-      return Object.assign({}, att, { remoteUrl: url });
+      return {
+        remoteUrl: url, via: '签名地址',
+        why: why.join(' / ') + ' / 签名取图 ' + ((e && (e.name || e.message)) || '失败'),
+      };
     }
   }
 
   /* ---------------------------------------------------------- 面板 */
-  /* 面板自动收起：以前同步完只在底部闪一下 toast，同步面板一直开着，
-     看起来就是「结果弹窗不消失」。现在结果写进面板里，成功后 2 秒、
-     失败后 3.5 秒自动收起；这期间用户只要碰一下面板就取消收起。 */
+  /* 结果写进面板，成功 2 秒 / 失败 3.5 秒后自动收起；触摸面板即取消收起。 */
   let panelTimer = null;
   let lastMsg = '';
   let lastKind = '';
@@ -253,8 +446,14 @@
           '<button class="auth-btn" id="syncPush">上传本地笔记到云端</button>' +
           '<button class="auth-btn ghost" id="syncPull">从云端拉取到本地</button>' +
           (gcN ? '<button class="auth-btn ghost" id="syncGc">清理云端无用附件（' + gcN + '）</button>' : '') +
+          '<button class="auth-btn ghost" id="syncSetPwd">设置 / 修改同步口令</button>' +
           '<button class="auth-btn ghost" id="syncLogout">退出登录</button>'
         : '<div class="sync-info">用 QQ 邮箱登录后，手机和电脑共用同一份笔记。</div>' +
+          '<div class="auth-tabs">' +
+          '  <button type="button" class="auth-tab active" data-tab="otp">验证码登录</button>' +
+          '  <button type="button" class="auth-tab" data-tab="pwd">口令登录</button>' +
+          '</div>' +
+          '  <p class="auth-hint">还没有同步口令？点 <a href="javascript:void(0)" id="openSetPwd">设置同步口令</a>。</p>' +
           '<form id="syncLoginForm" novalidate>' +
           '  <label class="auth-label">QQ 邮箱</label>' +
           '  <div class="auth-row">' +
@@ -265,7 +464,17 @@
           '  <input class="auth-input" id="syncCode" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 位数字">' +
           '  <p class="auth-msg" id="syncMsg"></p>' +
           '  <button class="auth-btn" type="submit" id="syncLoginBtn">登录 / 注册</button>' +
-          '</form>');
+          '</form>' +
+          '<div id="pwdBox" class="hidden">' +
+          '  <form id="syncPwdForm" novalidate>' +
+          '    <label class="auth-label">QQ 邮箱</label>' +
+          '    <input class="auth-input" id="syncEmail2" type="email" inputmode="email" autocomplete="username" placeholder="123456@qq.com">' +
+          '    <label class="auth-label">同步口令</label>' +
+          '    <input class="auth-input" id="syncPwd" type="password" autocomplete="current-password" placeholder="设置过的同步口令">' +
+          '    <p class="auth-msg" id="syncMsg2"></p>' +
+          '    <button class="auth-btn" type="submit" id="syncPwdBtn">邮箱 + 口令登录</button>' +
+          '  </form>' +
+          '</div>');
 
     const close = $('#syncClose'); if (close) close.onclick = closePanel;
     // renderPanel 会重建 innerHTML，上一次的结果提示要按缓存补回来
@@ -279,10 +488,29 @@
       const pull = $('#syncPull'); if (pull) pull.onclick = () => doPull();
       const out = $('#syncLogout'); if (out) out.onclick = () => doLogout();
       const gc = $('#syncGc'); if (gc) gc.onclick = () => doGc();
+      const setPwd = $('#syncSetPwd'); if (setPwd) setPwd.onclick = () => openSetPwd();
     } else {
       const codeBtn = $('#syncCodeBtn'); if (codeBtn) codeBtn.onclick = () => sendCode($('#syncEmail').value.trim(), codeBtn);
       const form = $('#syncLoginForm'); if (form) form.onsubmit = (e) => { e.preventDefault(); doLogin(); };
+      const tabBtns = panel.querySelectorAll('.auth-tab');
+      tabBtns.forEach((t) => {
+        t.onclick = () => {
+          tabBtns.forEach((x) => x.classList.remove('active'));
+          t.classList.add('active');
+          const tab = t.dataset.tab;
+          const f = $('#syncLoginForm'); if (f) f.classList.toggle('hidden', tab !== 'otp');
+          const p = $('#pwdBox'); if (p) p.classList.toggle('hidden', tab !== 'pwd');
+        };
+      });
+      const pwdForm = $('#syncPwdForm'); if (pwdForm) pwdForm.onsubmit = (e) => { e.preventDefault(); doLoginPwd(); };
+      const setBtn = $('#openSetPwd'); if (setBtn) setBtn.onclick = () => openSetPwd();
     }
+    /* 版本号 + 上次停在哪个阶段：截图里一眼能看出来跑的是不是新版、卡在哪。 */
+    const diag = document.createElement('p');
+    diag.className = 'sync-diag';
+    diag.id = 'syncDiag';
+    diag.textContent = diagText();
+    panel.appendChild(diag);
   }
 
   function syncMsg(text, kind) {
@@ -340,19 +568,97 @@
     toast('已退出登录');
   }
 
+  /* ---------------------------------------------------------- 登录：口令直登 / 设置口令
+     桌面端已跑通这套流程，手机端复用同一份 SDK 接口，不改数据结构。 */
+  function syncMsgTo(elId, text, kind) {
+    const el = $('#' + elId);
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = 'auth-msg' + (kind ? ' ' + kind : ' err');
+  }
+  async function doLoginPwd() {
+    const email = $('#syncEmail2').value.trim();
+    const pwd = $('#syncPwd').value;
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return syncMsgTo('syncMsg2', '请填写正确的邮箱');
+    if (!pwd) return syncMsgTo('syncMsg2', '请输入同步口令');
+    const btn = $('#syncPwdBtn'); btn.disabled = true; btn.textContent = '登录中…';
+    const r = await cloud.auth.signInWithPassword({ email, password: pwd });
+    btn.disabled = false; btn.textContent = '邮箱 + 口令登录';
+    if (r.error) return syncMsgTo('syncMsg2', friendly(r.error));
+    session = normSession(await cloud.auth.getSession());
+    localStorage.setItem(LS_EMAIL, email);
+    lastMsg = ''; lastKind = '';
+    await renderPanel();
+    toast('登录成功，可以同步了');
+  }
+  function openSetPwd() {
+    // 同步面板层级高于弹层，先收起面板，否则弹窗会被面板压住
+    const email0 = (session && session.user && session.user.email) ||
+      (($('#syncEmail2') || {}).value || ($('#syncEmail') || {}).value || '').trim();
+    closePanel();
+    const m = window.openModal(
+      '<div class="hist-head"><div><h3>设置同步口令</h3><p>设置后可用「邮箱 + 口令」登录，免收验证码</p></div>' +
+      '<button class="icon-btn" data-act="close" title="关闭">✕</button></div>' +
+      '<div class="e2ee-body">' +
+      '<div class="e2ee-row"><label class="auth-label">QQ 邮箱</label>' +
+      '<input class="auth-input" id="spEmail" type="email" inputmode="email" value="' + escapeHtml(email0) + '" placeholder="123456@qq.com"></div>' +
+      '<div class="e2ee-row"><button class="auth-btn ghost" id="spCode" type="button">获取验证码</button></div>' +
+      '<div class="e2ee-row"><label class="auth-label">邮箱验证码</label>' +
+      '<input class="auth-input" id="spOtp" inputmode="numeric" maxlength="6" placeholder="6 位数字"></div>' +
+      '<div class="e2ee-row"><label class="auth-label">新同步口令（至少 6 位）</label>' +
+      '<input class="auth-input" id="spPwd" type="password" placeholder="设置口令"></div>' +
+      '<div class="e2ee-row"><button class="auth-btn" id="spSave">设置口令</button></div>' +
+      '<div id="spMsg" class="e2ee-msg"></div></div>');
+    m.classList.add('pwd-box');
+    const close = () => { window.closeModal(); openPanel(); };
+    m.querySelector('[data-act="close"]').addEventListener('click', close);
+    const msg = (t, ok) => { const e = m.querySelector('#spMsg'); e.textContent = t; e.style.color = ok ? '#2f6f5e' : '#c0392b'; };
+    m.querySelector('#spCode').addEventListener('click', async () => {
+      const em = m.querySelector('#spEmail').value.trim();
+      if (!em || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return msg('请填写正确的邮箱');
+      const b = m.querySelector('#spCode'); b.disabled = true; b.textContent = '发送中…';
+      const r = await cloud.auth.resetPasswordForEmail({ email: em });
+      b.disabled = false; b.textContent = '重新获取';
+      if (r.error) return msg('发送失败：' + friendly(r.error));
+      m._updateUser = r.data && r.data.updateUser;
+      msg('验证码已发送到邮箱', true);
+    });
+    m.querySelector('#spSave').addEventListener('click', async () => {
+      const em = m.querySelector('#spEmail').value.trim();
+      const otp = m.querySelector('#spOtp').value.trim();
+      const pwd = m.querySelector('#spPwd').value;
+      if (!m._updateUser) return msg('请先获取验证码');
+      if (!/^\d{4,8}$/.test(otp)) return msg('请填写验证码');
+      if (pwd.length < 6) return msg('口令至少 6 位');
+      const b = m.querySelector('#spSave'); b.disabled = true; b.textContent = '设置中…';
+      try {
+        const r = await m._updateUser({ nonce: otp, password: pwd });
+        if (r.error) return msg('失败：' + friendly(r.error));
+        session = normSession(await cloud.auth.getSession());
+        localStorage.setItem(LS_EMAIL, em);
+        lastMsg = ''; lastKind = '';
+        window.closeModal();
+        openPanel();
+        toast('同步口令已设置');
+      } catch (e) { msg('失败：' + (e.message || e)); }
+      finally { b.disabled = false; b.textContent = '设置口令'; }
+    });
+  }
+
   /* ---------------------------------------------------------- 上传：本地 → 云端 */
   async function doPush() {
     if (!session || !session.user) return;
     cancelAutoClose(); lastMsg = ''; lastKind = '';
     const owner = session.user.id;
-    const btn = $('#syncPush'); if (btn) { btn.disabled = true; btn.textContent = '上传中…'; }
+    if (!markBusy('push', '#syncPush', '上传中…（可再点重试）')) return;
     try {
       if (window.SJSaveNow) window.SJSaveNow();
       const local = window.SJLocal.getState();
 
       const catRows = local.categories.map((c) => catToRow(c, owner));
       if (catRows.length) {
-        const r = await cloud.database.from('sj_categories').upsert(catRows);
+        const r = await withTimeout(() => cloud.database.from('sj_categories').upsert(catRows), 20000, null);
+        if (!r) throw new Error('上传类别超时，请检查网络后重试');
         if (r.error) throw new Error(friendly(r.error));
       }
 
@@ -369,7 +675,8 @@
         missing += atts.missing;
         const row = noteToRow(n, owner);
         row.attachments = atts.list;
-        const r = await cloud.database.from('sj_notes').upsert([row]);
+        const r = await withTimeout(() => cloud.database.from('sj_notes').upsert([row]), 20000, null);
+        if (!r) throw new Error('上传笔记超时，请检查网络后重试');
         if (r.error) throw new Error(friendly(r.error));
       }
 
@@ -388,14 +695,12 @@
       toast('上传失败：' + e.message);
       scheduleClose(3500);
     } finally {
-      const b = $('#syncPush'); if (b) { b.disabled = false; b.textContent = '上传本地笔记到云端'; }
+      clearBusy('push', '#syncPush', '上传本地笔记到云端');
       renderPanel();
     }
   }
 
   /* 云端附件清理：彻底删除笔记时记下的路径，用直连 DELETE 清掉。 */
-  const GC_ENDPOINT = 'https://shijian-notes-46125.app.workbuddy.host';
-  const GC_PK = 'wbpk_dI8FNrfPPUj38F8big7tnc_ppkTgPWXNyg4hg2VzRPCDCwMgQT2Qft7';
   async function gcToken() {
     try { const t = await cloud.auth.getAccessToken(); if (t) return t; } catch (_) {}
     try {
@@ -405,11 +710,11 @@
     } catch (_) { return ''; }
   }
   async function gcDelete(path, token) {
-    const r = await fetch(GC_ENDPOINT + '/.cloud/storage/object/runtime/' + path, {
+    const r = await withTimeout(() => fetch(REST_BASE + '/.cloud/storage/object/runtime/' + path, {
       method: 'DELETE',
-      headers: { Authorization: 'Bearer ' + token, 'x-wb-webapp-access-key': GC_PK },
-    });
-    return r.ok || r.status === 404;
+      headers: { Authorization: 'Bearer ' + token, 'x-wb-webapp-access-key': REST_PK },
+    }), 12000, null);
+    return !!(r && (r.ok || r.status === 404));
   }
   async function doGc() {
     if (!session || !session.user) return;
@@ -417,7 +722,7 @@
     const queue = window.SJAttGC ? window.SJAttGC.list() : {};
     const paths = Object.keys(queue);
     if (!paths.length) { syncMsg('没有需要清理的云端附件', 'ok'); scheduleClose(2000); return; }
-    const btn = $('#syncGc'); if (btn) { btn.disabled = true; btn.textContent = '清理中…'; }
+    if (!markBusy('gc', '#syncGc', '清理中…（可再点重试）')) return;
     try {
       const token = await gcToken();
       if (!token) throw new Error('登录状态已失效，请退出后重新登录');
@@ -435,70 +740,191 @@
       syncMsg('清理失败：' + e.message);
       toast('清理失败：' + e.message);
       scheduleClose(3500);
-    } finally { renderPanel(); }
+    } finally {
+      clearBusy('gc', '#syncGc');   // 文字由 renderPanel 按最新数量重建
+      renderPanel();
+    }
   }
 
-  /* ---------------------------------------------------------- 下载：云端 → 本地 */
+  /* ---------------------------------------------------------- 下载：云端 → 本地
+     主流程只做「读云端 → 合并文字 → 落盘 → 交付」，不 await 图片 / IndexedDB /
+     重渲染；图片一律放后台补。三个同步按钮只换文字、全程可点，busy 集合防重复。 */
+  const busy = new Set();
+  function markBusy(key, sel, text) {
+    if (busy.has(key)) return false;
+    busy.add(key);
+    const b = $(sel);
+    if (b) { b.disabled = false; b.textContent = text; }
+    return true;
+  }
+  function clearBusy(key, sel, text) {
+    busy.delete(key);
+    const b = $(sel);
+    if (b) {
+      b.disabled = false;
+      if (text) b.textContent = text;
+    }
+  }
+
+  let pulling = false;
+  let pullSeq = 0;
+
+  /* seq 有值时，只有本次拉取仍是「当前那次」才恢复按钮：用户中途重试或
+     硬恢复作废本次后，旧流程的 finally 不会把新流程的按钮状态冲掉。 */
+  function restorePullBtn(seq) {
+    if (seq !== undefined && seq !== pullSeq) return;
+    pulling = false;
+    const b = $('#syncPull');
+    if (b) { b.disabled = false; b.textContent = '从云端拉取到本地'; }
+  }
+  /* 同步按钮永不 disabled：异步链路挂起时用户仍可重试。
+     再点一次 = 停止上一次。 */
+  function markPullBusy() {
+    pulling = true;
+    const b = $('#syncPull');
+    if (b) { b.disabled = false; b.textContent = '正在拉取…（再点重试）'; }
+  }
+  /* 等网络之前先把本机已有的笔记渲染出来，不让用户对着「0 篇」空白干等。 */
+  function paintLocalNow() {
+    try {
+      if (!window.SJLocal || !window.SJLocal.getState) return;
+      const st = window.SJLocal.getState();
+      if (st && st.notes) refreshFromLocal(st.categories || [], st.notes);
+    } catch (_) {}
+  }
+
+  /* 后台补图：与主流程完全解耦。失败 / 超时都只记日志，
+     不影响已经交付的笔记文字，也不会把按钮锁住。 */
+  async function backfillAttachments(cloudNotes, keepId, seq) {
+    const got = new Map();
+    let ok = 0, fail = 0;
+    const whys = [];
+    const deadline = Date.now() + 90000;
+    for (const n of cloudNotes) {
+      for (const a of (n.attachments || [])) {
+        if (seq !== pullSeq) return;              // 用户又发起了一次拉取，旧的停手
+        if (!a || !a.id || !a.path) continue;
+        if (Date.now() > deadline) break;
+        const hasLocal = window.SJAttStore
+          ? await withTimeout(() => window.SJAttStore.has(a.id), 2000, false) : false;
+        if (hasLocal) continue;
+        /* 外层必须比内部四步的累计上限长，否则会把已经成功的下载判成失败。 */
+        const r = await withTimeout(() => pullAttachment(a), 32000, { why: '整体超时' });
+        const good = !!(r && (r.data || r.remoteUrl));
+        if (good) { got.set(a.id, r); ok++; }
+        else {
+          fail++;
+          if (whys.length < 2) whys.push((a.name || a.id) + '：' + ((r && r.why) || '未知'));
+        }
+        trace('后台补图 ' + (ok + fail) + '：' + (good
+          ? '成功（' + r.via + '）' : '失败 ' + ((r && r.why) || '未知')));
+      }
+      if (Date.now() > deadline) break;
+    }
+    const tail = whys.length ? '｜' + whys.join('；') : '';
+    if (!got.size) {
+      trace('后台补图结束：成功 0，失败 ' + fail + tail);
+      const d0 = $('#syncDiag');
+      if (d0) d0.textContent = '版本 ' + BUILD + ' · 图片未取到'
+        + (whys.length ? '：' + whys[0] : '');
+      return;
+    }
+    /* 只补附件、不动正文：以当前 state 为准，用户期间编辑过的内容不会被覆盖。
+       setState 内部会自动把 data URL 交给附件仓并从 localStorage 摘掉。 */
+    try {
+      const st = window.SJLocal.getState();
+      st.notes.forEach((n) => {
+        n.attachments = (n.attachments || []).map((a) => {
+          if (!a || !a.id || !got.has(a.id)) return a;
+          const g = got.get(a.id);
+          return Object.assign({}, a, g.data ? { data: g.data } : { remoteUrl: g.remoteUrl });
+        });
+      });
+      window.SJLocal.setState({ categories: st.categories, notes: st.notes, versions: st.versions });
+      if (window.SJLocal.flushAtt) await withTimeout(() => window.SJLocal.flushAtt(), 5000, null);
+      if (window.SJBoot) await withTimeout(() => window.SJBoot(keepId), 5000, null);
+      if (window.SJLocal.watchFiles) window.SJLocal.watchFiles();
+    } catch (_) {}
+    trace('后台补图结束：成功 ' + ok + '，失败 ' + fail + tail);
+    const d = $('#syncDiag');
+    if (d) d.textContent = '版本 ' + BUILD + ' · 图片已补 ' + ok + ' 张'
+      + (fail ? '，' + fail + ' 张待重试' + (whys.length ? '（' + whys[0] + '）' : '') : '');
+  }
+
   async function doPull() {
     if (!session || !session.user) return;
+    if (pulling) {
+      /* 再点一次 = 停止上一次，不让用户只能干等 */
+      pullSeq++;
+      restorePullBtn();
+      syncMsg('已停止上一次拉取，请再点一次重新开始');
+      return;
+    }
+    const started = Date.now();
+    const seq = ++pullSeq;
     cancelAutoClose(); lastMsg = ''; lastKind = '';
+    markPullBusy();
+    startDiagClock(started);
+    syncMsg('正在连接云端…（按钮一直可点，随时可重试）');
+    /* 硬恢复：5 秒还没拿到云端数据就把按钮文字还给用户。
+       即使这个定时器也被浏览器冻结，按钮本来就没被禁用，用户照样能操作。 */
+    const hardTimer = setTimeout(() => {
+      if (seq === pullSeq && pulling) {
+        /* 作废本次：否则弱网时旧流程仍会在稍后完成，覆盖用户随后重试的
+           按钮状态与面板（hardTimer 5s < 直连 8s + SDK 兜底 6s，弱网必触发）。 */
+        pullSeq++;
+        restorePullBtn();
+        syncMsg('云端响应较慢，已停止等待，请直接重试。');
+        stopDiagClock();
+      }
+    }, 5000);
     const owner = session.user.id;
-    const btn = $('#syncPull'); if (btn) { btn.disabled = true; btn.textContent = '拉取中…'; }
     try {
+      trace('开始：读取云端');
       /* 先把当前正在编辑的内容落盘：拉取结束后界面要重新渲染，
-         不先保存的话刚敲的字会被冲掉。 */
-      if (window.SJSaveNow) window.SJSaveNow();
+         不先保存的话刚敲的字会被冲掉。保存失败也不能挡住同步。 */
+      if (window.SJSaveNow) { try { window.SJSaveNow(); } catch (_) {} }
+      trace('本机编辑已保存');
+      paintLocalNow();
+      trace('本机已有笔记已显示，准备连云端');
 
-      const catsRes = await cloud.database.from('sj_categories').select('*').eq('owner_id', owner);
-      const notesRes = await cloud.database.from('sj_notes').select('*').eq('owner_id', owner);
+      /* 两段读取并行，走浏览器原生超时；SDK 只在直连失败时兜底。
+         每一步都 trace，下次截图能直接看出卡在哪个调用上。 */
+      trace('调用云端接口（直连）');
+      const pair = await Promise.all([
+        restRead('sj_categories', owner).catch(() => null),
+        restRead('sj_notes', owner).catch(() => null),
+      ]);
+      let catsRes = pair[0], notesRes = pair[1];
+      if (!catsRes || !notesRes) {
+        trace('直连未成功，改用同步组件查询');
+        catsRes = catsRes || await withTimeout(
+          () => cloud.database.from('sj_categories').select('*').eq('owner_id', owner), 6000, null);
+        notesRes = notesRes || await withTimeout(
+          () => cloud.database.from('sj_notes').select('*').eq('owner_id', owner), 6000, null);
+      }
+      if (seq !== pullSeq) return;
+      if (!catsRes || !notesRes) throw new Error('云端读取超时，请检查网络后重试');
+      trace('云端已响应，整理笔记中');
       if (catsRes.error) { console.error('[同步] 读取云端类别失败', catsRes.error); throw new Error(friendly(catsRes.error)); }
       if (notesRes.error) { console.error('[同步] 读取云端笔记失败', notesRes.error); throw new Error(friendly(notesRes.error)); }
 
+      /* 只做行转换，不碰任何图片请求 —— 主流程到交付为止最多两次网络等待。 */
       const cloudCats = (catsRes.data || []).map(rowToCat);
-      const cloudNotes = [];
-      let noPath = 0, dlFail = 0;
-      let done = 0, total = 0;
-      for (const r of (notesRes.data || [])) {
-        const base = rowToNote(r);
-        total += (base.attachments || []).length;
-      }
-      for (const r of (notesRes.data || [])) {
-        const base = rowToNote(r);
-        const pulled = [];
-        for (const a of (base.attachments || [])) {
-          if (!a || !a.id) continue;
-          if (a.path) {
-            /* 本机附件仓已经有这份二进制（附件 id 唯一、内容不会变），别再下一遍，
-               否则每次拉取都要把几十 MB 照片重传一次，手机上很费流量。 */
-            if (window.SJAttStore && await window.SJAttStore.has(a.id)) {
-              pulled.push(a); done++; continue;
-            }
-            const got = await pullAttachment(a);
-            if (!got.data && !got.remoteUrl) dlFail++;
-            pulled.push(got);
-          } else if (a.data) {
-            pulled.push(a);
-          } else {
-            /* 云端只有文件名、没有原文件（老版本桌面端只传了元信息）。
-               以前这里直接丢弃，导致这条附件记录永远补不回来。 */
-            noPath++;
-            pulled.push(a);
-          }
-          done++;
-          if (done % 3 === 0 && total) syncMsg(`正在下载图片… ${done}/${total}`);
-        }
-        base.attachments = pulled;
-        cloudNotes.push(base);
-      }
+      const cloudNotes = (notesRes.data || []).map(rowToNote);
+      let attCount = 0, noPath = 0;
+      cloudNotes.forEach((n) => (n.attachments || []).forEach((a) => {
+        if (!a || !a.id) return;
+        if (a.path) attCount++;
+        else if (!a.data) noPath++;
+      }));
+      trace('云端读取完成：笔记 ' + cloudNotes.length + '，图片 ' + attCount + '，合并中');
 
-      // 合并：同一 id 以 updatedAt 较大的一方为准（last-write-wins）
       const local = window.SJLocal.getState();
 
       /* 笔记正文按时间取胜，但附件要单独补：老版本同步过的笔记本机只有
-         附件元信息、没有二进制，正文里的图就会一直空着。这里是「谁有图用谁的」。 */
-      /* 等级：0 只有元信息、1 只有签名地址（1 小时过期，不算真正有图）、2 有二进制。
-         以前把 remoteUrl 也算成「有图」，于是上次拉取留下的死链会把这次
-         真正下载到的图挡在外面 —— 反复点拉取也永远是空的。 */
+         附件元信息、没有二进制，正文里的图就会一直空着。这里是「谁有图用谁的」。
+         等级：0 只有元信息、1 只有签名地址（会过期）、2 有二进制。 */
       const rank = (a) => (!a ? 0 : a.data ? 2 : a.remoteUrl ? 1 : 0);
       const withAtts = (mine, theirs) => {
         const list = Array.isArray(theirs.attachments) ? theirs.attachments : [];
@@ -513,16 +939,15 @@
         }
         return changed ? Object.assign({}, mine, { attachments: [...byId.values()] }) : mine;
       };
-
+      const conflicts = [];
       const merge = (arr, cloudArr) => {
         const map = new Map(arr.map((x) => [x.id, x]));
-        const last = lastSyncAt();                 // 上次同步的时刻（合并前读取）
+        const last = lastSyncAt();
         const editedAfter = (n) => Number(n.updatedAt) > Number(last) + 1000;
         const sig = (n) => (n ? (n.content || '').slice(0, 240) : '');
         for (const c of cloudArr) {
           const ex = map.get(c.id);
           if (!ex) { map.set(c.id, c); continue; }
-          // v1.8.0：两端都在「上次同步之后」改过、且正文不同 → 真实冲突，记录下来
           if (editedAfter(c) && editedAfter(ex) && sig(c) !== sig(ex)) {
             conflicts.push({ id: c.id, title: ex.title || c.title || '无标题笔记', local: ex, cloud: c });
           }
@@ -531,61 +956,95 @@
         }
         return Array.from(map.values());
       };
-      const conflicts = [];
+      const finalCats = merge(local.categories, cloudCats);
+      const finalNotes = merge(local.notes, cloudNotes);
       window.SJLocal.setState({
-        categories: merge(local.categories, cloudCats),
-        notes: merge(local.notes, cloudNotes),
+        categories: finalCats,
+        notes: finalNotes,
         versions: local.versions,
       });
-      // 等图片/附件真的写进本机附件仓，再刷新界面
-      if (window.SJLocal.flushAtt) await window.SJLocal.flushAtt();
-
       localStorage.setItem(LS_LAST, String(Date.now()));
-      /* 记住当前打开的笔记，重渲染后原地不动（以前一律跳到最近修改那篇，
-         用户会以为「点了同步就被切走了」）。 */
+      trace('文字已保存到本机');
+
+      /* 关键：立刻把结果灌进界面数据源，不等后台 boot。
+         boot() 要走 IndexedDB 就绪等待 + api('/api/state') + 全量重绘，
+         任何一环没跑通，用户就会看到「同步成功但仍 0 篇」。 */
+      const uiOk = refreshFromLocal(finalCats, finalNotes);
+      trace(uiOk ? '界面已刷新（' + finalNotes.length + ' 篇）' : '界面组件未就绪，请重开页面');
+
+      /* 落盘校验：localStorage 写失败（配额满）会被 local.js 静默吞掉，
+         表现是「同步成功、重开又没了」。读回来核一次篇数。 */
+      let savedCount = -1;
+      try {
+        const raw = localStorage.getItem('sj_mobile_v1');
+        if (raw) savedCount = (JSON.parse(raw).notes || []).length;
+      } catch (_) {}
+      const saveOk = savedCount === finalNotes.length;
+      if (!saveOk) trace('本机落盘校验未通过：读出 ' + savedCount + ' 篇，应为 ' + finalNotes.length);
+
       const keepId = window.SJCurrentNoteId ? window.SJCurrentNoteId() : '';
-      if (window.SJBoot) await window.SJBoot(keepId);
-      if (window.SJLocal.watchFiles) window.SJLocal.watchFiles();
 
-      /* v1.8.0：若检测到真实冲突，弹出选择，让用户决定保留哪一侧 */
-      if (conflicts.length && window.SJConflict) {
-        window.SJConflict.show(conflicts, function (res) {
-          const st = window.SJLocal.getState();
-          const m2 = new Map(st.notes.map((x) => [x.id, x]));
-          conflicts.forEach(function (cf) {
-            const target = m2.get(cf.id);
-            if (!target) return;
-            if (res[cf.id] === 'cloud') {
-              target.content = cf.cloud.content; target.title = cf.cloud.title; target.updatedAt = cf.cloud.updatedAt;
-            } else if (res[cf.id] === 'mine') {
-              target.content = cf.local.content; target.title = cf.local.title; target.updatedAt = cf.local.updatedAt;
-            } else if (res[cf.id] === 'both') {
-              st.notes.push(Object.assign({}, cf.cloud, {
-                id: 'cpy_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-                title: (cf.cloud.title || '无标题') + '（副本）',
-              }));
-            }
-          });
-          window.SJLocal.setState({ categories: st.categories, notes: st.notes, versions: st.versions });
-          if (window.SJBoot) window.SJBoot(window.SJCurrentNoteId ? window.SJCurrentNoteId() : '');
-        });
-      }
-
+      /* ======= 结果先交付：到这里主流程就结束了，后面全是后台任务 ======= */
       let extra = '';
-      if (noPath) extra += `；其中 ${noPath} 个附件云端只有文件名、没有原文件，需在电脑端重新上传一次`;
-      if (dlFail) extra += `；${dlFail} 个附件下载失败，请检查网络后重试`;
-      syncMsg(`已从云端拉取最新内容（类别 ${cloudCats.length}，笔记 ${cloudNotes.length}）${extra}`,
-        (noPath || dlFail) ? '' : 'ok');
-      if (noPath || dlFail) toast('同步完成，但有附件没能下载，请看提示');
-      else toast('已从云端同步到本地');
-      scheduleClose((noPath || dlFail) ? 3500 : 2000);
+      if (noPath) extra += `；其中 ${noPath} 个附件云端只有文件名，需在电脑端重新上传一次`;
+      if (attCount) extra += `；${attCount} 张图片正在后台补充，不影响文字`;
+      if (!uiOk) extra += '；界面未自动刷新，请重开页面确认';
+      if (!saveOk) extra += '；本机保存校验未通过（可能存储已满），请重开页面确认笔记还在';
+      syncMsg(`已从云端拉取最新内容（类别 ${cloudCats.length}，笔记 ${cloudNotes.length}，本机 ${finalNotes.length} 篇）${extra}`, 'ok');
+      toast('已从云端同步到本地');
+      clearTimeout(hardTimer);
+      stopDiagClock();
+      restorePullBtn(seq);
+      scheduleClose((noPath || attCount) ? 6000 : 2000);
+
+      /* 写盘 / 重渲染 / 冲突弹窗放下一个宏任务，且互不等待。 */
+      setTimeout(() => {
+        try {
+          /* 界面没刷出来就再试一次（此时 app.js 可能才刚加载完） */
+          if (!uiOk) refreshFromLocal(finalCats, finalNotes);
+          if (window.SJLocal.flushAtt) withTimeout(() => window.SJLocal.flushAtt(), 5000, null);
+          if (window.SJBoot) withTimeout(() => window.SJBoot(keepId), 5000, null);
+          if (window.SJLocal.watchFiles) window.SJLocal.watchFiles();
+          if (conflicts.length && window.SJConflict) {
+            window.SJConflict.show(conflicts, function (res) {
+              const st = window.SJLocal.getState();
+              const m2 = new Map(st.notes.map((x) => [x.id, x]));
+              conflicts.forEach(function (cf) {
+                const target = m2.get(cf.id);
+                if (!target) return;
+                if (res[cf.id] === 'cloud') {
+                  target.content = cf.cloud.content; target.title = cf.cloud.title; target.updatedAt = cf.cloud.updatedAt;
+                } else if (res[cf.id] === 'mine') {
+                  target.content = cf.local.content; target.title = cf.local.title; target.updatedAt = cf.local.updatedAt;
+                } else if (res[cf.id] === 'both') {
+                  st.notes.push(Object.assign({}, cf.cloud, {
+                    id: 'cpy_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+                    title: (cf.cloud.title || '无标题') + '（副本）',
+                  }));
+                }
+              });
+              window.SJLocal.setState({ categories: st.categories, notes: st.notes, versions: st.versions });
+              if (window.SJBoot) window.SJBoot(window.SJCurrentNoteId ? window.SJCurrentNoteId() : '');
+            });
+          }
+        } catch (_) {}
+      }, 0);
+      /* 图片最后才补，且完全独立于同步收尾 */
+      if (attCount) {
+        setTimeout(() => backfillAttachments(cloudNotes, keepId, seq), 1200);
+      }
     } catch (e) {
       syncMsg('拉取失败：' + e.message);
       toast('拉取失败：' + e.message);
       scheduleClose(3500);
     } finally {
-      const b = $('#syncPull'); if (b) { b.disabled = false; b.textContent = '从云端拉取到本地'; }
-      renderPanel();
+      clearTimeout(hardTimer);
+      /* 已被重试 / 硬恢复作废的旧流程，不要再动按钮和面板 */
+      if (seq === pullSeq) {
+        stopDiagClock();
+        restorePullBtn(seq);
+        renderPanel();
+      }
     }
   }
 

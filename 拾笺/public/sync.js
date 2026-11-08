@@ -109,11 +109,24 @@
     }
     return [];
   }
+  /* 早期云端数据漏列 format 时，富文本正文会在 Markdown 编辑器里显示成源码。
+     这个特征只在 format 缺失时兜底 —— Markdown 里内联 <img> 是合法写法，
+     不能再凭它推翻明确的 format 字段。 */
+  function looksRichContent(content) {
+    return typeof content === 'string'
+      && /<img\s[^>]*src=["'](?:\/api\/files\/|data:image\/)/i.test(content);
+  }
   function rowToNote(r) {
     const att = parseAtts(r.attachments);
+    /* format 明确时以字段为准：用户主动「富文本 → Markdown」后正文会合法
+       保留内联 <img>，不能再按内容把这类笔记判回 rich。只有旧数据漏列
+       （format 缺失）时才按内容兜底。 */
+    const fmt = (r.format === 'rich' || r.format === 'md')
+      ? r.format
+      : (looksRichContent(r.content) ? 'rich' : 'md');
     return {
       id: r.id, title: r.title, content: r.content,
-      format: r.format === 'rich' ? 'rich' : 'md',
+      format: fmt,
       categoryId: r.category_key || null, starred: !!r.starred,
       tags: Array.isArray(r.tags) ? r.tags : [], attachments: att,
       createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),

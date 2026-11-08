@@ -36,13 +36,23 @@
       }
       let req;
       try { req = indexedDB.open(DB_NAME, 1); } catch (e) { usable = false; return reject(e); }
+      /* 部分手机浏览器（多标签 / 省电冻结 / 隐私模式）会让 open 既不 success、
+         也不 error、也不 blocked，Promise 永远悬着。所有附件读写都会卡在
+         store() 上，界面表现为「点了没反应」。4 秒拿不到就降级内存仓。 */
+      const timer = setTimeout(() => {
+        usable = false;
+        reject(new Error('IndexedDB 打开超时'));
+      }, 4000);
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
       };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => { usable = false; reject(req.error); };
-      req.onblocked = () => { /* 另一个标签页在升级，等它 */ };
+      req.onsuccess = () => { clearTimeout(timer); resolve(req.result); };
+      req.onerror = () => { clearTimeout(timer); usable = false; reject(req.error); };
+      req.onblocked = () => {
+        clearTimeout(timer); usable = false;
+        reject(new Error('IndexedDB 被其他标签页阻塞'));
+      };
     }).catch((e) => {
       if (!warned) { warned = true; console.warn('附件仓不可用，改用内存暂存：', e && e.message); }
       usable = false;

@@ -11,12 +11,23 @@
            所有 js/css 全部 403 —— 表现为「界面在、进度条卡住、按钮点不动」。
            所以每个同源请求都由 SW 主动补上访问码，不依赖 cookie。
    ============================================================ */
-const VERSION = 'sj-2026-11-05-3';
+const VERSION = 'sj-2026-11-08-4';
 const CACHE = 'shijian-' + VERSION;
 
 const SC_KEY = 'sharecode';
-const SC_VAL = 'FKSO3QK6B4';
-const SC = '?' + SC_KEY + '=' + SC_VAL;
+/* 访问码会随「重新发布 / 换分享链接」变化，写死在代码里迟早过期：
+   实测上一个写死的码现在裸请求已直接 403。
+   所以优先取注册时 sw.js URL 上带的码（pwa.js / index.html 注册时会拼上
+   当前页面链接里的码），页面每次打开还会 postMessage 同步一次最新码，
+   连已经装好的旧 SW 也能跟着换。常量只作最后兜底。 */
+let SC_VAL = '3J7BKHTGFD';
+try {
+  if (typeof self !== 'undefined' && self.location) {
+    const v = new URL(self.location.href).searchParams.get(SC_KEY);
+    if (v) SC_VAL = v;
+  }
+} catch (_) {}
+function scSuffix() { return SC_VAL ? '?' + SC_KEY + '=' + encodeURIComponent(SC_VAL) : ''; }
 
 /* 首屏必需资源：安装时预缓存。每一项都必须带访问码，否则预缓存会静默失败。 */
 const RAW_SHELL = [
@@ -36,7 +47,6 @@ const RAW_SHELL = [
   '/fts.js',
   '/backlinks.js',
   '/diffview.js',
-  '/pdfexport.js',
   '/conflict.js',
   '/e2ee.js',
   '/icons/icon-192.png',
@@ -54,14 +64,15 @@ const RAW_SHELL = [
   '/vendor/highlight.min.js',
   '/vendor/github-dark.min.css',
 ];
-const SHELL = RAW_SHELL.map((p) => p + SC);
+/* 用函数而不是顶层常量：SC_VAL 可能刚被页面 postMessage 更新过。 */
+function shellUrls() { return RAW_SHELL.map((p) => p + scSuffix()); }
 /* 只拦截这些静态资源；其余同源请求（尤其是 /.cloud/database/rest/*）一律直连。
    云端 API 的 GET 带 Authorization 和 x-wb-webapp-access-key，一旦被当作静态资源
    重建 Request 就会丢光鉴权头，还会被补上 sharecode（PostgREST 当成过滤器 → 400）。
    表现就是「从云端拉取失败：操作失败，请稍后再试」。 */
 const ASSET_PATHS = new Set(RAW_SHELL);
 
-const INDEX_KEY = '/index.html' + SC;
+function indexKey() { return '/index.html' + scSuffix(); }
 
 /* 给同源 URL 补访问码；已有则原样返回 */
 function ensureSC(raw) {
@@ -91,9 +102,11 @@ if (typeof self !== 'undefined') self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
     /* 逐个缓存 + 容错：任何一项失败都不阻断安装 */
-    await Promise.all(SHELL.map(async (url) => {
+    await Promise.all(shellUrls().map(async (url) => {
       try {
-        const res = await fetch(new Request(url, { cache: 'reload', credentials: 'same-origin' }));
+        /* 每项 6 秒超时：任一项挂住都不能拖住 install，否则新版永不接管。 */
+        const res = await withTimeout(
+          fetch(new Request(url, { cache: 'reload', credentials: 'same-origin' })), 6000);
         if (res && (res.ok || res.type === 'opaque')) await cache.put(url, res);
       } catch (_) { /* 忽略单个失败 */ }
     }));
@@ -117,7 +130,7 @@ function withTimeout(promise, ms) {
 }
 
 function offlinePage() {
-  const url = self.location.origin + '/?sharecode=' + SC_VAL;
+  const url = self.location.origin + '/' + scSuffix();
   return new Response(
     '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
     + '<title>拾笺</title><body style="margin:0;background:#f5f6fa;color:#1f2329;'
@@ -143,23 +156,56 @@ async function handleNavigate(req) {
          速记页覆盖进 /index.html 的离线缓存里。 */
       try {
         const p = new URL(req.url).pathname;
-        if (p === '/' || p === '/index.html') await cache.put(INDEX_KEY, res.clone());
+        if (p === '/' || p === '/index.html') await cache.put(indexKey(), res.clone());
       } catch (_) {}
       return res;
     }
     throw new Error('bad status');
   } catch (_) {
-    const cached = (await cache.match(INDEX_KEY))
+    const cached = (await cache.match(indexKey()))
       || (await cache.match(req))
       || (await cache.match('/index.html'));
     return cached || offlinePage();
   }
 }
 
-/* 静态资源：先给缓存，后台悄悄更新；网络请求一律补访问码 */
+/* 静态资源：代码走网络优先，图片走缓存优先；网络请求一律补访问码。
+   ignoreSearch:true 很关键：预缓存的键是 /app.js?sharecode=xxx，而页面
+   发来的 req 往往是 /app.js（无参数），精确匹配永远打不中预缓存。 */
+const CODE_RE = /\.(?:js|css|html|webmanifest)$/i;
 async function handleAsset(req) {
   const cache = await caches.open(CACHE);
-  const hit = await cache.match(req, { ignoreSearch: false });
+  const path = new URL(req.url).pathname;
+  const hitP = cache.match(req, { ignoreSearch: true });
+
+  if (CODE_RE.test(path)) {
+    /* 代码类网络优先，但慢网络绝不能返回空响应（脚本缺失会让界面组件全无）：
+       2 秒内回 → 用网络；超时有缓存 → 先给缓存并后台补写；
+       无缓存 → 一直等网络，只有网络真失败才 504。 */
+    const netP = fetch(netRequest(req)).catch(() => null);
+    const fast = await Promise.race([
+      netP,
+      new Promise((r) => setTimeout(() => r(null), 2000)),
+    ]);
+    if (fast && fast.ok && fast.type === 'basic') {
+      cache.put(req, fast.clone()).catch(() => {});
+      return fast;
+    }
+    const hit = await hitP;
+    netP.then((res) => {
+      if (res && res.ok && res.type === 'basic') cache.put(req, res.clone()).catch(() => {});
+    }).catch(() => {});
+    if (hit) return hit;
+    const late = await netP;
+    if (late && late.ok) {
+      cache.put(req, late.clone()).catch(() => {});
+      return late;
+    }
+    return new Response('', { status: 504, statusText: 'Offline' });
+  }
+
+  /* 图片 / 图标：缓存优先 + 后台悄悄更新 */
+  const hit = await hitP;
   const network = fetch(netRequest(req)).then((res) => {
     if (res && res.ok && res.type === 'basic') {
       cache.put(req, res.clone()).catch(() => {});
@@ -200,6 +246,11 @@ if (typeof self !== 'undefined') self.addEventListener('message', (event) => {
   if (event.data === 'skip-waiting') self.skipWaiting();
   if (event.data === 'version' && event.source) {
     event.source.postMessage({ type: 'version', version: VERSION });
+  }
+  /* 页面每次打开都把当前链接里的访问码同步过来，重新发布换码后不用手动清缓存 */
+  if (event.data && event.data.type === 'sharecode') {
+    const v = String(event.data.value || '');
+    if (v && /^[A-Za-z0-9_-]{4,64}$/.test(v)) SC_VAL = v;
   }
 });
 

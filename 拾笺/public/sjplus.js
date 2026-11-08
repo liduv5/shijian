@@ -342,20 +342,30 @@
       const raw = el.getAttribute('data-sjraw') || el.textContent;
       if (!el.getAttribute('data-sjraw')) el.setAttribute('data-sjraw', raw);
       const html = re ? esc(raw).replace(re, '<mark>$1</mark>') : esc(raw);
-      if (el.innerHTML !== html) el.innerHTML = html;
+      /* 按「上次写入的内容」比较，不能用 el.innerHTML：浏览器序列化后的
+         字符串和这里拼的不一定逐字节相同（实体、引号），会判成永远不等，
+         于是每轮都重写 innerHTML → 触发自己的观察器 → 无限自激。 */
+      if (el.getAttribute('data-sjhtml') !== html) {
+        el.setAttribute('data-sjhtml', html);
+        el.innerHTML = html;
+      }
     });
   }
   function bindHighlight() {
     const list = $('#noteList');
     const input = $('#searchInput');
     if (!list) return;
-    let busy = false;
+    const OPTS = { childList: true, subtree: true, characterData: true };
+    let mo;
     const run = () => {
-      if (busy) return;
-      busy = true;
-      try { highlight(); } finally { busy = false; }
+      if (!mo) return;
+      /* 写入期间断开订阅：高亮自己插入的 <mark> 不该再唤醒自己。
+         原来的 busy 标志挡不住 —— 观察器回调是下一个任务，那时 busy 已复位。 */
+      mo.disconnect();
+      try { highlight(); } finally { mo.observe(list, OPTS); }
     };
-    new MutationObserver(run).observe(list, { childList: true, subtree: true, characterData: true });
+    mo = new MutationObserver(run);
+    mo.observe(list, OPTS);
     if (input) input.addEventListener('input', () => setTimeout(run, 0));
     run();
   }

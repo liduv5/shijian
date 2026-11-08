@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f4f3ef">
-<link rel="manifest" href="/quick.webmanifest?sharecode=FKSO3QK6B4">
+<link rel="manifest" href="/quick.webmanifest?sharecode=3J7BKHTGFD">
 <title>随手记 · 拾笺</title>
 <style>
   * { box-sizing: border-box; }
@@ -49,12 +49,12 @@
   <div id="view"></div>
   <div class="tip">从其他 App 点「分享 → 拾笺」可以直接把文字和链接存进笔记；也可以把这个页面当随手速记本用。内容先存手机本地，同步方式和主程序一样。</div>
 </div>
-<script src="/attstore.js?sharecode=FKSO3QK6B4"></script>
-<script src="/local.js?sharecode=FKSO3QK6B4"></script>
+<script src="/attstore.js?sharecode=3J7BKHTGFD"></script>
+<script src="/local.js?sharecode=3J7BKHTGFD"></script>
 <script>
 (function () {
   'use strict';
-  const SC = 'FKSO3QK6B4';
+  const SC = '3J7BKHTGFD';
   const qs = new URLSearchParams(location.search);
   const view = document.getElementById('view');
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
@@ -128,7 +128,7 @@
 <script>
 /* 注册 Service Worker，让本页也能被「添加到主屏幕」独立安装成 App */
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js?sharecode=FKSO3QK6B4', { scope: '/' }).catch(function () {});
+  navigator.serviceWorker.register('/sw.js?sharecode=3J7BKHTGFD', { scope: '/' }).catch(function () {});
 }
 </script>
 </body>
