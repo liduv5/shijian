@@ -3339,4 +3339,115 @@
   /* -72：崩溃恢复提示排到首屏之后，不与启动渲染抢 DOM。 */
   setTimeout(offerEditDraft, 600);
 
+  /* ============================================================
+     A+B：三栏可收起 + 栏间可拖拽（桌面端 only）
+     - 不进两端共有函数集，t69 漂移守卫不会触发
+     - 仅写 localStorage 布局偏好，绝不碰 state / 保存时机
+     - 窄屏（NARROW）完全不注入分隔条、不触发收起，交回抽屉逻辑
+  ============================================================ */
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  const NAV_K = 'sj_nav', W_SB_K = 'sj_sidebar_w', W_LIST_K = 'sj_list_w';
+  const SB_MIN = 180, SB_MAX = 460, LIST_MIN = 220, LIST_MAX = 560;
+
+  function navLoad() {
+    let c = { sb: false, list: false };
+    try { c = Object.assign(c, JSON.parse(localStorage.getItem(NAV_K) || '{}')); } catch (_) {}
+    const app = document.querySelector('.app');
+    const sb = clamp(parseInt(localStorage.getItem(W_SB_K)) || 268, SB_MIN, SB_MAX);
+    const lw = clamp(parseInt(localStorage.getItem(W_LIST_K)) || 312, LIST_MIN, LIST_MAX);
+    app.style.setProperty('--sidebar-w', sb + 'px');
+    app.style.setProperty('--list-w', lw + 'px');
+    document.body.classList.toggle('nav-sb-collapse', !!c.sb);
+    document.body.classList.toggle('nav-list-collapse', !!c.list);
+    return c;
+  }
+  function navSave(c) { try { localStorage.setItem(NAV_K, JSON.stringify(c)); } catch (_) {} }
+  function navInVar(which) { return which === 'sb' ? '--sidebar-w' : '--list-w'; }
+  function navWKey(which) { return which === 'sb' ? W_SB_K : W_LIST_K; }
+  function navBounds(which) { return which === 'sb' ? [SB_MIN, SB_MAX] : [LIST_MIN, LIST_MAX]; }
+
+  function toggleNav(which, c) {
+    if (NARROW()) return;
+    const key = which === 'sb' ? 'nav-sb-collapse' : 'nav-list-collapse';
+    const on = document.body.classList.toggle(key);
+    c[which] = on; navSave(c);
+  }
+  function expandNav(c) {
+    if (document.body.classList.contains('nav-sb-collapse')) toggleNav('sb', c);
+    if (document.body.classList.contains('nav-list-collapse')) toggleNav('list', c);
+  }
+  function bindDrag(el, which, c) {
+    el.addEventListener('pointerdown', (e) => {
+      if (NARROW()) return;
+      e.preventDefault();
+      const app = document.querySelector('.app');
+      const varn = navInVar(which), wkey = navWKey(which);
+      const [min, max] = navBounds(which);
+      const startX = e.clientX;
+      const startW = clamp(
+        parseInt(getComputedStyle(app).getPropertyValue(varn)) || (which === 'sb' ? 268 : 312),
+        min, max
+      );
+      app.classList.add('nav-dragging');
+      const move = (ev) => {
+        const w = clamp(startW + (ev.clientX - startX), min, max);
+        app.style.setProperty(varn, w + 'px');
+      };
+      const up = () => {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        app.classList.remove('nav-dragging');
+        const w = parseInt(getComputedStyle(app).getPropertyValue(varn)) || (which === 'sb' ? 268 : 312);
+        try { localStorage.setItem(wkey, String(w)); } catch (_) {}
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    });
+  }
+  function initDividers(c) {
+    const app = document.querySelector('.app');
+    if (app.querySelector('.divider')) return;
+    const sb = app.querySelector('.sidebar'), lp = app.querySelector('.list-pane');
+    const d1 = document.createElement('div'); d1.className = 'divider div1';
+    const d2 = document.createElement('div'); d2.className = 'divider div2';
+    sb.after(d1); lp.after(d2);
+    bindDrag(d1, 'sb', c); bindDrag(d2, 'list', c);
+  }
+  function svgChevron() {
+    return '<svg viewBox="0 0 24 24" class="ico"><path d="M14 6l-6 6 6 6"/></svg>';
+  }
+  function initNavUI(c) {
+    const sbBtn = document.createElement('button');
+    sbBtn.className = 'icon-btn nav-collapse-sb';
+    sbBtn.title = '收起侧栏'; sbBtn.setAttribute('aria-label', '收起侧栏');
+    sbBtn.innerHTML = svgChevron();
+    sbBtn.addEventListener('click', () => toggleNav('sb', c));
+    const brand = document.querySelector('.brand'); if (brand) brand.appendChild(sbBtn);
+
+    const listBtn = document.createElement('button');
+    listBtn.className = 'icon-btn nav-collapse-list';
+    listBtn.title = '收起列表'; listBtn.setAttribute('aria-label', '收起列表');
+    listBtn.innerHTML = svgChevron();
+    listBtn.addEventListener('click', () => toggleNav('list', c));
+    const lh = document.querySelector('.list-head'); if (lh) lh.appendChild(listBtn);
+
+    const resume = document.createElement('div');
+    resume.className = 'nav-resume'; resume.textContent = '展开导航';
+    resume.addEventListener('click', () => expandNav(c));
+    const ep = document.querySelector('.editor-pane'); if (ep) ep.appendChild(resume);
+
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
+        e.preventDefault(); toggleNav('sb', c); toggleNav('list', c);
+      }
+    });
+  }
+  function initNavLayout() {
+    if (NARROW()) return;            // 窄屏走抽屉，不注入分隔条 / 不收起
+    const c = navLoad();
+    initDividers(c);
+    initNavUI(c);
+  }
+  initNavLayout();
+
 })();

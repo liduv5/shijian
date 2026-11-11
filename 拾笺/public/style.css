@@ -14,6 +14,8 @@
   --r-lg: 14px;
   --sidebar-w: 268px;
   --list-w: 312px;
+  --div1: 0px;   /* 侧栏 | 列表 可拖拽分隔条（默认 0，无间隙；hover 跨缝抓取区） */
+  --div2: 0px;   /* 列表 | 编辑 可拖拽分隔条 */
   --ease: cubic-bezier(.22, .61, .36, 1);
 }
 
@@ -121,10 +123,60 @@ kbd {
 /* ============================================================ 骨架 */
 .app {
   display: grid;
-  grid-template-columns: var(--sidebar-w) var(--list-w) 1fr;
+  grid-template-columns: var(--sidebar-w) var(--div1) var(--list-w) var(--div2) 1fr;
   height: 100vh;
   height: 100dvh;
+  transition: grid-template-columns .16s ease;
 }
+
+/* 收起态：用更高优先级的规则把对应轨道直接置 0。
+   不能写成 body{--sidebar-w:0} 再用变量——会被 .app 行内 --sidebar-w 覆盖，收不起来。
+   栏必须 min-width:0，否则 grid 项 min-width:auto 不会真正缩到 0。 */
+.sidebar, .list-pane { min-width: 0; overflow: hidden; }
+body.nav-sb-collapse   .app { grid-template-columns: 0px var(--div1) var(--list-w) var(--div2) 1fr; }
+body.nav-list-collapse .app { grid-template-columns: var(--sidebar-w) var(--div1) 0px var(--div2) 1fr; }
+body.nav-sb-collapse.nav-list-collapse .app { grid-template-columns: 0px var(--div1) 0px var(--div2) 1fr; }
+
+/* 栏间可拖拽分隔条：默认 0 宽（无间隙，默认视图与改前逐像素一致）；
+   hover 时跨缝 8px 抓取区显出居中细线，平时不可见但始终可拖 */
+.divider { position: relative; align-self: stretch; width: 0; cursor: col-resize; }
+.divider::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: -4px; right: -4px;
+  background: linear-gradient(to right,
+    transparent calc(50% - 1px), var(--border) calc(50% - 1px),
+    var(--border) calc(50% + 1px), transparent calc(50% + 1px));
+  opacity: 0; transition: opacity .12s;
+}
+.divider:hover::after { opacity: 1; }
+body.nav-sb-collapse   .divider.div1,
+body.nav-list-collapse .divider.div2 { pointer-events: none; }
+
+/* 收起态唤回条：常驻编辑区左缘，仅收起时显示 */
+.nav-resume {
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  writing-mode: vertical-rl; padding: 10px 4px; cursor: pointer;
+  color: var(--text-3); background: var(--surface-2);
+  border-radius: 0 8px 8px 0; z-index: 30; user-select: none; font-size: 12px;
+  letter-spacing: .1em;
+}
+body:not(.nav-sb-collapse):not(.nav-list-collapse) .nav-resume { display: none; }
+.nav-resume:hover { color: var(--text); background: var(--surface-3); }
+
+/* 窄屏走抽屉逻辑：不显示分隔条，且无论收起类是否存在，.app 强制单列（!important 压过收起态规则） */
+@media (max-width: 980px) {
+  .divider { display: none !important; }
+  body.nav-sb-collapse .app,
+  body.nav-list-collapse .app,
+  body.nav-sb-collapse.nav-list-collapse .app { grid-template-columns: 1fr !important; }
+  body.nav-sb-collapse, body.nav-list-collapse { --sidebar-w: 268px; --list-w: 312px; --div1: 0px; --div2: 0px; }
+}
+
+/* 拖拽时禁用过渡，避免跟手迟滞 */
+.app.nav-dragging { transition: none; }
+
+/* 收起按钮：默认 display:none（不占布局，默认视图逐像素不变），hover 才入流显示 */
+.nav-collapse-sb, .nav-collapse-list { display: none; flex: none; }
+.brand:hover .nav-collapse-sb, .list-head:hover .nav-collapse-list { display: inline-flex; }
 
 /* ============================================================ 侧边栏 */
 .sidebar {
