@@ -51,6 +51,7 @@
     selCat: 'all',
     selNote: null,
     search: '',
+    tree: {},
     viewMode: localStorage.getItem('sj_view') || 'split',
     theme: localStorage.getItem('sj_theme') || 'light',
     dirty: false,
@@ -444,12 +445,97 @@
     return notes.filter((n) => ids.has(n.categoryId)).length;
   }
 
-  function pseudoRow(key, label, icon, count) {
+  /* —— 合并导航树：分类/伪节点下直接嵌套笔记行；伪节点可展开列出笔记 —— */
+  function isOpen(key) {
+    if (key === 'all' || key === 'starred' || key === 'uncat') return !!state.tree[key];
+    return false;
+  }
+  function setOpen(key, val) {
+    if (key === 'all' || key === 'starred' || key === 'uncat') state.tree[key] = val;
+  }
+  function togglePseudo(key) { setOpen(key, !isOpen(key)); }
+
+  function notesUnder(catId) {
+    return state.notes.filter((n) => n.categoryId === catId);
+  }
+
+  /* 点击某节点时收起其它顶层节点（伪节点 + 根类别），实现手风琴。 */
+  function accordion(except) {
+    ['all', 'starred', 'uncat'].forEach((k) => { if (k !== except) setOpen(k, false); });
+    state.categories.filter((c) => !c.parentId && c.id !== except && c.expanded)
+      .forEach((c) => {
+        c.expanded = false;
+        api(`/api/categories/${c.id}`, { method: 'PATCH', body: { expanded: false } }).catch(() => {});
+      });
+  }
+
+  function noteRow(n) {
     const row = document.createElement('div');
-    row.className = 'tree-row' + (state.selCat === key ? ' active' : '');
+    row.className = 'tree-note' + (state.selNote === n.id ? ' active' : '');
+    row.dataset.nid = n.id;
+    row.draggable = true;
+    const tags = (n.tags && n.tags.length) ? n.tags.slice(0, 3).map((t) => '#' + escapeHtml(t)).join(' ') : '';
+    row.innerHTML = `
+      <span class="tree-note-dot"></span>
+      <span class="tree-note-title">${n.starred ? I.starFill.replace('<svg', '<svg fill="currentColor"') : ''}<span class="tree-note-name">${escapeHtml(n.title || '无标题笔记')}</span></span>
+      <span class="tree-note-meta">${tags ? '<span class="tree-note-tags">' + tags + '</span>' : ''}<span class="tree-note-date">${fmtDate(n.updatedAt)}</span></span>`;
+    return row;
+  }
+
+  function highlightTitle(row, term) {
+    if (!term) return;
+    const el = row.querySelector('.tree-note-name');
+    if (!el) return;
+    const safe = escapeHtml(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    try {
+      el.innerHTML = escapeHtml(el.textContent).replace(new RegExp('(' + safe + ')', 'ig'), '<mark>$1</mark>');
+    } catch (_) {}
+  }
+
+  function renderSearchResults(tree) {
+    const q = state.search.trim();
+    let list;
+    if (window.SJFts) {
+      const ids = window.SJFts.rank(q, state.notes);
+      const map = new Map(state.notes.map((n) => [n.id, n]));
+      list = ids.map((id) => map.get(id)).filter(Boolean);
+    } else {
+      const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+      list = state.notes.filter((n) => {
+        const hay = (n.title + ' ' + (n.tags || []).join(' ') + ' ' + plainText(n)).toLowerCase();
+        return terms.every((t) => t.indexOf('tag:') === 0
+          ? (n.tags || []).some((x) => String(x).toLowerCase().includes(t.slice(4)))
+          : hay.includes(t));
+      });
+    }
+    const head = document.createElement('div');
+    head.className = 'tree-row static';
+    head.innerHTML = `<span class="caret leaf"></span><span class="tree-label">搜索结果 · ${list.length}</span>`;
+    tree.appendChild(head);
+    const box = document.createElement('div');
+    box.className = 'tree-children';
+    if (!list.length) {
+      const tip = document.createElement('div');
+      tip.className = 'tree-empty';
+      tip.textContent = '没有找到相关笔记';
+      box.appendChild(tip);
+    } else {
+      list.forEach((n) => {
+        const r = noteRow(n);
+        highlightTitle(r, q.trim().split(/\s+/).filter(Boolean)[0]);
+        box.appendChild(r);
+      });
+    }
+    tree.appendChild(box);
+  }
+
+  function pseudoRow(key, label, icon, count) {
+    const open = isOpen(key);
+    const row = document.createElement('div');
+    row.className = 'tree-row' + (state.selCat === key ? ' active' : '') + (open ? '' : ' collapsed');
     row.dataset.pseudo = key;
     row.innerHTML = `
-      <span class="caret leaf"></span>
+      <span class="caret" data-act="toggle">${I.chevron}</span>
       <span class="tree-label" style="padding-left:2px">${label}</span>
       <span class="tree-count">${count}</span>`;
     row.querySelector('.tree-label').insertAdjacentHTML('afterbegin', icon.replace('class="ico"', 'class="ico" style="width:14px;height:14px;margin-right:7px;vertical-align:-2px"'));
@@ -458,12 +544,29 @@
 
   function renderTree() {
     const tree = $('#tree');
+    if (!tree) return;
     tree.innerHTML = '';
+    if (state.search.trim()) { renderSearchResults(tree); return; }
+
     $('#statText').textContent = `${state.notes.length} 篇 · ${state.categories.length} 个类别`;
 
-    tree.appendChild(pseudoRow('all', '全部笔记', I.grid, state.notes.length));
-    tree.appendChild(pseudoRow('starred', '收藏', I.star, state.notes.filter((n) => n.starred).length));
-    tree.appendChild(pseudoRow('uncat', '未分类', I.inbox, state.notes.filter((n) => !n.categoryId).length));
+    const nodes = [
+      { key: 'all', label: '全部笔记', icon: I.grid, list: state.notes },
+      { key: 'starred', label: '收藏', icon: I.star, list: state.notes.filter((n) => n.starred) },
+      { key: 'uncat', label: '未分类', icon: I.inbox, list: state.notes.filter((n) => !n.categoryId) },
+    ];
+    nodes.forEach((node) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'tree-node';
+      wrap.appendChild(pseudoRow(node.key, node.label, node.icon, node.list.length));
+      if (isOpen(node.key)) {
+        const box = document.createElement('div');
+        box.className = 'tree-children';
+        node.list.forEach((n) => box.appendChild(noteRow(n)));
+        wrap.appendChild(box);
+      }
+      tree.appendChild(wrap);
+    });
 
     const divider = document.createElement('div');
     divider.style.cssText = 'height:1px;background:var(--border);margin:7px 10px';
@@ -486,9 +589,10 @@
     const frag = document.createDocumentFragment();
     const kids = state.categories.filter((c) => c.parentId === cat.id).sort(byOrder);
     const collapsed = !cat.expanded;
+    const open = !collapsed;
 
     const row = document.createElement('div');
-    row.className = 'tree-row' + (state.selCat === cat.id ? ' active' : '') + (collapsed ? ' collapsed' : '');
+    row.className = 'tree-row' + (state.selCat === cat.id ? ' active' : '') + (open ? '' : ' collapsed');
     row.dataset.id = cat.id;
     row.dataset.depth = depth;
     row.style.paddingLeft = 4 + depth * 14 + 'px';
@@ -502,10 +606,11 @@
       </span>`;
     frag.appendChild(row);
 
-    if (kids.length) {
+    if (open) {
       const box = document.createElement('div');
-      box.className = 'tree-children' + (collapsed ? ' collapsed' : '');
+      box.className = 'tree-children';
       kids.forEach((k) => box.appendChild(catNode(k, depth + 1)));
+      notesUnder(cat.id).forEach((n) => box.appendChild(noteRow(n)));
       frag.appendChild(box);
     }
     return frag;
@@ -2796,6 +2901,14 @@
         return noteMenu(e.clientX, e.clientY, note);
       }
     }
+    const tnote = e.target.closest('.tree-note');
+    if (tnote) {
+      const note = noteById(tnote.dataset.nid);
+      if (note) {
+        e.preventDefault();
+        return noteMenu(e.clientX, e.clientY, note);
+      }
+    }
     const row = e.target.closest('.tree-row[data-id]');
     if (!row) return;
     e.preventDefault();
@@ -2812,6 +2925,15 @@
 
   /* ---------------------------------------------------------- 事件绑定 */
   $('#tree').addEventListener('click', (e) => {
+    const note = e.target.closest('.tree-note');
+    if (note) {
+      if (lpSuppress) { lpSuppress = false; e.preventDefault(); e.stopPropagation(); return; }
+      e.preventDefault();
+      saveNow();
+      openNote(note.dataset.nid);
+      if (NARROW()) closeDrawer();
+      return;
+    }
     const row = e.target.closest('.tree-row');
     if (!row) return;
     const act = e.target.closest('[data-act]');
@@ -2819,7 +2941,10 @@
       e.stopPropagation();
       const id = row.dataset.id;
       const cat = id ? state.categories.find((c) => c.id === id) : null;
-      if (act.dataset.act === 'toggle') { toggleCat(id); return; }
+      if (act.dataset.act === 'toggle') {
+        if (id) { toggleCat(id); return; }
+        if (row.dataset.pseudo) { togglePseudo(row.dataset.pseudo); renderTree(); renderList(); return; }
+      }
       if (!cat) return;
       if (act.dataset.act === 'add') return askCreateCategory(id);
       if (act.dataset.act === 'more') {
@@ -2834,7 +2959,10 @@
       return;
     }
     if (row.dataset.pseudo) {
-      state.selCat = row.dataset.pseudo;
+      const k = row.dataset.pseudo;
+      setOpen(k, true);
+      accordion(k);
+      state.selCat = k;
       state.search = '';
       $('#searchInput').value = '';
       renderTree();
@@ -2843,7 +2971,10 @@
       return;
     }
     if (row.dataset.id) {
-      state.selCat = row.dataset.id;
+      const id = row.dataset.id;
+      const cat = state.categories.find((c) => c.id === id);
+      if (cat) { cat.expanded = true; accordion(id); }
+      state.selCat = id;
       renderTree();
       renderList();
       afterPickCategory();
@@ -2875,6 +3006,41 @@
     renderList();
     markDirty();
     toast('已移动到该类别');
+  });
+
+  /* 笔记行（嵌套在分类下）作为拖拽源：拖到分类行即移动。 */
+  $('#tree').addEventListener('dragstart', (e) => {
+    const tnote = e.target.closest('.tree-note');
+    if (!tnote) return;
+    e.dataTransfer.setData('text/note-id', tnote.dataset.nid);
+    e.dataTransfer.effectAllowed = 'move';
+  });
+
+  /* 手机端点笔记行长按唤起菜单（与 #noteList 行为一致） */
+  $('#tree').addEventListener('pointerdown', (e) => {
+    const tnote = e.target.closest('.tree-note');
+    if (!tnote || e.target.closest('[data-act]')) return;
+    if (e.pointerType === 'mouse') return;
+    lpSuppress = false;
+    cancelLongPress();
+    lpPoint = { x: e.clientX, y: e.clientY };
+    lpTimer = setTimeout(() => {
+      lpTimer = 0;
+      const note = noteById(tnote.dataset.nid);
+      if (!note) return;
+      lpSuppress = true;
+      tnote.classList.add('pressed');
+      setTimeout(() => tnote.classList.remove('pressed'), 200);
+      try { if (navigator.vibrate) navigator.vibrate(10); } catch (_) {}
+      noteMenu(lpPoint.x - 76, lpPoint.y - 16, note);
+    }, LP_MS);
+  });
+  $('#tree').addEventListener('pointermove', (e) => {
+    if (!lpTimer || !lpPoint) return;
+    if (Math.abs(e.clientX - lpPoint.x) > 12 || Math.abs(e.clientY - lpPoint.y) > 12) cancelLongPress();
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => {
+    $('#tree').addEventListener(ev, cancelLongPress);
   });
 
   $('#noteList').addEventListener('click', (e) => {
@@ -2947,6 +3113,7 @@
 
   $('#searchInput').addEventListener('input', (e) => {
     state.search = e.target.value;
+    renderTree();
     renderList();
   });
 

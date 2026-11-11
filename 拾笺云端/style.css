@@ -360,6 +360,50 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
 .tree-children { overflow: hidden; }
 .tree-children.collapsed { display: none; }
 
+/* 合并导航树：分类下的笔记行（直接嵌在分类树里，不再单独一列） */
+.tree-node { display: block; }
+.tree-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 8px 0 28px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  color: var(--text-2);
+  user-select: none;
+  transition: background .13s, color .13s;
+}
+.tree-note:hover { background: var(--surface-2); color: var(--text); }
+.tree-note.active { background: var(--accent-soft); color: var(--accent); }
+.tree-note.active .tree-note-name { color: var(--accent); font-weight: 600; }
+.tree-note.pressed { background: var(--surface-3); }
+.tree-note-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--text-3); flex: none; opacity: .8;
+}
+.tree-note-title {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 4px;
+  overflow: hidden;
+}
+.tree-note-title svg { width: 12px; height: 12px; color: var(--accent); flex: none; }
+.tree-note-name {
+  font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tree-note-meta {
+  display: flex; align-items: center; gap: 7px; flex: none;
+}
+.tree-note-tags {
+  font-size: 10.5px; color: var(--text-3);
+  max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tree-note-date {
+  font-size: 10.5px; color: var(--text-3);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; padding: 0 1px; }
+
 .tree-empty {
   padding: 18px 12px;
   font-size: 12.5px;
@@ -2049,6 +2093,13 @@ img.sj-img-picked {
   .tm-confirm-acts { align-self: flex-end; }
 }
 
+
+/* 合并导航：桌面端隐藏单独的列表栏，笔记直接嵌在侧栏分类树下。
+   移动端（≤980px）走抽屉，列表栏仍作为 m-list 保留，不受影响。 */
+@media (min-width: 981px) {
+  .list-pane { display: none !important; }
+  .app { grid-template-columns: var(--sidebar-w) 1fr !important; }
+}
 
 /* ============================================================
    PWA · 添加到手机桌面

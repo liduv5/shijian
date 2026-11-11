@@ -20,7 +20,7 @@
   const LS_EMAIL = 'sj_cloud_session_email';
   const LS_LAST = 'sj_last_sync';
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对。 */
-  const BUILD = '2026-11-11-72';
+  const BUILD = '2026-11-11-73';
   let session = null;
   let pendingOtp = null;
   let cooldownTimer = null;
