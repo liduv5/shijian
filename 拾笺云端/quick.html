@@ -6,11 +6,11 @@
 <meta name="theme-color" content="#2f6f5e">
 <meta name="color-scheme" content="light">
 <title>随手记</title>
-<link rel="manifest" href="/quick.webmanifest?sharecode=3J7BKHTGFD">
+<link rel="manifest" href="/quick.webmanifest?sharecode=SSYXUMSNMI">
 <!-- 速记专用图标：绿色铅笔，和朱红「拾」字主图标区分开。
      这个站点裸静态路径一律 403，所有图标 / manifest 都必须自带访问码。 -->
-<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-quick-32.png?sharecode=3J7BKHTGFD">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon-quick.png?sharecode=3J7BKHTGFD">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-quick-32.png?sharecode=SSYXUMSNMI">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon-quick.png?sharecode=SSYXUMSNMI">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -91,7 +91,7 @@
      localStorage，往里面写笔记就永远进不了主程序。所以这里只把速记
      编进链接 / 共享队列，交给主程序落盘；旧版本遗留在本分区的笔记
      一并带回。队列由主程序确认导入后才清，本页绝不提前标记「已发送」。 */
-  const SC = '3J7BKHTGFD';
+  const SC = 'SSYXUMSNMI';
   /* 必须写到主程序的正式入口：相对路径会留在随手记自己的存储分区里。
      换分享链接域名时，这里和 SC 一起改。 */
   const MAIN = 'https://2118888983953637376.app.workbuddy.host/?sharecode=' + SC + '&fs=pwa';
@@ -368,7 +368,7 @@
 (function () {
   if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
   var SWV = '2026-11-11-73';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
-  var sc = new URLSearchParams(location.search).get('sharecode') || '3J7BKHTGFD';
+  var sc = new URLSearchParams(location.search).get('sharecode') || 'SSYXUMSNMI';
   var url = '/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SWV;
   navigator.serviceWorker.getRegistration().then(function (reg) {
     if (reg && reg.active) return;      /* 已有 SW：直接复用，绝不重复注册 */

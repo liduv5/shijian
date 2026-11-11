@@ -2544,8 +2544,8 @@
   function currentShareCode() {
     try {
       return new URLSearchParams(location.search).get('sharecode')
-        || localStorage.getItem('sj_sharecode') || '3J7BKHTGFD';
-    } catch (_) { return '3J7BKHTGFD'; }
+        || localStorage.getItem('sj_sharecode') || 'SSYXUMSNMI';
+    } catch (_) { return 'SSYXUMSNMI'; }
   }
   /* 早期版本这里还有一个 buildIntentUrl()：直接把签名地址包成裸 intent 交给系统。
      它已被下面的 buildDlIntent() 完全取代 —— 后者先经同源 dl.html 中转页，能顺手把
@@ -4098,7 +4098,7 @@
         || localStorage.getItem('sj_sharecode') || '';
     } catch (_) {}
     const u = new URL('/quick.html', location.origin);
-    u.searchParams.set('sharecode', sc || '3J7BKHTGFD');
+    u.searchParams.set('sharecode', sc || 'SSYXUMSNMI');
     u.searchParams.set('from', from || 'app');
     return u.toString();
   }

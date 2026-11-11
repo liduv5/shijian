@@ -20,7 +20,7 @@ const SC_KEY = 'sharecode';
    所以优先取注册时 sw.js URL 上带的码（pwa.js / index.html 注册时会拼上
    当前页面链接里的码），页面每次打开还会 postMessage 同步一次最新码，
    连已经装好的旧 SW 也能跟着换。常量只作最后兜底。 */
-let SC_VAL = '3J7BKHTGFD';
+let SC_VAL = 'SSYXUMSNMI';
 try {
   if (typeof self !== 'undefined' && self.location) {
     const v = new URL(self.location.href).searchParams.get(SC_KEY);

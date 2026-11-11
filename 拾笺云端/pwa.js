@@ -38,7 +38,7 @@
       /* 访问码从当前链接取，并同步给已装好的 SW：重新发布换码后不会 403。 */
       let sc = new URLSearchParams(location.search).get('sharecode') || '';
       try { sc = sc || localStorage.getItem('sj_sharecode') || ''; } catch (_) {}
-      sc = sc || '3J7BKHTGFD';
+      sc = sc || 'SSYXUMSNMI';
       const pushCode = (reg) => {
         const sw = reg && (reg.active || reg.waiting || reg.installing);
         try {

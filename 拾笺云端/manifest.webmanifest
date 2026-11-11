@@ -1,11 +1,11 @@
 {
-  "id": "/?sharecode=3J7BKHTGFD",
+  "id": "/?sharecode=SSYXUMSNMI",
   "name": "拾笺 · 笔记库",
   "short_name": "拾笺",
   "description": "随手拾笺。本地优先的手机笔记，随时记、手动同步。",
   "lang": "zh-CN",
   "dir": "ltr",
-  "start_url": "/?sharecode=3J7BKHTGFD&fs=pwa",
+  "start_url": "/?sharecode=SSYXUMSNMI&fs=pwa",
   "scope": "/",
   "display": "minimal-ui",
   "orientation": "portrait",
@@ -14,27 +14,27 @@
   "categories": ["productivity", "utilities"],
   "prefer_related_applications": false,
   "icons": [
-    { "src": "/icons/icon-192.png?sharecode=3J7BKHTGFD", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-512.png?sharecode=3J7BKHTGFD", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-maskable-192.png?sharecode=3J7BKHTGFD", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
-    { "src": "/icons/icon-maskable-512.png?sharecode=3J7BKHTGFD", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "/icons/icon-192.png?sharecode=SSYXUMSNMI", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png?sharecode=SSYXUMSNMI", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-192.png?sharecode=SSYXUMSNMI", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-maskable-512.png?sharecode=SSYXUMSNMI", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
     {
       "name": "新建笔记",
       "short_name": "新建",
-      "url": "/?sharecode=3J7BKHTGFD&fs=pwa&action=new",
-      "icons": [{ "src": "/icons/icon-192.png?sharecode=3J7BKHTGFD", "sizes": "192x192" }]
+      "url": "/?sharecode=SSYXUMSNMI&fs=pwa&action=new",
+      "icons": [{ "src": "/icons/icon-192.png?sharecode=SSYXUMSNMI", "sizes": "192x192" }]
     },
     {
       "name": "随手记",
       "short_name": "随手记",
-      "url": "/quick.html?sharecode=3J7BKHTGFD&from=desk",
-      "icons": [{ "src": "/icons/icon-quick-192.png?sharecode=3J7BKHTGFD", "sizes": "192x192" }]
+      "url": "/quick.html?sharecode=SSYXUMSNMI&from=desk",
+      "icons": [{ "src": "/icons/icon-quick-192.png?sharecode=SSYXUMSNMI", "sizes": "192x192" }]
     }
   ],
   "share_target": {
-    "action": "/quick.html?sharecode=3J7BKHTGFD",
+    "action": "/quick.html?sharecode=SSYXUMSNMI",
     "method": "GET",
     "params": { "title": "title", "text": "text", "url": "url" }
   }
