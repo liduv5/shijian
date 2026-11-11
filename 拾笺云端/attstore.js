@@ -26,9 +26,16 @@
   let dbp = null;
   let usable = true;
   let warned = false;
+  let coolUntil = 0;      // 超时后的退避截止时间，到点重新尝试打开
 
   function open() {
     if (dbp) return dbp;
+    /* 超时不是「这台机器没有 IndexedDB」，只是「这次没打开」。
+       以前这里把 usable 置 false 且 dbp 永久留着 rejected promise，
+       于是**一次打开超时 = 整个会话所有附件都读不出来**：用户看到的就是
+       「图片能显示（走远程地址）、PDF 点下载没反应（仓里明明有数据却读不到）」。
+       现在超时只退避 15 秒，过后重试；只有明确不支持 / 明确报错才判死。 */
+    if (Date.now() < coolUntil) return Promise.reject(new Error('附件仓冷却中'));
     dbp = new Promise((resolve, reject) => {
       if (!window.indexedDB) {
         usable = false;
@@ -38,11 +45,10 @@
       try { req = indexedDB.open(DB_NAME, 1); } catch (e) { usable = false; return reject(e); }
       /* 部分手机浏览器（多标签 / 省电冻结 / 隐私模式）会让 open 既不 success、
          也不 error、也不 blocked，Promise 永远悬着。所有附件读写都会卡在
-         store() 上，界面表现为「点了没反应」。4 秒拿不到就降级内存仓。 */
+         store() 上，界面表现为「点了没反应」。 */
       const timer = setTimeout(() => {
-        usable = false;
         reject(new Error('IndexedDB 打开超时'));
-      }, 4000);
+      }, 8000);
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
@@ -50,12 +56,17 @@
       req.onsuccess = () => { clearTimeout(timer); resolve(req.result); };
       req.onerror = () => { clearTimeout(timer); usable = false; reject(req.error); };
       req.onblocked = () => {
-        clearTimeout(timer); usable = false;
-        reject(new Error('IndexedDB 被其他标签页阻塞'));
+        clearTimeout(timer); reject(new Error('IndexedDB 被其他标签页阻塞'));
       };
     }).catch((e) => {
-      if (!warned) { warned = true; console.warn('附件仓不可用，改用内存暂存：', e && e.message); }
-      usable = false;
+      const msg = (e && e.message) || '';
+      const soft = /超时|阻塞/.test(msg);
+      if (!soft) usable = false;
+      else coolUntil = Date.now() + 15000;
+      /* 必须清掉这个失败的 promise，否则后续每次调用都直接拿到同一个 reject，
+         永远没有重试的机会。 */
+      dbp = null;
+      if (!warned) { warned = true; console.warn('附件仓暂时读不到：', msg); }
       throw e;
     });
     return dbp;
@@ -71,7 +82,10 @@
     });
   }
 
-  /* 写一份（data 是 data URL 字符串）。同步返回，内部异步落库。 */
+  /* 写一份（data 是 data URL 字符串）。同步返回，内部异步落库。
+     写失败**不能**把 usable 置 false：写失败多半是配额满 / 事务被中断，
+     读仍然完全可用。以前这里 catch 里置 false，一次写失败就会让整个会话
+     的附件都读不出来（下载表现为「点了没反应」）。 */
   function put(id, data) {
     if (!id || !data) return Promise.resolve();
     mem.set(id, data);
@@ -79,7 +93,7 @@
     if (!usable) return Promise.resolve();
     return store('readwrite')
       .then((s) => reqP(s.put(data, id)))
-      .catch(() => { usable = false; });
+      .catch(() => {});
   }
 
   function get(id) {

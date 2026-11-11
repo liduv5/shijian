@@ -19,45 +19,11 @@
   const $ = (s, r) => (r || document).querySelector(s);
   const LS_EMAIL = 'sj_cloud_session_email';
   const LS_LAST = 'sj_last_sync';
-  /* 每次发布都改这个号（在下方诊断段统一定义）。面板底部会显示出来，
-     用户截图就能确认手机跑的是哪一版，不用再靠「连开两次」猜 SW 缓存。 */
-  const TRACE_KEY = 'sj_sync_trace';
-  const BUILD = '2026-11-08-4';
+  /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对。 */
+  const BUILD = '2026-11-10-71';
   let session = null;
   let pendingOtp = null;
   let cooldownTimer = null;
-
-  /* 阶段诊断：每步写 localStorage，同步期间显示「当前步骤 · 已等 Ns」。
-     秒数涨而步骤不动 = 网络挂起；秒数不涨 = 主线程被冻结。 */
-  let currentStep = '';
-  let diagClock = 0;
-  let diagStarted = 0;
-  function paintDiag() {
-    const el = $('#syncDiag');
-    if (!el) return;
-    const sec = diagClock ? Math.max(0, Math.round((Date.now() - diagStarted) / 1000)) : 0;
-    el.textContent = '版本 ' + BUILD + ' · 当前：' + currentStep
-      + (diagClock ? ' · 已等 ' + sec + 's' : '');
-  }
-  function stopDiagClock() {
-    if (diagClock) { clearInterval(diagClock); diagClock = 0; }
-  }
-  function startDiagClock(started) {
-    stopDiagClock();
-    diagStarted = started;
-    diagClock = setInterval(paintDiag, 1000);
-  }
-  function trace(step) {
-    currentStep = step;
-    const line = step + ' · ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
-    try { localStorage.setItem(TRACE_KEY, line); } catch (_) {}
-    paintDiag();   /* 每一步立刻可见，不等下一个整秒 */
-  }
-  function diagText() {
-    let last = '';
-    try { last = localStorage.getItem(TRACE_KEY) || ''; } catch (_) {}
-    return '版本 ' + BUILD + (last ? ' · 上次停在：' + last : '');
-  }
 
   /* 直接灌进界面数据源（window.SJState 是 app.js 内 state 的同一引用），
      调 SJRefresh 更新统计/树/列表，不依赖可能被 IndexedDB 就绪卡住的 boot()。 */
@@ -242,14 +208,49 @@
   }
 
   /* ---------------------------------------------------------- 附件：本地 <-> 云端 */
-  async function pushAttachments(note, owner) {
+  /* 上传前读一次云端已有的「附件 id → 存储路径」索引。
+     历史缺陷：手机端某些附件的本地记录只剩 {id,name,size,type}（没有 path），
+     本地附件仓里又可能已经取不到字节 —— 旧代码会把这份**不含 path 的元信息**
+     upsert 回云端，用整段 JSON 覆盖掉云端原本正确的 path。后果不可逆：云端没有
+     历史版本，附件从此手机和电脑都下不动（attPathFor 的查回逻辑也是事后补救，
+     行已被覆盖就查不回来了）。
+     现在：push 之前先拿云端那份 path；本地缺 path 时优先沿用云端的，绝不因为
+     本地拿不到字节就把云端记录抹平。 */
+  async function cloudAttPaths(owner) {
+    const map = new Map();
+    const put = (rows) => {
+      for (const r of rows || []) {
+        for (const a of parseAtts(r && r.attachments)) {
+          if (a && a.id && a.path && !map.has(a.id)) map.set(a.id, a.path);
+        }
+      }
+    };
+    let ok = false;
+    try {
+      const r = await withTimeout(() => restRead('sj_notes', owner), 8000, null);
+      if (r && !r.error && Array.isArray(r.data)) { put(r.data); ok = true; }
+    } catch (_) {}
+    if (!ok) {
+      try {
+        const r2 = await withTimeout(
+          () => cloud.database.from('sj_notes').select('*').eq('owner_id', owner), 8000, null);
+        if (r2 && !r2.error && Array.isArray(r2.data)) { put(r2.data); ok = true; }
+      } catch (_) {}
+    }
+    return { map, ok };
+  }
+
+  async function pushAttachments(note, owner, knownPaths) {
     const atts = Array.isArray(note.attachments) ? note.attachments : [];
     const out = [];
+    const keep = (knownPaths instanceof Map) ? knownPaths : null;
     let missing = 0;
     for (const a of atts) {
       if (!a || !a.id) continue;
       const meta = { id: a.id, name: a.name, size: a.size || 0, type: a.type };
-      if (a.path) { meta.path = a.path; out.push(meta); continue; }
+      /* 本地记录自己有 path 就用它；没有但云端有，沿用云端那份（不重传、不丢）。 */
+      const known = a.path || (keep && keep.get(a.id)) || '';
+      if (known) { meta.path = known; out.push(meta); continue; }
       /* 本地数据层把附件二进制放在附件仓（IndexedDB），note.attachments
          里通常已经没有 data 字段，所以这里回查一次。 */
       const dataUrl = a.data || (window.SJLocal && window.SJLocal.fileUrl(a.id)) || '';
@@ -268,6 +269,7 @@
           new Blob([bytes], { type: a.type || 'application/octet-stream' }), a.type);
         meta.path = path;
         out.push(meta);
+        if (keep) keep.set(a.id, path);
       } catch (e) {
         // 单个附件失败不影响整篇笔记，但要记数，最后告诉用户
         missing++; out.push(meta);
@@ -289,6 +291,93 @@
     const d = (r.data !== undefined ? r.data : r) || {};
     return d.signedUrl || d.signedURL || d.url || '';
   }
+
+  /* 附件下载取址：分两步。
+     ① cloudRows / attPathFor：定位对象路径 —— 附件自带 path 就直接用；没带
+        （早期同步把 path 覆盖掉留下的数据缺陷）则从云端笔记行里查回来。
+     ② attSignUrl：拿路径换签名地址，两条路径：
+        A = SDK createSignedUrl（跨域 endpoint，仅作兜底尝试）
+        B = 页面同源存储网关 /.cloud/storage/object/sign/runtime/<path>（主路径）
+     只借用本模块已登录的 cloud 实例，同步主流程不受影响。 */
+  let rowsP = null;
+  function cloudRows() {
+    if (rowsP) return rowsP;
+    const owner = session && session.user && session.user.id;
+    /* 登录态是异步恢复的，这里绝不缓存「未登录」，否则后面再也不查。 */
+    if (!owner) return Promise.resolve({ rows: [], info: '未登录' });
+    rowsP = (async () => {
+      let r = null;
+      try { r = await withTimeout(() => restRead('sj_notes', owner), 8000, null); } catch (_) {}
+      if (r && !r.error && Array.isArray(r.data)) return { rows: r.data, info: '直连ok' };
+      let r2 = null;
+      try {
+        r2 = await withTimeout(
+          () => cloud.database.from('sj_notes').select('*').eq('owner_id', owner), 8000, null);
+      } catch (_) {}
+      if (r2 && !r2.error && Array.isArray(r2.data)) return { rows: r2.data, info: '直连失败→组件ok' };
+      return { rows: [], info: '直连失败→组件无数据' };
+    })().catch(() => ({ rows: [], info: '查库异常' }));
+    return rowsP;
+  }
+  async function attPathFor(att) {
+    if (att && att.path) return { path: att.path, from: 'local' };
+    if (!att || !att.id) return { path: '', from: '' };
+    const r = await cloudRows();
+    for (const row of r.rows || []) {
+      const hit = parseAtts(row && row.attachments).find((x) => x && x.id === att.id && x.path);
+      if (hit) return { path: hit.path, from: 'cloud' };
+    }
+    return { path: '', from: '' };
+  }
+  async function attSignUrl(p) {
+    /* A：SDK 跨域签名，超时放宽到 8s，避免误杀。 */
+    try {
+      const signed = await withTimeout(
+        () => cloud.storage.createSignedUrl(p, 3600), 8000, null);
+      const url = signedUrlOf(signed);
+      if (url) return { url, via: 'A' };
+    } catch (_) {}
+    /* B：项目同源网关签名端点，与上传 / 下载同一套鉴权。 */
+    let token = '';
+    try { token = await withTimeout(() => gcToken(), 5000, ''); } catch (_) {}
+    if (!token) return { url: '', via: '' };
+    try {
+      /* 不用 AbortSignal.timeout：带 SW 的页面里同源 POST 挂 signal 会被拖到超时；
+         改用项目统一的 withTimeout 只放弃等待，请求本身不受影响。 */
+      const res = await withTimeout(() => fetch(
+        REST_BASE + '/.cloud/storage/object/sign/runtime/' + p, {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + token,
+            'x-wb-webapp-access-key': REST_PK,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ expiresIn: 3600 }),
+        }), 8000, null);
+      if (!res || !res.ok) return { url: '', via: '' };
+      const rel = signedUrlOf(await res.json());
+      if (!rel) return { url: '', via: '' };
+      /* 签名网关返回的相对地址形如 /object/sign/runtime/...，必须补上
+         /.cloud/storage 前缀才是真正可取的文件路由。实测：缺前缀
+         PWA/object/... → 404 text/html（静态兜底）；补前缀
+         PWA/.cloud/storage/object/sign/runtime/... → 200 application/pdf。
+         且保持同源（PWA 主机）：/.cloud/storage/ 在 sw.js 放行名单内可直连；
+         跨源 shijian-notes-46125 对无 header 的 GET 会 403，故不换 host。 */
+      const abs = /^https?:/i.test(rel) ? rel
+        : location.origin + '/.cloud/storage/' + rel.replace(/^\/+/, '');
+      return { url: abs, via: 'B' };
+    } catch (_) { return { url: '', via: '' }; }
+  }
+  /* 取附件的可下载地址；取不到时 url 为空字符串。 */
+  window.SJSignedUrl = function (att) {
+    return attPathFor(att).then(async (r) => {
+      if (!r.path) return { url: '', from: '', via: '' };
+      const s = await attSignUrl(r.path);
+      return { url: s.url, from: r.from, via: s.via };
+    }).catch(() => ({
+      url: '', from: '', via: '',
+    }));
+  };
 
   /* 网络超时优先用浏览器原生的 AbortSignal.timeout：手机切后台时 JS 定时器
      会被冻结，只有原生 signal 能真的把请求断掉。老浏览器退回 AbortController。 */
@@ -505,12 +594,6 @@
       const pwdForm = $('#syncPwdForm'); if (pwdForm) pwdForm.onsubmit = (e) => { e.preventDefault(); doLoginPwd(); };
       const setBtn = $('#openSetPwd'); if (setBtn) setBtn.onclick = () => openSetPwd();
     }
-    /* 版本号 + 上次停在哪个阶段：截图里一眼能看出来跑的是不是新版、卡在哪。 */
-    const diag = document.createElement('p');
-    diag.className = 'sync-diag';
-    diag.id = 'syncDiag';
-    diag.textContent = diagText();
-    panel.appendChild(diag);
   }
 
   function syncMsg(text, kind) {
@@ -663,15 +746,23 @@
       }
 
       let missing = 0;
+      /* 先拿云端已有的附件路径：本地缺 path 时用它兜住，避免把云端记录覆盖成
+         没有 path 的残缺元信息（不可逆的附件丢失）。读不到就整轮停下——宁可不
+         传，也不能写坏云端那份唯一正确的 path。 */
+      const known = await cloudAttPaths(owner);
+      if (!known.ok && local.notes.some((n) => (n.attachments || []).some((a) => a && a.id && !a.path))) {
+        throw new Error('读不到云端已有的附件记录，为避免覆盖附件路径已停止上传，请检查网络后重试');
+      }
       for (const n of local.notes) {
         // 回收站里的笔记只同步墓碑和已有路径，不再重传文件本体
         const atts = n.deletedAt
           ? { list: (n.attachments || []).filter((a) => a && a.id).map((a) => {
               const m = { id: a.id, name: a.name, size: a.size || 0, type: a.type };
-              if (a.path) m.path = a.path;
+              const p = a.path || known.map.get(a.id);
+              if (p) m.path = p;
               return m;
             }), missing: 0 }
-          : await pushAttachments(n, owner);
+          : await pushAttachments(n, owner, known.map);
         missing += atts.missing;
         const row = noteToRow(n, owner);
         row.attachments = atts.list;
@@ -793,12 +884,10 @@
     } catch (_) {}
   }
 
-  /* 后台补图：与主流程完全解耦。失败 / 超时都只记日志，
-     不影响已经交付的笔记文字，也不会把按钮锁住。 */
+  /* 后台补图：与主流程完全解耦。失败 / 超时都不影响已经交付的
+     笔记文字，也不会把按钮锁住。 */
   async function backfillAttachments(cloudNotes, keepId, seq) {
     const got = new Map();
-    let ok = 0, fail = 0;
-    const whys = [];
     const deadline = Date.now() + 90000;
     for (const n of cloudNotes) {
       for (const a of (n.attachments || [])) {
@@ -810,25 +899,11 @@
         if (hasLocal) continue;
         /* 外层必须比内部四步的累计上限长，否则会把已经成功的下载判成失败。 */
         const r = await withTimeout(() => pullAttachment(a), 32000, { why: '整体超时' });
-        const good = !!(r && (r.data || r.remoteUrl));
-        if (good) { got.set(a.id, r); ok++; }
-        else {
-          fail++;
-          if (whys.length < 2) whys.push((a.name || a.id) + '：' + ((r && r.why) || '未知'));
-        }
-        trace('后台补图 ' + (ok + fail) + '：' + (good
-          ? '成功（' + r.via + '）' : '失败 ' + ((r && r.why) || '未知')));
+        if (r && (r.data || r.remoteUrl)) got.set(a.id, r);
       }
       if (Date.now() > deadline) break;
     }
-    const tail = whys.length ? '｜' + whys.join('；') : '';
-    if (!got.size) {
-      trace('后台补图结束：成功 0，失败 ' + fail + tail);
-      const d0 = $('#syncDiag');
-      if (d0) d0.textContent = '版本 ' + BUILD + ' · 图片未取到'
-        + (whys.length ? '：' + whys[0] : '');
-      return;
-    }
+    if (!got.size) return;
     /* 只补附件、不动正文：以当前 state 为准，用户期间编辑过的内容不会被覆盖。
        setState 内部会自动把 data URL 交给附件仓并从 localStorage 摘掉。 */
     try {
@@ -845,10 +920,6 @@
       if (window.SJBoot) await withTimeout(() => window.SJBoot(keepId), 5000, null);
       if (window.SJLocal.watchFiles) window.SJLocal.watchFiles();
     } catch (_) {}
-    trace('后台补图结束：成功 ' + ok + '，失败 ' + fail + tail);
-    const d = $('#syncDiag');
-    if (d) d.textContent = '版本 ' + BUILD + ' · 图片已补 ' + ok + ' 张'
-      + (fail ? '，' + fail + ' 张待重试' + (whys.length ? '（' + whys[0] + '）' : '') : '');
   }
 
   async function doPull() {
@@ -860,11 +931,9 @@
       syncMsg('已停止上一次拉取，请再点一次重新开始');
       return;
     }
-    const started = Date.now();
     const seq = ++pullSeq;
     cancelAutoClose(); lastMsg = ''; lastKind = '';
     markPullBusy();
-    startDiagClock(started);
     syncMsg('正在连接云端…（按钮一直可点，随时可重试）');
     /* 硬恢复：5 秒还没拿到云端数据就把按钮文字还给用户。
        即使这个定时器也被浏览器冻结，按钮本来就没被禁用，用户照样能操作。 */
@@ -875,29 +944,23 @@
         pullSeq++;
         restorePullBtn();
         syncMsg('云端响应较慢，已停止等待，请直接重试。');
-        stopDiagClock();
       }
     }, 5000);
     const owner = session.user.id;
     try {
-      trace('开始：读取云端');
       /* 先把当前正在编辑的内容落盘：拉取结束后界面要重新渲染，
          不先保存的话刚敲的字会被冲掉。保存失败也不能挡住同步。 */
       if (window.SJSaveNow) { try { window.SJSaveNow(); } catch (_) {} }
-      trace('本机编辑已保存');
       paintLocalNow();
-      trace('本机已有笔记已显示，准备连云端');
 
       /* 两段读取并行，走浏览器原生超时；SDK 只在直连失败时兜底。
-         每一步都 trace，下次截图能直接看出卡在哪个调用上。 */
-      trace('调用云端接口（直连）');
+         直连失败时才用同步组件兜底。 */
       const pair = await Promise.all([
         restRead('sj_categories', owner).catch(() => null),
         restRead('sj_notes', owner).catch(() => null),
       ]);
       let catsRes = pair[0], notesRes = pair[1];
       if (!catsRes || !notesRes) {
-        trace('直连未成功，改用同步组件查询');
         catsRes = catsRes || await withTimeout(
           () => cloud.database.from('sj_categories').select('*').eq('owner_id', owner), 6000, null);
         notesRes = notesRes || await withTimeout(
@@ -905,7 +968,6 @@
       }
       if (seq !== pullSeq) return;
       if (!catsRes || !notesRes) throw new Error('云端读取超时，请检查网络后重试');
-      trace('云端已响应，整理笔记中');
       if (catsRes.error) { console.error('[同步] 读取云端类别失败', catsRes.error); throw new Error(friendly(catsRes.error)); }
       if (notesRes.error) { console.error('[同步] 读取云端笔记失败', notesRes.error); throw new Error(friendly(notesRes.error)); }
 
@@ -918,14 +980,20 @@
         if (a.path) attCount++;
         else if (!a.data) noPath++;
       }));
-      trace('云端读取完成：笔记 ' + cloudNotes.length + '，图片 ' + attCount + '，合并中');
 
       const local = window.SJLocal.getState();
 
       /* 笔记正文按时间取胜，但附件要单独补：老版本同步过的笔记本机只有
          附件元信息、没有二进制，正文里的图就会一直空着。这里是「谁有图用谁的」。
-         等级：0 只有元信息、1 只有签名地址（会过期）、2 有二进制。 */
-      const rank = (a) => (!a ? 0 : a.data ? 2 : a.remoteUrl ? 1 : 0);
+         等级：0 只有元信息、1 只有路径或签名地址（会过期）、2 有二进制。
+         path 也算 1 档：本地一旦把 path 弄丢，往后每次 push 都会把云端那份
+         覆盖成空（附件从此谁都下不动），所以云端有 path 的必须优先拿回来。 */
+      const rank = (a) => (!a ? 0 : a.data ? 2 : (a.path || a.remoteUrl) ? 1 : 0);
+      /* 两边的 path 谁有就留谁：即使挑中了本地那份，也要把云端的 path 补进来。 */
+      const keepPath = (chosen, other) => {
+        if (!chosen || !other || chosen.path || !other.path) return chosen;
+        return Object.assign({}, chosen, { path: other.path });
+      };
       const withAtts = (mine, theirs) => {
         const list = Array.isArray(theirs.attachments) ? theirs.attachments : [];
         if (!list.length) return mine;
@@ -935,7 +1003,9 @@
           if (!theirItem || !theirItem.id) continue;
           const mineItem = byId.get(theirItem.id);
           if (!mineItem) { byId.set(theirItem.id, theirItem); changed = true; continue; }
-          if (rank(theirItem) > rank(mineItem)) { byId.set(theirItem.id, theirItem); changed = true; }
+          if (rank(theirItem) > rank(mineItem)) { byId.set(theirItem.id, theirItem); changed = true; continue; }
+          const fixed = keepPath(mineItem, theirItem);
+          if (fixed !== mineItem) { byId.set(theirItem.id, fixed); changed = true; }
         }
         return changed ? Object.assign({}, mine, { attachments: [...byId.values()] }) : mine;
       };
@@ -964,13 +1034,11 @@
         versions: local.versions,
       });
       localStorage.setItem(LS_LAST, String(Date.now()));
-      trace('文字已保存到本机');
 
       /* 关键：立刻把结果灌进界面数据源，不等后台 boot。
          boot() 要走 IndexedDB 就绪等待 + api('/api/state') + 全量重绘，
          任何一环没跑通，用户就会看到「同步成功但仍 0 篇」。 */
       const uiOk = refreshFromLocal(finalCats, finalNotes);
-      trace(uiOk ? '界面已刷新（' + finalNotes.length + ' 篇）' : '界面组件未就绪，请重开页面');
 
       /* 落盘校验：localStorage 写失败（配额满）会被 local.js 静默吞掉，
          表现是「同步成功、重开又没了」。读回来核一次篇数。 */
@@ -980,7 +1048,6 @@
         if (raw) savedCount = (JSON.parse(raw).notes || []).length;
       } catch (_) {}
       const saveOk = savedCount === finalNotes.length;
-      if (!saveOk) trace('本机落盘校验未通过：读出 ' + savedCount + ' 篇，应为 ' + finalNotes.length);
 
       const keepId = window.SJCurrentNoteId ? window.SJCurrentNoteId() : '';
 
@@ -993,7 +1060,6 @@
       syncMsg(`已从云端拉取最新内容（类别 ${cloudCats.length}，笔记 ${cloudNotes.length}，本机 ${finalNotes.length} 篇）${extra}`, 'ok');
       toast('已从云端同步到本地');
       clearTimeout(hardTimer);
-      stopDiagClock();
       restorePullBtn(seq);
       scheduleClose((noPath || attCount) ? 6000 : 2000);
 
@@ -1041,7 +1107,6 @@
       clearTimeout(hardTimer);
       /* 已被重试 / 硬恢复作废的旧流程，不要再动按钮和面板 */
       if (seq === pullSeq) {
-        stopDiagClock();
         restorePullBtn(seq);
         renderPanel();
       }

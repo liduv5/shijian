@@ -40,6 +40,10 @@
     image: '<svg viewBox="0 0 24 24" class="ico"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.4"/><path d="M4 17l5-5 4 4 3-3 4 4"/></svg>',
   };
 
+  /* 只记「上次所在类别」，不记上次打开的那篇笔记：知识片段按类收集，
+     冷启动回到类别/列表，别把人直接塞回某一条正文里继续写。 */
+  const SJ_LAST_CAT = 'sj_last_cat';
+
   /* ---------------------------------------------------------- 状态 */
   const state = {
     categories: [],
@@ -56,8 +60,107 @@
   const catMap = () => new Map(state.categories.map((c) => [c.id, c]));
   const noteById = (id) => state.notes.find((n) => n.id === id) || null;
 
+  /* ---------------------------------------------------------- 空白新建草稿
+     -70：以前点「+」立刻 POST /api/notes，哪怕一个字没写也会落一条空白记录，
+     切回列表 / 目录时就看见一篇「无标题笔记」。现改为先只在内存里放一篇草稿：
+     离开编辑器时若仍全空就同步丢弃（一个请求都不发），有内容才落库。
+     草稿不进 state.notes，因此不会被同步刷新 / 导入 / 整库导出当成真笔记。 */
+  const DRAFT_ID = '__sj_draft__';
+  let draftNote = null;      // 仅在编辑中的那篇空白草稿；落库或丢弃后即清空
+  let draftSaving = null;    // 落库 Promise，防止并发重复创建两篇
+
+  const draftFields = (n) => ({
+    categoryId: n.categoryId || null,
+    title: n.title || '', content: n.content || '',
+    format: n.format === 'rich' ? 'rich' : 'md',
+    starred: !!n.starred, tags: (n.tags || []).slice(),
+  });
+
+  /* 富文本编辑器空聚焦会留下 <p><br></p>；Markdown 里的尖括号是正文，不能剥。 */
+  function blankContent(s, rich) {
+    const t = String(s || '');
+    if (!rich) return !t.trim();
+    return !t.replace(/<br\s*\/?>/gi, '').replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;|\u00a0/gi, ' ').trim();
+  }
+
+  function isBlankNote(n) {
+    if (!n) return true;
+    if (String(n.title || '').trim()) return false;
+    if (!blankContent(n.content, n.format === 'rich')) return false;
+    if (n.tags && n.tags.length) return false;
+    if (n.attachments && n.attachments.length) return false;
+    if (n.starred) return false;
+    return true;
+  }
+
+  function discardDraft() {
+    if (!draftNote) return;
+    draftNote = null;
+    state.selNote = null;
+    state.dirty = false;
+    savedSnapshot = '';
+    /* 空白草稿从未进过 state.notes，这里只需收起编辑器并重绘列表。 */
+    closeEditor();
+  }
+
+  async function settleDraft(force) {
+    if (!draftNote) return null;
+    if (draftSaving) return draftSaving;
+    const d = draftNote;
+    if (!force && isBlankNote(d)) { discardDraft(); return null; }
+    const sent = draftFields(d);
+    const sentSig = JSON.stringify(sent);
+    draftSaving = (async () => {
+      try {
+        const real = await api('/api/notes', { method: 'POST', body: sent });
+        /* POST 往返期间可能又敲了字：把最新字段补回同一个对象，再 PATCH 写盘。
+           保持对象身份，uploadFiles 等持有旧引用的代码不会写到已丢弃的草稿上。 */
+        const cur = draftFields(d);
+        Object.assign(d, real);
+        state.notes.push(d);
+        draftNote = null;
+        if (state.selNote === DRAFT_ID) {
+          state.selNote = d.id;
+          state.dirty = false;
+          savedSnapshot = snapshot(d);
+          setSaveState('saved');
+        }
+        if (JSON.stringify(cur) !== sentSig) {
+          Object.assign(d, cur);
+          const upd = await api(`/api/notes/${d.id}`, { method: 'PATCH', body: cur });
+          Object.assign(d, upd);
+          if (state.selNote === d.id) {
+            savedSnapshot = snapshot(d);
+            setSaveState('saved');
+          }
+        }
+        renderList();
+        return d.id;
+      } catch (e) {
+        /* 落库失败不能丢内容：保留草稿并标脏，下次离开再试。 */
+        if (state.selNote === DRAFT_ID) {
+          state.dirty = true;
+          setSaveState('error', '保存失败，请重试');
+        }
+        toast(e.message);
+        return null;
+      } finally { draftSaving = null; }
+    })();
+    return draftSaving;
+  }
+
+  async function guardDraftPath(path, method) {
+    const prefix = '/api/notes/' + DRAFT_ID;
+    if (!draftNote || path.indexOf(prefix) !== 0) return path;
+    /* 读操作不为了一次查询凭空建笔记；写操作是用户明确动作，必须落库。 */
+    const realId = await settleDraft(method !== 'GET');
+    return realId ? '/api/notes/' + realId + path.slice(prefix.length) : path;
+  }
+
   /* ---------------------------------------------------------- API */
   async function api(path, { method = 'GET', body } = {}) {
+    path = await guardDraftPath(path, method);
     const res = await fetch(path, {
       method,
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
@@ -487,6 +590,12 @@
   }
 
   function renderList() {
+    /* 每次切换类别都会重绘列表，顺手把当前类别记下来（值不变就不写盘）。
+       比逐个给 selCat 赋值点加钩子可靠，也不会漏掉标签/收藏等伪类别。 */
+    try {
+      const v = String(state.selCat || 'all');
+      if (localStorage.getItem(SJ_LAST_CAT) !== v) localStorage.setItem(SJ_LAST_CAT, v);
+    } catch (_) {}
     const box = $('#noteList');
     const list = notesInScope();
     box.innerHTML = '';
@@ -932,7 +1041,8 @@
   if (tagManageBtn) tagManageBtn.addEventListener('click', openTagManager);
 
   /* ---------------------------------------------------------- 编辑器 */
-  const currentNote = () => noteById(state.selNote);
+  /* -70：空白新建草稿不在 state.notes 里，编辑期间由 currentNote 直接返回。 */
+  const currentNote = () => (state.selNote === DRAFT_ID ? draftNote : noteById(state.selNote));
 
   function setSaveState(kind, text) {
     const el = $('#saveState');
@@ -963,7 +1073,8 @@
     /* 离开当前笔记：先把脏数据落盘，再切换选中项。所有打开笔记的路径
        （列表、搜索、双链、外部调用）都会经过这里，不用逐个补钩子。 */
     if (state.selNote && state.selNote !== id) void saveNow();
-    const note = noteById(id);
+    /* -70：草稿只存在于内存，按哨兵取，别去 state.notes 里找。 */
+    const note = id === DRAFT_ID ? draftNote : noteById(id);
     if (!note) return;
     if (note.format !== 'rich' && note.format !== 'md' && looksRichContent(note.content)) {
       note.format = 'rich';
@@ -1054,6 +1165,13 @@
   }
 
   async function saveNow() {
+    /* -70：空白新建草稿：全空就同步丢弃（一个请求都不发），有内容才落库。
+       已有笔记的「输入只标脏、离开时 PATCH」链路保持原样。 */
+    if (draftNote && state.selNote === DRAFT_ID) {
+      if (isBlankNote(draftNote)) { discardDraft(); return; }
+      await settleDraft(false);
+      return;
+    }
     const note = currentNote();
     if (!note || !state.dirty) return;
     const savingId = note.id;
@@ -1691,12 +1809,95 @@
     $('#attachBtn').classList.toggle('has', n > 0);
   }
 
+  /* -------------------------------------------- 图片附件预览（桌面端专属）
+     服务端 /api/files/<id> 对常见位图返回 Content-Disposition: inline，
+     缩略图用的本来就是原图地址，所以预览不需要再拉一次数据。
+     触屏端（云端 app.js）另有一套基于 blob/data URL 的 openAttView，
+     那里要解决「手机浏览器拦截下载」，与这里的鼠标交互不是一回事。 */
+  let attHoverEl = null;
+  let attHoverTimer = 0;
+
+  function hideAttHover() {
+    clearTimeout(attHoverTimer);
+    attHoverTimer = 0;
+    if (attHoverEl) { attHoverEl.remove(); attHoverEl = null; }
+  }
+
+  function showAttHover(thumb, a) {
+    hideAttHover();
+    /* 只有真有鼠标的设备才浮；触屏/混合设备会把浮层卡在屏幕上 */
+    try { if (!window.matchMedia('(hover: hover)').matches) return; } catch (_) { return; }
+    attHoverTimer = setTimeout(() => {
+      attHoverTimer = 0;
+      if (!thumb.isConnected) return;
+      const box = document.createElement('div');
+      box.className = 'att-hover';
+      const img = document.createElement('img');
+      img.src = attDisplaySrc(a);      // 悬停才加载，不拖慢附件面板渲染
+      img.alt = a.name || '';
+      box.appendChild(img);
+      document.body.appendChild(box);
+      const r = thumb.getBoundingClientRect();
+      const W = 300, H = 220, gap = 10;
+      let left = r.right + gap;
+      if (left + W > window.innerWidth - 8) left = Math.max(8, r.left - gap - W);
+      const top = Math.min(Math.max(8, r.top - 8), Math.max(8, window.innerHeight - H - 8));
+      box.style.left = left + 'px';
+      box.style.top = top + 'px';
+      attHoverEl = box;
+    }, 180);
+  }
+
+  function closeAttLightbox() {
+    const old = document.getElementById('attLightbox');
+    if (old) old.remove();
+  }
+
+  function openAttLightbox(a) {
+    if (!a || !/^image\//.test(a.type || '')) return;
+    /* 服务端对 SVG 强制 attachment（避免正文里执行脚本），不能当图片直接显示 */
+    if (/^image\/svg\+xml/i.test(a.type || '')) { toast('SVG 请用下载按钮打开'); return; }
+    hideAttHover();
+    closeAttLightbox();
+    const src = attDisplaySrc(a);
+    const box = document.createElement('div');
+    box.className = 'att-lightbox';
+    box.id = 'attLightbox';
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = a.name || '';
+    const dl = document.createElement('a');
+    dl.className = 'att-lightbox-dl';
+    dl.href = src;
+    dl.download = a.name || '附件';
+    dl.textContent = '下载原图';
+    dl.addEventListener('click', (e) => e.stopPropagation());   // 别冒泡关掉大图
+    const tip = document.createElement('div');
+    tip.className = 'att-lightbox-tip';
+    tip.textContent = '点空白处或按 ESC 关闭';
+    box.append(img, dl, tip);
+    box.addEventListener('click', closeAttLightbox);
+    document.body.appendChild(box);
+  }
+
+  /* 大图按 ESC 关闭；页面滚动时收掉悬停浮层，别留下一个跟着页面跑的框。
+     用捕获阶段 + stopImmediatePropagation：大图打开时 ESC 只用来关大图，
+     否则会顺带触发已有的 closeImgSizer / closeDrawer / 全局快捷键的 ESC 分支。 */
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !document.getElementById('attLightbox')) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    closeAttLightbox();
+  }, true);
+  window.addEventListener('scroll', hideAttHover, true);
+
   /* 附件显示地址：手机端附件自带 data URL 直接内嵌；桌面端由服务端 /api/files/<id> 提供。 */
   function attDisplaySrc(a) {
     return (a && a.data) ? a.data : '/api/files/' + (a && a.id);
   }
 
   function renderAttachments() {
+    hideAttHover();            // 附件面板重渲染时清掉可能残留的悬停浮层
     const note = currentNote();
     const box = $('#attachList');
     box.innerHTML = '';
@@ -1733,6 +1934,17 @@
         </div>`;
       el.querySelector('[data-act="insert"]').addEventListener('click', () => insertAttachment(a));
       el.querySelector('[data-act="del"]').addEventListener('click', () => deleteAttachment(a));
+      /* 图片缩略图：悬停快看、点击看全屏。SVG 只走下载（服务端强制 attachment）。 */
+      if (isImg && !/^image\/svg\+xml/i.test(a.type || '')) {
+        const thumb = el.querySelector('.att-thumb');
+        if (thumb) {
+          thumb.classList.add('clickable');
+          thumb.title = '点击查看原图';
+          thumb.addEventListener('click', () => openAttLightbox(a));
+          thumb.addEventListener('mouseenter', () => showAttHover(thumb, a));
+          thumb.addEventListener('mouseleave', hideAttHover);
+        }
+      }
       box.appendChild(el);
     }
   }
@@ -1931,7 +2143,7 @@
         </label>
         <label class="choice" data-mode="delete">
           <span class="radio"></span>
-          <span><b>连同笔记一起删除</b><span>笔记与附件将被永久删除，无法恢复</span></span>
+          <span><b>连同笔记一起删除</b><span>类别直接删除；笔记连同附件移到回收站，30 天内可恢复</span></span>
         </label>
       </div>
       <div class="modal-actions">
@@ -1978,26 +2190,29 @@
   /* 笔记操作 */
   async function createNote(categoryId) {
     await saveNow();
+    if (draftSaving) await draftSaving;
     let target = categoryId;
     if (target === undefined) {
       target = state.categories.some((c) => c.id === state.selCat) ? state.selCat : null;
     }
-    try {
-      const note = await api('/api/notes', {
-        method: 'POST',
-        body: { categoryId: target, title: '', content: '', format: 'md' },
-      });
-      state.notes.push(note);
-      if (state.selCat !== 'all' && state.selCat !== 'starred' && state.selCat !== 'uncat') {
-        // 保持当前类别视图
-      } else {
-        state.selCat = 'all';
-      }
-      renderTree();
-      openNote(note.id, { focusTitle: true });
-      renderList();
-      closeDrawer(); // 手机上建完立刻回到编辑区
-    } catch (e) { toast(e.message); }
+    /* -70：不再立刻 POST。空白草稿只在内存里；离开时按是否有内容决定
+       落库或丢弃，所以「点了 + 没写就回列表」不会留下无标题笔记。 */
+    const t = Date.now();
+    draftNote = {
+      id: DRAFT_ID,
+      categoryId: target, title: '', content: '', format: 'md',
+      starred: false, tags: [], attachments: [],
+      createdAt: t, updatedAt: t,
+    };
+    if (state.selCat !== 'all' && state.selCat !== 'starred' && state.selCat !== 'uncat') {
+      // 保持当前类别视图
+    } else {
+      state.selCat = 'all';
+    }
+    renderTree();
+    openNote(DRAFT_ID, { focusTitle: true });
+    renderList();
+    closeDrawer(); // 手机上建完立刻回到编辑区
   }
 
   function closeEditor() {
@@ -2017,10 +2232,15 @@
   }
 
   function deleteNote(note) {
+    /* -70：空白草稿还没进库，直接丢弃，不必创建再移进回收站。 */
+    if (note === draftNote) { discardDraft(); return; }
     const attCount = (note.attachments || []).length;
     openConfirm({
       title: '删除笔记',
-      message: `「${escapeHtml(note.title || '无标题笔记')}」将被永久删除${attCount ? `，同时删除 ${attCount} 个附件` : ''}，无法恢复。`,
+      /* -68：原文案写「永久删除…无法恢复」，但服务端 DELETE /api/notes/:id 是软删除
+         （只写 deletedAt，附件与历史版本都留着，30 天后才真删，回收站里可恢复）。
+         文案必须与行为一致，否则用户会以为删掉就找不回了。 */
+      message: `「${escapeHtml(note.title || '无标题笔记')}」将移到回收站${attCount ? `，${attCount} 个附件一并保留` : ''}，30 天内可恢复。`,
       confirmText: '删除',
       danger: true,
       onConfirm: async () => {
@@ -2029,7 +2249,7 @@
         closeEditor();
         renderTree();
         renderList();
-        toast('笔记已删除');
+        toast('已移到回收站，30 天内可恢复');
       },
     });
   }
@@ -2047,6 +2267,8 @@
     const note = currentNote();
     if (!note) return;
     await saveNow();
+    /* -70：空白草稿可能已被丢弃；此时不该再拿临时 id 去查版本接口。 */
+    if (!currentNote()) return;
     let versions = [];
     try {
       versions = (await api(`/api/notes/${note.id}/versions`)).versions || [];
@@ -2415,12 +2637,27 @@
   /* ---------------------------------------------------------- 手机端抽屉 */
   const NARROW = () => window.matchMedia('(max-width: 980px)').matches;
 
+  let drawerOpenedAt = 0;
+  let lastDrawerTap = { kind: '', at: -1 };
   function openDrawer(kind) {
     document.body.classList.remove('m-tree', 'm-list');
     document.body.classList.add(kind === 'tree' ? 'm-tree' : 'm-list');
+    drawerOpenedAt = Date.now();
   }
   function closeDrawer() {
     document.body.classList.remove('m-tree', 'm-list');
+  }
+  /* 部分安卓浏览器会把一次轻触派发成两次 click。原来是 toggle 写法，
+     第二次 click 会把刚打开的抽屉立刻收回去（「闪一下又回到笔记」）。
+     同一按钮 500ms 内的重复 click 忽略；切不同按钮不受影响。 */
+  function toggleDrawer(kind, e) {
+    const now = (e && e.timeStamp) || Date.now();
+    if (lastDrawerTap.kind === kind && now - lastDrawerTap.at < 500) return;
+    lastDrawerTap = { kind, at: now };
+    void saveNow();
+    const cls = kind === 'tree' ? 'm-tree' : 'm-list';
+    if (document.body.classList.contains(cls)) closeDrawer();
+    else openDrawer(kind);
   }
   /** 手机端点完分类/标签直接进列表，少点一次 */
   function afterPickCategory() {
@@ -2435,17 +2672,13 @@
   }
 
   /* 返回菜单 / 打开列表 = 离开编辑页，脏数据在这里落盘。 */
-  $('#mTreeBtn').addEventListener('click', () => {
-    void saveNow();
-    if (document.body.classList.contains('m-tree')) closeDrawer();
-    else openDrawer('tree');
+  $('#mTreeBtn').addEventListener('click', (e) => toggleDrawer('tree', e));
+  $('#mListBtn').addEventListener('click', (e) => toggleDrawer('list', e));
+  $('#mMask').addEventListener('click', () => {
+    /* 刚打开的一瞬间忽略遮罩穿透点击 */
+    if (Date.now() - drawerOpenedAt < 400) return;
+    closeDrawer();
   });
-  $('#mListBtn').addEventListener('click', () => {
-    void saveNow();
-    if (document.body.classList.contains('m-list')) closeDrawer();
-    else openDrawer('list');
-  });
-  $('#mMask').addEventListener('click', closeDrawer);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeDrawer();
   });
@@ -2706,6 +2939,20 @@
   });
 
   /* ---------------------------------------------------------- 启动 */
+  /** 冷启动回到上次所在的类别；类别/标签已删就退回「全部笔记」。
+      只恢复类别，不恢复上次打开的那篇笔记。 */
+  function restoreLastCat() {
+    let v = '';
+    try { v = localStorage.getItem(SJ_LAST_CAT) || ''; } catch (_) {}
+    if (!v || v === 'all') return;
+    let ok = v === 'starred' || v === 'uncat';
+    if (!ok && String(v).startsWith('tag:')) {
+      ok = state.notes.some((n) => (n.tags || []).includes(v.slice(4)));
+    }
+    if (!ok) ok = state.categories.some((c) => c.id === v);
+    if (ok) state.selCat = v;
+  }
+
   async function boot() {
     applyTheme(state.theme);
     try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (_) {}
@@ -2717,12 +2964,34 @@
       toast('加载数据失败：' + e.message);
     }
 
+    restoreLastCat();
     $('#statText').textContent = `${state.notes.length} 篇 · ${state.categories.length} 个类别`;
     renderTree();
     renderList();
 
-    const first = state.notes.slice().sort((a, b) => b.updatedAt - a.updatedAt)[0];
-    if (first) openNote(first.id);
+    /* 深链：?note=<id> 直接打开目标笔记；读完删参数，避免刷新重复。 */
+    let deepId = '';
+    try {
+      const u = new URL(location.href);
+      deepId = u.searchParams.get('note') || '';
+      if (deepId) {
+        u.searchParams.delete('note');
+        history.replaceState(null, '', u.toString());
+      }
+    } catch (_) {}
+
+    if (deepId && state.notes.some((n) => n.id === deepId)) {
+      openNote(deepId);
+    } else if (state.selNote && state.notes.some((n) => n.id === state.selNote)) {
+      /* ?action=new 等快捷方式可能已先建好笔记，保持当前这篇。 */
+      openNote(state.selNote);
+    } else {
+      /* 冷启动：列表开场。宽屏三栏里列表常驻，只需收起编辑器；窄屏把
+         列表抽屉滑出来。保存时机一律不动。 */
+      closeEditor();
+      if (NARROW()) openDrawer('list');
+      else closeDrawer();
+    }
   }
 
   boot();

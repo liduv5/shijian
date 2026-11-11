@@ -51,8 +51,10 @@
       /* 注册 URL 带版本号：部分手机浏览器会长期缓存 sw.js 本身，脚本 URL
          不变就根本不检查更新。每次发布改这个号，浏览器必然当成新脚本
          重新 install → 换掉旧缓存。
-         发布清单三处同步改：sw.js 的 VERSION、mobilesync.js 的 BUILD、这里的 SW_BUILD。 */
-      const SW_BUILD = '2026-11-08-4';
+         发布清单五处同步改：index.html 的 SWV、sw.js 的 VERSION、
+         mobilesync.js 的 BUILD、quick.html 末尾注册脚本的 SWV、这里的兜底值。
+         优先读内联脚本给的 SWV，保证各处 register() 用同一个脚本 URL。 */
+      const SW_BUILD = window.__SJ_SWV__ || '2026-11-10-71';
       navigator.serviceWorker.register('/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SW_BUILD, { scope: '/' })
         .then((reg) => {
           pushCode(reg);
@@ -68,14 +70,25 @@
         });
     });
 
-    /* 新版本接管后自动刷新一次，确保用户看到的是刚发布的界面。
-       15 秒内只允许一次，且正在输入 / 页面在后台时不刷新，避免打断编辑。 */
+    /* 只在「真的换了版本」时刷新一次。
+       页面加载时本来没有 controller（首次安装 / claim 接管）不算换版：
+       这时页面用的已是最新资源，刷新只会把用户刚点开的列表抽屉刷没，
+       表现就是「点列表闪一下又回到笔记」。另外用户刚操作过、抽屉开着、
+       正在输入、页面在后台时一律不刷，等下次打开自然用上新版本。 */
+    const hadController = !!navigator.serviceWorker.controller;
+    let lastActionAt = 0;
+    ['pointerdown', 'touchstart', 'keydown'].forEach((ev) => {
+      window.addEventListener(ev, () => { lastActionAt = Date.now(); }, { passive: true, capture: true });
+    });
     const RELOAD_KEY = 'sj_sw_reloaded_at';
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       try {
+        if (!hadController || !navigator.serviceWorker.controller) return;
         const ae = document.activeElement;
         if (ae && /^(INPUT|TEXTAREA)$/.test(ae.tagName)) return;
         if (document.visibilityState !== 'visible') return;
+        if (Date.now() - lastActionAt < 5000) return;
+        if (document.body.classList.contains('m-list') || document.body.classList.contains('m-tree')) return;
         const t = Number(sessionStorage.getItem(RELOAD_KEY) || 0);
         if (Date.now() - t < 15000) return;
         sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
@@ -188,7 +201,7 @@
     if (isAndroid) {
       return {
         title: '添加到安卓桌面',
-        sub: '用 Chrome / Edge 打开本页效果最好。',
+        sub: '手机自带浏览器即可；长按没有「随手记」时，用 App 内的按钮或绿色铅笔图标。',
         steps: [
           { icon: ICON_DOTS, text: '点右上角的 <b>⋮</b> 菜单' },
           { icon: ICON_PLUS, text: '选择 <b>添加到主屏幕</b> 或 <b>安装应用</b>' },

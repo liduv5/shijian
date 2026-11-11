@@ -14,6 +14,13 @@
   var u = new URL(location.href);
   var fromUrl = u.searchParams.get('sharecode') || '';
   var SC = fromUrl || '3J7BKHTGFD';
+  /* 发布时五处同步改：这里 SWV、sw.js VERSION、pwa.js SW_BUILD 兜底、
+     mobilesync.js BUILD、quick.html 末尾 SW 注册脚本里的 SWV。
+     内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
+     v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
+     刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
+  var SWV = '2026-11-10-71';
+  window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
     if (fromUrl && fromUrl !== saved) localStorage.setItem(SC_LS, fromUrl);
@@ -34,8 +41,47 @@
   /* 即使后面的脚本全挂，也要让 SW 有机会换掉坏缓存 */
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     try {
-      navigator.serviceWorker.register('/sw.js?sharecode=' + SC, { scope: '/' })
+      navigator.serviceWorker.register('/sw.js?sharecode=' + SC + '&v=' + SWV, { scope: '/' })
         .catch(function () {});
+    } catch (_) {}
+  }
+  /* 版本守卫。写在这里而不是 app.js 里，因为 HTML 每次都是从网络取的、一定是
+     新的，而它引用的 app.js 可能被旧 Service Worker 塞了缓存 —— 于是「页面是
+     新的、脚本是旧的」，行为跟前一版一模一样，界面上还看不出来。这就是「改了
+     好多次都没反应」的来源。这里拿接管页面的 SW 版本号和 SWV 比，不一致就
+     注销 SW + 清空缓存 + 重载一次（每次会话只做一次，避免来回刷）。 */
+  if ('serviceWorker' in navigator) {
+    /* 标记里存的是**版本号**而不是 '1'：每次发布 SWV 都会变，于是每个新版本都能
+       再拿到一次自愈机会。早先写死 '1' 时，同一会话里发布的新版永远等不到修复 ——
+       手机一直跑旧 app.js，界面上却完全看不出来（-54/-55「点了没反应」很可能就是
+       这个叠加出来的）。 */
+    var verFixed = false;
+    try { verFixed = sessionStorage.getItem('sj_ver_fix') === SWV; } catch (_) {}
+    var verGuard = function () {
+      if (verFixed) return;
+      var c = null;
+      try { c = navigator.serviceWorker.controller; } catch (_) {}
+      if (!c) return;
+      var have = '';
+      try { have = new URL(c.scriptURL).searchParams.get('v') || ''; } catch (_) {}
+      if (have === SWV) return;
+      verFixed = true;
+      try { sessionStorage.setItem('sj_ver_fix', SWV); } catch (_) {}
+      Promise.resolve()
+        .then(function () { return navigator.serviceWorker.getRegistrations(); })
+        .then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })
+        .then(function () { return window.caches ? caches.keys() : []; })
+        .then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); })
+        .then(function () {
+          var t = new URL(location.href);
+          t.searchParams.set('fix', String(Date.now()));
+          location.replace(t.toString());
+        })
+        .catch(function () {});
+    };
+    verGuard();
+    try {
+      navigator.serviceWorker.addEventListener('controllerchange', verGuard);
     } catch (_) {}
   }
   function showFail() {
@@ -119,9 +165,21 @@
     <svg viewBox="0 0 24 24" class="ico"><path d="M15 18l-6-6 6-6"/></svg>
     <span class="m-back-label">列表</span>
   </button>
-  <div class="m-bar-title" id="mBarTitle">拾笺</div>
+  <!-- 顶栏品牌区与电脑版同款：朱砂小印方块 + 书法体「拾笺」+ 落款朱点。
+       原本这里显示「当前笔记名/列表名」，改成固定品牌后，位置信息仍由
+       列表页头部 #listTitle 与编辑器标题框呈现（见 app.js syncBarTitle）。 -->
+  <div class="m-bar-title" id="mBarTitle" aria-label="拾笺">
+    <span class="m-logo" aria-hidden="true">拾</span>
+    <span class="m-wordmark" aria-hidden="true">拾笺<i class="m-seal"></i></span>
+  </div>
   <button class="icon-btn" id="mSyncBtn" aria-label="同步到云端" title="同步到云端">
     <svg viewBox="0 0 24 24" class="ico"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+  </button>
+  <!-- 华为 / EMUI 自带浏览器不读 manifest shortcuts，长按图标没有「随手记」。
+       给一个 App 内不依赖系统快捷方式的入口，同标签跳到速记页。 -->
+  <button class="icon-btn m-quick" id="mQuickBtn" aria-label="随手记（速记）" title="随手记">
+    <svg viewBox="0 0 24 24" class="ico"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M13.5 6.5l3 3"/></svg>
+    <span class="m-quick-label">随手记</span>
   </button>
   <button class="icon-btn" id="mNewBtn" aria-label="新建笔记" title="新建笔记">
     <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
@@ -204,9 +262,14 @@
         <h2 id="listTitle">全部笔记</h2>
         <span id="listCount"></span>
       </div>
-      <button class="icon-btn sm" id="newNoteBtn2" title="新建笔记">
-        <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
-      </button>
+      <div class="list-head-actions">
+        <button class="icon-btn sm" id="quickNoteBtn" title="随手记（速记）" aria-label="随手记">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M13.5 6.5l3 3"/></svg>
+        </button>
+        <button class="icon-btn sm" id="newNoteBtn2" title="新建笔记">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
     </header>
     <div class="note-list" id="noteList"></div>
   </section>
@@ -222,8 +285,8 @@
           <path d="M64 114h30" stroke="var(--accent)" stroke-width="2.8" stroke-linecap="round" opacity=".8"/>
         </svg>
       </div>
-      <h3>选择一篇笔记开始阅读</h3>
-      <p>或按 <kbd>⌘N</kbd> 新建，把想法先写下来</p>
+      <h3>选一条继续整理，或新建一条知识片段</h3>
+      <p>随手记下的内容会收进「全部笔记」顶部</p>
     </div>
 
     <div class="editor-wrap hidden" id="editorWrap">

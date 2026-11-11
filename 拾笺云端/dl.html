@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>拾笺 · 正在保存</title>
+<style>
+  html,body{height:100%}
+  body{margin:0;background:#f5f6fa;color:#1f2329;font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;
+       display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;text-align:center}
+  .box{max-width:340px;width:100%}
+  .spin{width:34px;height:34px;border:3px solid #e3e6eb;border-top-color:#2f6f5e;border-radius:50%;
+        margin:0 auto 16px;animation:r 0.9s linear infinite}
+  @keyframes r{to{transform:rotate(360deg)}}
+  .t{font-size:15px;color:#1f2329}
+  .s{font-size:12px;color:#86909c;margin-top:8px;min-height:18px}
+  #fb{display:none;margin-top:16px;background:#2f6f5e;color:#fff;text-decoration:none;
+      padding:12px 16px;border-radius:8px;font-size:15px}
+  #fb.show{display:block}
+  /* -64：`#close`「让拾笺回到前台」整块删除 —— 真机上点了完全没反应（连系统选择框都
+     不弹），而浏览器自带的 ✗ 一按就回。留一个确定无效的按钮，比没有按钮更误导。
+     -65：`.back`「在浏览器里打开拾笺」也删掉 —— 它把人带进**浏览器模式**（带地址栏），
+     和用户要的「回主程序」是两件事；页面上一旦还有别的可点元素，就会有人去点它。
+     现在这一页只有状态文字和一个 ✗，没有第二条路可选。 */
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="spin" id="spin"></div>
+  <div class="t" id="msg">正在准备下载…</div>
+  <div class="s" id="sub"></div>
+  <a id="fb" href="#" rel="noopener">点此保存到本机 / 下载</a>
+</div>
+<script>
+/* 下载中转页（手机 WebAPK 专用）。
+   WebAPK 内既丢脚本合成的 blob 下载，也丢 <a download>；同域导航还会被本 PWA 的
+   Service Worker 当 navigate 拦成离线页。所以卡片上的下载按钮先用 intent:// 跳
+   出到系统浏览器，再落到本页完成保存：
+   ① 把地址规范成真正可取的文件路由。签名网关返回的相对路径形如
+      /object/sign/runtime/…，缺 /.cloud/storage 前缀就是 404；这里再兜一次，
+      即便旧脚本缓存拼出坏地址，本页也能当场改对；
+   ② fetch 取字节 → Blob → <a download> 触发真正的文件保存；
+   ③ 取不到字节（跨域拦截、链接过期等）时，退回「浏览器直接打开 + 手动保存」；
+   ④ 保存发起后**自动尝试回到拾笺**：只做「关窗 / 回退」这两个无交互动作，能成则成；
+      唤端会弹系统选择器，不适合在用户没点的时候自己跳出来，故不做。
+   ⑤ 关于「为什么不能直接关窗回主程序」：Chromium 只允许**脚本自己打开的窗口**
+      执行 window.close()；本页是 intent 拉起的独立标签页，直接 close() 必然被拒。
+      所以 -61 起按环境分流：有 opener 就关窗、有上一页就回退。不假装、也不逐个乱试。
+   ⑥ -62 ~ -64 的三次真机结论：真正能回去的是**浏览器自带的左上角 ✗** —— 它是 Chromium
+      给「从外部应用打开的标签页」提供的关页入口，点掉即回到主程序。这个 ✗ 不归页面管，
+      页面既造不出也点不到。-64 把最后一个「让拾笺回到前台」按钮也撤了：真机上点它
+      毫无反应，而 ✗ 一按就回。现在页面只负责说清楚它在哪。
+   注意：注册 SW 必须与 index.html / pwa.js / 速记页用**完全相同**的脚本 URL，
+   两个不同 v= 会互相顶替安装并触发整页刷新，故 SWV 随发布同步更新。 */
+(function () {
+  var p = new URLSearchParams(location.search);
+  var sc = p.get('sharecode') || '3J7BKHTGFD';
+  var name = p.get('name') || '文件';
+  var SWV = '2026-11-10-71';
+  var msgEl = document.getElementById('msg');
+  var subEl = document.getElementById('sub');
+  var spinEl = document.getElementById('spin');
+  var fbEl = document.getElementById('fb');
+  /* -65：#back（「在浏览器里打开拾笺」）已随按钮一起删除。它指向的是浏览器模式的
+     首页，不是回主程序那条路，留着只会分走本该落在 ✗ 上的注意力。 */
+
+  function normalize(u) {
+    if (!u) return '';
+    try {
+      var x = new URL(u, location.origin);
+      if (/^\/object\//.test(x.pathname)) {
+        x.pathname = '/.cloud/storage' + x.pathname;
+      }
+      return x.toString();
+    } catch (_) { return u; }
+  }
+  var target = normalize(p.get('url') || '');
+
+  function done(t, s) {
+    try {
+      msgEl.textContent = t;
+      subEl.textContent = s || '';
+      spinEl.style.display = 'none';
+    } catch (_) {}
+  }
+  if (!target) { done('下载地址缺失', '请返回拾笺重新点一次下载'); return; }
+  try { fbEl.href = target; fbEl.setAttribute('download', name); } catch (_) {}
+
+  /* 后台顺手把 SW 升到最新：取字节走的是普通 GET，不受 SW 版本影响，所以
+     这里不等待、不阻塞下载（等它是之前「卡住十几秒」的原因）。 */
+  if ('serviceWorker' in navigator) {
+    try {
+      navigator.serviceWorker
+        .register('/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SWV,
+          { scope: '/', updateViaCache: 'none' })
+        .then(function (reg) { try { if (reg.update) reg.update().catch(function () {}); } catch (_) {} })
+        .catch(function () {});
+    } catch (_) {}
+  }
+
+  /* ---------------- 回到拾笺：只做自动的、无交互的两步 ----------------
+     能不能真正「关窗回主程序」，取决于本页是怎么被打开的：
+       ① window.opener 非空 → 本窗口确实由脚本打开 → close() 必然成功，关掉即回到
+          打开它的那个窗口（主程序）；
+       ② 有**可信的上一页**（见 canGoBack）→ back() 退回去；
+       ③ 其余 → 本页是 intent 拉起的独立标签页，close() 注定被拒，页面这边**没有任何
+          手段把自己关掉**。
+     关于 ③ 的三次真机结论（按时间）：
+       · -60：点我们做的「关闭本页」按钮 → 回到浏览器带地址栏的页面（不是主程序）；
+       · -62：改成 VIEW intent 唤端 → 同样无效；
+       · -63/64：真机上点「让拾笺回到前台」**完全没反应**，而浏览器自带的左上角 ✗
+         一按就回主程序。
+     所以 -64 直接**撤掉这两个按钮**（连同 intent 唤端代码）：留着它只是给用户一个
+     点了没反应的入口。页面只保留一句诚实的指路 —— 那个 ✗ 不归页面管，页面既造不出
+     也点不到，只能告诉用户它在哪。 */
+
+  /* 出口指引只有这一句，两个显示点共用 —— -61 及以前两处各写各的，导致同一页在 4 秒内
+     先说按返回键、后说点按钮，互相矛盾（真机截图 220441/220453）。 */
+  var EXIT_TIP = '回到拾笺：点左上角 ✗ 关掉本页（没有 ✗ 就按手机返回键）。';
+
+  /* 给自动化测试留一个结果标记（写在 <html> 的 data 属性上，用户看不到）。 */
+  function mark(how) {
+    try { document.documentElement.setAttribute('data-dl-ret', how || ''); } catch (_) {}
+  }
+  function hasOpener() {
+    try { return !!window.opener; } catch (_) { return false; }
+  }
+
+  /* 有没有一个「退回去确实还能看到拾笺」的上一页。
+     只看 history.length > 1 是不够的 —— 这条踩过一次：部分内核给新标签页垫了一条
+     about:blank 历史，length 因此是 2，back() 会把用户退到一个空白页，比停在本页更糟。
+     所以还要求 referrer 存在且同源：那才是真的从拾笺网页点过来的情况。 */
+  function canGoBack() {
+    try {
+      if (history.length <= 1) return false;
+      var r = document.referrer || '';
+      if (!r) return false;
+      return new URL(r).origin === location.origin;
+    } catch (_) { return false; }
+  }
+
+  function tryReturn() {
+    /* 自动流程：只做无交互的两步。
+       opener 存在时关窗是必成的，直接关；否则退一步判断有没有可信的上一页。
+       两步都不成立就停在本页 —— 唤端要弹系统选择器，不能替用户决定。 */
+    if (hasOpener()) { mark('close'); try { window.close(); } catch (_) {} return; }
+    setTimeout(function () {
+      try { if (canGoBack()) { mark('back'); history.back(); return; } } catch (_) {}
+      try {
+        spinEl.style.display = 'none';
+        msgEl.textContent = '下载已开始';
+        subEl.textContent = '文件在手机的「下载」里。' + EXIT_TIP;
+      } catch (_) {}
+      mark('stay');
+    }, 600);
+  }
+
+  function openDirect(note) {
+    done('正在用浏览器打开…', note || '若只看到预览，请点浏览器菜单 → 下载保存');
+    try { fbEl.classList.add('show'); } catch (_) {}
+    setTimeout(function () {
+      try { location.href = target; } catch (_) { try { location.assign(target); } catch (_) {} }
+    }, 300);
+  }
+
+  if (!window.fetch) { openDirect('当前浏览器不支持直接保存，已改用浏览器打开。'); return; }
+
+  msgEl.textContent = '正在下载…';
+  fetch(target, { credentials: 'include' })
+    .then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var ct = (r.headers.get('content-type') || '').toLowerCase();
+      /* 旧 SW 若把文件路由拦成离线页，会返回网页而不是文件——视为失败走回退。 */
+      if (ct.indexOf('text/html') >= 0) throw new Error('返回了网页而非文件');
+      return r.blob();
+    })
+    .then(function (blob) {
+      if (!blob || blob.size < 64) throw new Error('文件为空');
+      /* 用 File 而不是裸 Blob 造地址：内核忽略 <a download> 时，会退而采用
+         blob 记录里的文件名，而裸 Blob 没有名字，只能拿 UUID 顶替（真机就这样
+         下成了 12 位十六进制名）。 */
+      var body = blob;
+      try { body = new File([blob], name, { type: blob.type || 'application/octet-stream' }); } catch (_) {}
+      var u = URL.createObjectURL(body);
+      var a = document.createElement('a');
+      a.download = name;
+      a.setAttribute('download', name);
+      a.href = u;
+      a.style.display = 'none';
+      (document.body || document.documentElement).appendChild(a);
+      a.click();
+      setTimeout(function () { try { URL.revokeObjectURL(u); a.remove(); } catch (_) {} }, 60000);
+      done('正在保存「' + name + '」…', '如弹出确认框，请点「下载」');
+      /* 等下载真正写进「下载」目录再关页，避免中途关页打断保存。 */
+      setTimeout(tryReturn, 2500);
+    })
+    .catch(function (e) {
+      openDirect('直接保存没成功（' + ((e && e.message) || e) + '），已改用浏览器打开。');
+    });
+})();
+</script>
+</body>
+</html>

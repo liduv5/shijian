@@ -1,11 +1,11 @@
 {
-  "id": "/quick.html?sharecode=3J7BKHTGFD",
+  "id": "/quick.html?sharecode=3J7BKHTGFD&from=desk",
   "name": "拾笺 · 随手记",
   "short_name": "随手记",
   "description": "随手一记，快速存进拾笺笔记库。",
   "lang": "zh-CN",
   "dir": "ltr",
-  "start_url": "/quick.html?sharecode=3J7BKHTGFD",
+  "start_url": "/quick.html?sharecode=3J7BKHTGFD&from=desk",
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
@@ -15,10 +15,10 @@
   "categories": ["productivity", "utilities"],
   "prefer_related_applications": false,
   "icons": [
-    { "src": "/icons/icon-192.png?sharecode=3J7BKHTGFD", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-512.png?sharecode=3J7BKHTGFD", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-maskable-192.png?sharecode=3J7BKHTGFD", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
-    { "src": "/icons/icon-maskable-512.png?sharecode=3J7BKHTGFD", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "/icons/icon-quick-192.png?sharecode=3J7BKHTGFD", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-quick-512.png?sharecode=3J7BKHTGFD", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-quick-maskable-192.png?sharecode=3J7BKHTGFD", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-quick-maskable-512.png?sharecode=3J7BKHTGFD", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "share_target": {
     "action": "/quick.html?sharecode=3J7BKHTGFD",

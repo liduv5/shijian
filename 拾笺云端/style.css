@@ -1,11 +1,22 @@
 /* ============================================================
    拾笺 · 本地笔记库
    ============================================================ */
+/* 品牌字体：只含「拾」「笺」两字的 KaiTi 子集（1036 B，fsType=8 允许嵌入）。
+   Android 没有系统行楷/楷体，只靠字体栈会 fallback 成宋体，与电脑版看不齐。
+   unicode-range 限定两字，不影响正文；加载失败时继续走后面的系统字体栈。 */
+@font-face {
+  font-family: "SJBrand";
+  src: url("sj-brand.woff2") format("woff2");
+  font-style: normal;
+  font-weight: normal;
+  font-display: swap;
+  unicode-range: U+62FE, U+7B3A;
+}
 :root {
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", sans-serif;
   --font-read: "Georgia", "Songti SC", "Noto Serif SC", "Source Han Serif SC", serif;
-  --font-brand: "STXingkai", "华文行楷", "KaiTi", "楷体", "STKaiti", "Kaiti SC", "Songti SC", "SimSun", serif;
+  --font-brand: "SJBrand", "STXingkai", "华文行楷", "KaiTi", "楷体", "STKaiti", "Kaiti SC", "Songti SC", "SimSun", serif;
   --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", Consolas,
     "Liberation Mono", Menlo, monospace;
 
@@ -441,6 +452,7 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
   flex: none;
 }
 .list-title-wrap { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.list-head-actions { display: flex; align-items: center; gap: 2px; flex: none; }
 .list-head h2 {
   margin: 0;
   font-size: 14.5px;
@@ -667,7 +679,6 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
 .tb-btn.active { background: var(--accent-soft); color: var(--accent); }
 .tb-sep { width: 1px; height: 15px; background: var(--border); margin: 0 5px; flex: none; }
 .tb-text { font-weight: 700; font-size: 12.5px; letter-spacing: -.02em; }
-.tb-spacer { flex: 1; }
 
 /* 编辑主体 */
 .editor-body {
@@ -966,6 +977,9 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
   text-overflow: ellipsis;
 }
 .att-size { font-size: 10.5px; color: var(--text-3); margin-top: 1px; }
+/* 手机端「用系统浏览器下载」（intent 唤起后回来的备用入口） */
+.sj-browser-dl { display: inline-block; margin-top: 6px; padding: 6px 10px; border-radius: 8px; background: var(--accent, #1a73e8); color: #fff; font-size: 12px; line-height: 1.3; text-decoration: none; border: none; }
+.sj-browser-dl:active { opacity: .7; }
 .att-acts {
   display: flex;
   gap: 1px;
@@ -985,16 +999,104 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
   border-radius: 5px;
   display: grid; place-items: center;
   color: var(--text-3);
+  border: 0; background: none; padding: 0; cursor: pointer;
+  font: inherit; line-height: 1;
 }
 .att-act:hover { background: var(--surface-2); color: var(--text); }
 .att-act.del:hover { color: var(--danger); background: rgba(192,68,47,.08); }
 .att-act svg { width: 13px; height: 13px; }
+
+/* 触屏没有 hover：附件操作按钮必须常显且不能靠半透明渐变盖住文件名，
+   否则手机上根本看不到「下载」入口（点了也以为没反应）。 */
+@media (hover: none) {
+  .att-acts {
+    position: static;
+    transform: none;
+    opacity: 1;
+    background: none;
+    padding-left: 0;
+    flex: none;
+  }
+}
 
 .attach-empty {
   font-size: 12px;
   color: var(--text-3);
   padding: 6px 2px;
 }
+
+/* 附件大图预览：手机浏览器若仍拦下载，长按图片保存是最后的保底路径。 */
+.att-view {
+  position: fixed;
+  inset: 0;
+  /* 必须高于访问码提示条（.pwd-tip 是 9000）：那条固定在屏幕底部，正好把
+     「下载原图」压住，手指点到的其实是它 —— 表现就是「点了没反应」。
+     提示条 .toast 再高一层（9200），保证任何情况下都看得见。 */
+  z-index: 9100;
+  background: rgba(10, 12, 11, .95);
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  animation: fade .14s;
+}
+.att-view img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.att-view-tip {
+  position: absolute;
+  left: 0; right: 0; bottom: 16px;
+  text-align: center;
+  color: rgba(255, 255, 255, .82);
+  font-size: 12px;
+  pointer-events: none;
+}
+/* 触屏设备上提示是唯一的操作指引，做得更醒目一点，别让人找不到怎么存 */
+@media (hover: none) {
+  .att-view-tip {
+    font-size: 13px;
+    padding: 0 18px;
+    color: rgba(255, 255, 255, .92);
+  }
+  .att-view-tip span {
+    display: inline-block;
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .14);
+    border: 1px solid rgba(255, 255, 255, .2);
+    backdrop-filter: blur(6px);
+    line-height: 1.5;
+  }
+  /* -17 曾在这里隐藏下载按钮，前提是「触屏＝下载没法用」。现在按钮跳的是
+     SW 的同源下载通道（浏览器认这个形态），触屏一样能落盘，所以不再隐藏。
+     注意：别再用 hover 判断设备能不能下载 —— 华为自带浏览器在手机上同样
+     报 hover: hover，按这个判据隐藏等于永远不隐藏。 */
+}
+/* 去掉安卓默认的点击蓝块（附件按钮、大图预览等被点到的区域） */
+.att-view, .att-view *,
+.att-acts, .att-act {
+  -webkit-tap-highlight-color: transparent;
+}
+/* 大图里的「下载原图」：给支持原生下载的环境用；手机上长按图片那条路更稳。 */
+.att-view-dl {
+  position: absolute;
+  left: 50%; bottom: 40px;
+  transform: translateX(-50%);
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .16);
+  border: 1px solid rgba(255, 255, 255, .28);
+  color: #fff;
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  backdrop-filter: blur(6px);
+}
+.att-view-dl:hover { background: rgba(255, 255, 255, .26); }
 
 /* 拖放遮罩 */
 .drop-mask {
@@ -1064,10 +1166,16 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
   opacity: 0;
   pointer-events: none;
   transition: opacity .2s, transform .2s var(--ease);
-  z-index: 400;
+  /* 必须高于大图预览层（.att-view 9100）和访问码提示条（.pwd-tip 9000）：
+     否则点「下载原图」后的提示会被压在图片/提示条下面，用户看不到反馈。 */
+  z-index: 9200;
   max-width: 70vw;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* 大图打开时，底部已经被「下载原图」和长按提示占着，提示条上移让开 */
+.att-view-open .toast { bottom: 104px; }
+/* 大图/预览打开时藏掉访问码提示条，别挡着按钮 */
+.att-view-open .pwd-tip { display: none !important; }
 
 /* ============================================================ 弹层 */
 .modal-root {
@@ -1192,8 +1300,6 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
   border-radius: 50%;
 }
 .tag-chip .tag-x:hover { opacity: 1; color: var(--danger); }
-.tag-chip.bare { background: transparent; border: 1px solid var(--border); }
-.tag-chip.bare:hover { background: var(--surface-2); }
 
 .tag-add {
   width: 22px; height: 22px;
@@ -1443,7 +1549,12 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
     background: var(--surface);
     border-bottom: 1px solid var(--border);
   }
-  .m-bar .icon-btn { flex: 0 0 auto; min-width: 42px; min-height: 42px; }
+  .m-bar .icon-btn {
+    flex: 0 0 auto; min-width: 42px; min-height: 42px;
+    /* 禁掉双击缩放与高亮残留：部分安卓内核会因此把一次轻触补发成两次 click */
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none; user-select: none;
+  }
   /* 「← 列表」带文字，与「目录」的三条横线明确区分，是手机端返回出口。 */
   .m-bar .icon-btn.m-back {
     width: auto; min-width: 0; padding: 0 8px 0 4px; gap: 2px;
@@ -1451,14 +1562,49 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
     color: var(--accent, var(--text));
   }
   .m-back-label { font-size: 12px; font-weight: 600; white-space: nowrap; }
-  .m-bar-title {
-    flex: 1; min-width: 0; text-align: center;
-    font-family: "Microsoft YaHei", "微软雅黑", "PingFang SC", "HarmonyOS Sans SC",
-                 "Noto Sans CJK SC", "Source Han Sans SC", "Heiti SC", Arial, sans-serif;
-    font-size: 18px; font-weight: 600;
-    letter-spacing: .04em; color: var(--text);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  /* App 内「随手记」入口：华为自带浏览器不提供长按快捷方式，按钮必须常驻顶栏 */
+  .m-bar .icon-btn.m-quick {
+    width: auto; min-width: 0; padding: 0 7px 0 5px; gap: 3px;
+    display: inline-flex; align-items: center; color: var(--accent, var(--text));
   }
+  .m-bar .icon-btn.m-quick .ico { width: 18px; height: 18px; }
+  .m-quick-label { font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  @media (max-width: 360px) { .m-quick-label { display: none; } }
+  /* 顶栏品牌区：与宽屏 .brand 同款（朱砂方块 + 书法体拾笺 + 朱点），
+     尺寸按 52px 顶栏等比缩小。位置信息不再放这里，见 app.js syncBarTitle。 */
+  .m-bar-title {
+    flex: 1; min-width: 0;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    color: var(--text);
+    white-space: nowrap; overflow: hidden;
+    -webkit-user-select: none; user-select: none;
+  }
+  .m-bar-title .m-logo {
+    width: 26px; height: 26px; border-radius: 7px;
+    background: linear-gradient(150deg, #c25b41, #a8412c);
+    color: #fff;
+    display: grid; place-items: center;
+    font-family: var(--font-brand);
+    font-size: 17px; line-height: 1; padding-bottom: 1px;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .38),
+                0 2px 6px -3px rgba(168, 65, 44, .7);
+    flex: none;
+  }
+  html[data-theme="dark"] .m-bar-title .m-logo {
+    background: linear-gradient(150deg, #cd6a50, #ad4630);
+  }
+  .m-bar-title .m-wordmark {
+    display: inline-flex; align-items: flex-start; gap: 5px;
+    font-family: var(--font-brand);
+    font-size: 20px; font-weight: 600; line-height: 1.2;
+    letter-spacing: .14em; color: var(--text);
+  }
+  .m-bar-title .m-seal {
+    display: block; width: 5px; height: 5px; margin-top: 7px;
+    border-radius: 1px; background: #b04932;
+    transform: rotate(-10deg); opacity: .9; flex: none;
+  }
+  html[data-theme="dark"] .m-bar-title .m-seal { background: #cf6549; }
 
   /* ---- 主区改成单列，给顶栏让位 ---- */
   .app {
@@ -1532,71 +1678,14 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
 
 
 /* ============================================================
-   云端版 · 登录门帘
+   云端版 · 同步面板里的登录表单
+   注意：这里只保留**真正在用**的表单控件样式。早先还整套画过一个自建
+   「登录门帘」（body.auth-locked / .auth-gate / .auth-card / .auth-brand /
+   .auth-logo / .auth-foot），后来登录改由云服务 SDK 自带面板承担，那套 DOM
+   再没出现过（.auth-gate 在 HTML/JS/SDK 里 0 处），-68 体检时删除。
+   留下的 .auth-label / .auth-input / .auth-row / .auth-btn / .auth-msg 仍在
+   mobilesync.js 生成的表单里使用。
    ============================================================ */
-body.auth-locked { overflow: hidden; }
-body.auth-locked .app,
-body.auth-locked .m-bar,
-body.auth-locked .m-mask { display: none !important; }
-
-.auth-gate {
-  position: fixed;
-  inset: 0;
-  z-index: 900;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background:
-    radial-gradient(1000px 620px at 18% -8%, rgba(47, 111, 94, .10), transparent 62%),
-    radial-gradient(820px 520px at 92% 108%, rgba(47, 111, 94, .07), transparent 58%),
-    var(--bg);
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-.auth-gate.hide { display: none; }
-
-.auth-card {
-  width: 100%;
-  max-width: 400px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  padding: 30px 28px 22px;
-  box-shadow: 0 22px 60px -28px rgba(30, 26, 20, .34), 0 2px 8px rgba(30, 26, 20, .05);
-}
-
-.auth-brand {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  margin-bottom: 24px;
-}
-.auth-logo {
-  width: 44px;
-  height: 44px;
-  flex: 0 0 44px;
-  border-radius: 12px;
-  background: var(--accent);
-  color: #fff;
-  font-family: var(--font-read);
-  font-size: 24px;
-  display: grid;
-  place-items: center;
-}
-.auth-brand h1 {
-  margin: 0;
-  font-size: 19px;
-  font-weight: 600;
-  letter-spacing: .02em;
-  color: var(--text);
-}
-.auth-brand p {
-  margin: 2px 0 0;
-  font-size: 12.5px;
-  color: var(--text-3);
-  line-height: 1.5;
-}
-
 .auth-label {
   display: block;
   font-size: 12.5px;
@@ -1667,23 +1756,6 @@ body.auth-locked .m-mask { display: none !important; }
 }
 .auth-msg.err { color: #b0492f; }
 .auth-msg.ok { color: var(--accent); }
-
-.auth-foot {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
-  font-size: 12.5px;
-  color: var(--text-3);
-  text-align: center;
-  line-height: 1.9;
-}
-.auth-foot a { color: var(--accent); text-decoration: none; }
-.auth-foot a:hover { text-decoration: underline; }
-
-@media (max-width: 420px) {
-  .auth-gate { padding: 14px; align-items: flex-start; padding-top: 9vh; }
-  .auth-card { padding: 24px 20px 18px; border-radius: 16px; }
-}
 
 /* ============================================================
    同步面板 / 分类选择 / 可点击分类名
@@ -2245,6 +2317,22 @@ body.m-list .pwa-tip {
   font-style: normal;
 }
 
+/* 附件缩略图绝不能吃上面这套「正文大图占位」样式：
+   .img-missing 的 width:auto!important 会把 32×32 的缩略图撑成整行宽，
+   把文件名和右侧按钮组挤出卡片 —— 手机上下载按钮会跑到屏幕之外，
+   表现就是「点下载毫无反应」。这里把尺寸钉回去，只保留破图的气色。 */
+.att-thumb.img-missing {
+  width: 32px !important;
+  height: 32px !important;
+  max-width: 32px;
+  padding: 0;
+  border-style: solid;
+  border-radius: 6px;
+  font-size: 0;
+  line-height: 0;
+  overflow: hidden;
+}
+
 /* ============ v1.8.0 增强模块样式 ============ */
 /* 双向链接 */
 .bj-panel { border-top: 1px solid var(--border); padding: 14px 18px 6px; background: var(--surface-2); }
@@ -2292,12 +2380,6 @@ body.m-list .pwa-tip {
 .auth-tab.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .auth-hint { font-size: 12px; color: var(--text-3); margin: 10px 2px 0; line-height: 1.6; }
 .auth-hint a { color: var(--accent); cursor: pointer; }
-/* 同步面板底部的版本 / 阶段诊断，浅色小字，不抢视觉但截图能看清 */
-.sync-diag {
-  margin: 14px 0 0; padding-top: 10px; border-top: 1px solid var(--border, rgba(0,0,0,.08));
-  font-size: 11px; line-height: 1.5; color: var(--text-3); text-align: center;
-  word-break: break-all; opacity: .8; user-select: text;
-}
 /* 表单里的输入框不在 .auth-row 内，需显式撑满宽度 */
 #pwdBox .auth-input, .modal.pwd-box .auth-input {
   width: 100%; box-sizing: border-box; display: block;
@@ -2319,3 +2401,4 @@ body.m-list .pwa-tip {
 .pwd-tip span { flex: 1; line-height: 1.5; }
 .pwd-tip button { flex: none; border: 0; background: rgba(255,255,255,.18); color: #fff; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
 .pwd-tip button:hover { background: rgba(255,255,255,.3); }
+

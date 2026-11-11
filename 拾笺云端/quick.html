@@ -3,9 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#f4f3ef">
+<meta name="theme-color" content="#2f6f5e">
+<meta name="color-scheme" content="light">
+<title>随手记</title>
 <link rel="manifest" href="/quick.webmanifest?sharecode=3J7BKHTGFD">
-<title>随手记 · 拾笺</title>
+<!-- 速记专用图标：绿色铅笔，和朱红「拾」字主图标区分开。
+     这个站点裸静态路径一律 403，所有图标 / manifest 都必须自带访问码。 -->
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-quick-32.png?sharecode=3J7BKHTGFD">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon-quick.png?sharecode=3J7BKHTGFD">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="随手记">
+<meta name="application-name" content="随手记">
+<meta name="format-detection" content="telephone=no">
 <style>
   * { box-sizing: border-box; }
   body {
@@ -41,42 +52,195 @@
   .ghost { background: transparent; color: #2f6f5e; }
   .tip { margin-top: 16px; font-size: 11.5px; color: #9c968a; line-height: 1.6; }
   .ok { color: #2f6f5e; font-size: 14px; margin-bottom: 12px; }
+  .desk { background: #eef5f1; border: 1px solid #cfe2d8; border-radius: 10px;
+    padding: 12px 14px; font-size: 12px; line-height: 1.7; color: #3c5d51; margin-bottom: 16px; }
+  .desk[hidden], .isolated[hidden] { display: none; }
+  .desk-h { font-weight: 600; font-size: 13px; margin-bottom: 6px; color: #2f6f5e; }
+  .desk-url { background: #fff; border: 1px dashed #b9d3c6; border-radius: 6px;
+    padding: 8px 10px; margin: 8px 0; font-size: 11px; line-height: 1.55;
+    word-break: break-all; user-select: all; color: #2b4a3f; }
+  .desk-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .desk-row button { flex: 0 0 auto; height: 32px; padding: 0 14px; font-size: 12px; }
+  .desk-state { font-size: 11px; color: #2f6f5e; margin-top: 6px; }
+  .desk-state:empty { display: none; }
+  .isolated { background: #fbecec; border: 1px solid #ecd0d0; color: #8a4242;
+    border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.7; margin-bottom: 16px; }
 </style>
 </head>
 <body>
 <div class="card">
-  <div class="brand">拾 笺</div>
+  <div class="brand">拾 笺 · 随手记</div>
   <div id="view"></div>
-  <div class="tip">从其他 App 点「分享 → 拾笺」可以直接把文字和链接存进笔记；也可以把这个页面当随手速记本用。内容先存手机本地，同步方式和主程序一样。</div>
+  <div class="isolated" id="isolatedTip" hidden>这个图标被独立安装过，有自己的数据分区。请删掉它，改用主程序顶栏的「随手记」。</div>
+  <div class="desk" id="deskTip" hidden>
+    <div class="desk-h">想从桌面一步打开随手记？</div>
+    <div>先删掉旧的随手记图标，再复制下面的地址到浏览器打开，点菜单「<b>安装应用</b>」（没有就选「添加到主屏幕」）。新图标是<b>绿色铅笔</b>，从桌面打开不带地址栏。</div>
+    <div class="desk-url" id="deskUrl"></div>
+    <div class="desk-row">
+      <button type="button" class="ghost" id="copyDesk">复制地址</button>
+      <button type="button" class="ghost" id="hideDesk">已有图标，不再显示</button>
+    </div>
+    <div class="desk-state" id="copyState"></div>
+  </div>
+  <div class="tip">速记先存在本页，点「打开拾笺」进笔记库。</div>
 </div>
-<script src="/attstore.js?sharecode=3J7BKHTGFD"></script>
-<script src="/local.js?sharecode=3J7BKHTGFD"></script>
 <script>
 (function () {
   'use strict';
+  /* 随手记不再持有本地库。独立安装的 PWA / 系统分享会拿到一套隔离的
+     localStorage，往里面写笔记就永远进不了主程序。所以这里只把速记
+     编进链接 / 共享队列，交给主程序落盘；旧版本遗留在本分区的笔记
+     一并带回。队列由主程序确认导入后才清，本页绝不提前标记「已发送」。 */
   const SC = '3J7BKHTGFD';
-  const qs = new URLSearchParams(location.search);
+  /* 必须写到主程序的正式入口：相对路径会留在随手记自己的存储分区里。
+     换分享链接域名时，这里和 SC 一起改。 */
+  const MAIN = 'https://2118888983953637376.app.workbuddy.host/?sharecode=' + SC + '&fs=pwa';
+  /* 桌面快捷方式专用地址：必须带 from=desk，普通网页快捷方式与主程序
+     同一套数据，独立安装的窗口则靠 window.open 跳回浏览器主窗口。 */
+  const DESK_URL = location.origin + '/quick.html?sharecode=' + SC + '&from=desk';
+  const MAIN_FLAG = 'sj_main_lib';
+  const PENDING = 'sj_quick_pending';
+  /* 主程序成功落盘后写这个。两个窗口共用 localStorage 时，本页据此
+     不再重复发送；分区隔离时读不到，速记会一直保留，可反复补发。 */
+  const IMPORTED = 'sj_quick_imported';
+  /* 浏览器没有「查询桌面已有图标」的 API（华为自带浏览器尤其没有），
+     所以只认两条可靠信号：① 用户确实从桌面图标进来过（from=desk）；
+     ② 用户点「已有图标，不再显示」。localStorage 供同分区窗口读，cookie
+     供同 origin 的普通标签读；独立安装的隔离分区读不到，就由 goMain()
+     把 deskInstalled=1 写在跳回主程序的链接上，让主程序自己落盘。 */
+  const DESK_FLAG = 'sj_quick_desk_installed';
+  function deskKnown() {
+    try { if (localStorage.getItem(DESK_FLAG) === '1') return true; } catch (_) {}
+    try { return /(?:^|;\s*)sj_quick_desk_installed=1(?:;|$)/.test(document.cookie); }
+    catch (_) { return false; }
+  }
+  function markDeskInstalled() {
+    try { localStorage.setItem(DESK_FLAG, '1'); } catch (_) {}
+    try { document.cookie = DESK_FLAG + '=1; path=/; max-age=31536000; SameSite=Lax'; }
+    catch (_) {}
+  }
+  const MAX_Q = 4000;   // 链路上限，装不下的下次再带
+  const CUT = 300;      // 单条过长时截断的字符数，保证至少能带走一条
+
   const view = document.getElementById('view');
+  const qs = new URLSearchParams(location.search);
+  /* 恢复入口：删了桌面图标后想重新看安装说明，在地址后加 &desk=1 即可。
+     不占界面，也不会因为误点「不再显示」而永远找不回来。 */
+  const FORCE_GUIDE = qs.get('desk') === '1';
+  /* 从主程序里点「随手记」进来：同一个标签、同一套 localStorage，
+     返回时不能再新开窗口，也不能把主库的笔记当成待迁移速记。 */
+  const FROM_APP = qs.get('from') === 'app';
+  /* 从桌面快捷方式直接进来：它可能是普通网页快捷方式（同一套数据），
+     也可能是被独立安装的窗口（有自己的数据分区）。速记一律靠链接参数
+     交给主程序，不依赖两边共享 localStorage。 */
+  const FROM_DESK = qs.get('from') === 'desk';
+  /* 主程序启动时会写这个标记。有标记 = 本分区就是主程序自己的库，
+     sj_mobile_v1 里装的是整库笔记，绝不能当「旧速记」灌进 q 参数。
+     旧版独立图标的分区没有标记，仍能正常把遗留速记带回来。 */
+  function mainLibHere() {
+    try { return localStorage.getItem(MAIN_FLAG) === '1'; } catch (_) { return false; }
+  }
+  function standaloneWindow() {
+    try {
+      return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+        || window.navigator.standalone === true;
+    } catch (_) { return false; }
+  }
+  /* 独立窗口 + 读不到主库标记 = 这个图标被单独安装过，有自己的分区 */
+  const ISOLATED = standaloneWindow() && !mainLibHere();
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const openLink = '/?sharecode=' + SC + '&fs=pwa';
+  const read = (k, d) => {
+    try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? d : v; }
+    catch (_) { return d; }
+  };
+  const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} };
 
-  async function saveNote(title, content) {
-    if (!window.SJLocal || !window.SJLocal.api) throw new Error('本地数据层没加载成功');
-    if (window.SJLocal.ready) await window.SJLocal.ready;
-    return window.SJLocal.api('/api/notes', {
-      method: 'POST',
-      body: { title: title || '随手记', content: content || '', format: 'md' }
-    });
+  function sigOf(s) {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h >>> 0).toString(36) + '-' + s.length;
   }
-
-  function done(title, content) {
-    view.innerHTML = '<div class="ok">✓ 已存进拾笺</div>' +
-      '<h1>' + esc(title) + '</h1>' +
-      '<div class="box">' + esc(content.slice(0, 600)) + '</div>' +
-      '<div class="row"><a class="btn primary" href="' + openLink + '">打开拾笺</a>' +
-      '<button class="ghost" id="again">再记一条</button></div>';
-    document.getElementById('again').onclick = () => location.replace('/quick.html?sharecode=' + SC);
+  function itemOf(title, content, format) {
+    const t = String(title || '随手记');
+    const c = String(content || '');
+    return { title: t.slice(0, 60), content: c,
+      format: format === 'rich' ? 'rich' : 'md', sig: sigOf(t + '|' + c) };
+  }
+  /* 旧版本往本分区 sj_mobile_v1 写过的速记，删图标前先带回去 */
+  function legacy() {
+    /* 从主程序 / 桌面快捷方式进来，或本分区跑过主程序时，sj_mobile_v1
+       就是主程序自己的整库笔记；再当「遗留速记」带回，会把整库灌进链接
+       参数（长文被截断、还可能导入残缺副本），必须跳过。
+       只有「无主库标记的独立旧图标分区」才需要迁移。 */
+    if (FROM_APP || FROM_DESK || mainLibHere()) return [];
+    const d = read('sj_mobile_v1', {});
+    return (Array.isArray(d.notes) ? d.notes : [])
+      .filter((n) => n && !n.deletedAt && String(n.content || '').trim())
+      .map((n) => itemOf(n.title, n.content, n.format));
+  }
+  function pending() { const a = read(PENDING, []); return Array.isArray(a) ? a : []; }
+  function fresh() {
+    const s = read(IMPORTED, []); const seen = Array.isArray(s) ? s : [];
+    return [...pending(), ...legacy()].filter((x) => x && x.sig && !seen.includes(x.sig));
+  }
+  function addPending(title, content) {
+    const it = itemOf(title, content, 'md');
+    const list = pending();
+    if (!list.some((x) => x && x.sig === it.sig)) write(PENDING, list.concat([it]).slice(-50));
+  }
+  function encode(items) {
+    const picked = [];
+    let q = '';
+    for (const it of items) {
+      const e = encodeURIComponent(JSON.stringify(picked.concat([it])));
+      if (e.length <= MAX_Q) { picked.push(it); q = e; continue; }
+      if (!picked.length) {
+        const cut = Object.assign({}, it, { content: it.content.slice(0, CUT), cut: true });
+        const e2 = encodeURIComponent(JSON.stringify([cut]));
+        if (e2.length <= MAX_Q) { picked.push(cut); q = e2; }
+      }
+      break;
+    }
+    return { q, picked };
+  }
+  /* 点击时只负责把待发速记编进链接；队列和 pending 都留着，
+     直到主程序真正导入成功、写回 sj_quick_imported 为止。 */
+  function goMain() {
+    const list = fresh();
+    const { q, picked } = encode(list);
+    /* 从桌面图标进来的这一次，顺手把「桌面图标确实存在」告诉主程序。
+       桌面窗口若是被独立安装、有自己的隔离分区，localStorage / cookie
+       都传不过去，只有这个链接参数一定送得到。主程序 boot 时会落盘，
+       以后从主程序点「随手记」就不再重复显示安装引导。 */
+    const url = MAIN + (q ? '&q=' + q : '') + (FROM_DESK ? '&deskInstalled=1' : '');
+    const left = Math.max(0, list.length - picked.length);
+    /* 主程序和桌面快捷方式都在「当前窗口」返回：
+       以前桌面入口用 window.open 新开一个普通浏览器标签打开主程序，
+       顶部就会多出地址栏，还和已安装的全屏 PWA 窗口并存。速记本身
+       走 q 参数，不依赖两边共享 localStorage，同窗口跳转是安全的。
+       只有「被独立安装、有自己的空分区」的旧图标必须跳到浏览器主窗口，
+       否则主程序会读到一套空笔记库。 */
+    if ((FROM_APP || FROM_DESK) && !ISOLATED) {
+      /* 不能用 location.replace：那会把「桌面速记图标对应的这个标签」彻底
+         变成主程序文档。华为等手机浏览器再点桌面图标时只把已有窗口切回
+         前台、并不重新导航到 quick.html，用户就卡在主程序列表页。
+         assign 保留历史（返回键能回速记页），也让浏览器更可能按快捷
+         方式 URL 重新导航；另留一个一次性标记，兜住「只切前台」的情况。 */
+      try {
+        if (FROM_DESK) sessionStorage.setItem('sj_quick_return', '1');
+        else sessionStorage.removeItem('sj_quick_return');
+      } catch (_) {}
+      location.assign(url); return left;
+    }
+    const w = window.open(url, '_blank');
+    if (w) { try { w.opener = null; } catch (_) {} }
+    else location.href = url;
+    return left;
+  }
+  function bindGo(id) {
+    const el = document.getElementById(id);
+    if (el) el.onclick = (e) => { e.preventDefault(); goMain(); };
   }
 
   function compose(text, url, title) {
@@ -87,22 +251,94 @@
     const t = String(title || '').trim() || (body.split('\n')[0] || '随手记').slice(0, 40) || '随手记';
     return { title: t.slice(0, 60), content: body };
   }
-
+  function done(title, content) {
+    const left = fresh().length;
+    view.innerHTML = '<div class="ok">✓ 已记下，还没进主程序</div>' +
+      '<h1>' + esc(title) + '</h1>' +
+      '<div class="box">' + esc(content.slice(0, 600)) + '</div>' +
+      '<p>点「打开拾笺」把速记带进主程序笔记库' +
+        (left > 1 ? '；还有 ' + left + ' 条待带入，一次带不完就多点几次' : '') + '。</p>' +
+      '<div class="row"><a class="btn primary" href="#" id="goMain">打开拾笺</a>' +
+      '<button class="ghost" id="again">再记一条</button></div>';
+    const back = FROM_DESK ? '&from=desk' : (FROM_APP ? '&from=app' : '');
+    const force = FORCE_GUIDE ? '&desk=1' : '';
+    document.getElementById('again').onclick = () => location.replace(
+      '/quick.html?sharecode=' + SC + back + force);
+    bindGo('goMain');
+  }
   function editor() {
-    view.innerHTML = '<h1>随手记一笔</h1><p>写点什么，存进拾笺的本地笔记库。</p>' +
+    view.innerHTML = '<h1>随手记一笔</h1><p>写点什么，交给拾笺的笔记库。</p>' +
       '<textarea id="qText" placeholder="想到什么就写什么…"></textarea>' +
       '<div class="row"><button class="primary" id="qSave">存进拾笺</button>' +
-      '<a class="btn ghost" href="' + openLink + '">打开拾笺</a></div>';
+      '<a class="btn ghost" href="#" id="goMain2">打开拾笺</a></div>';
     const ta = document.getElementById('qText');
     ta.focus();
-    document.getElementById('qSave').onclick = async () => {
+    document.getElementById('qSave').onclick = () => {
       const v = ta.value.trim();
       if (!v) { ta.focus(); return; }
       const c = compose(v, '', '');
-      try { await saveNote(c.title, c.content); done(c.title, c.content); }
-      catch (e) { document.getElementById('qSave').textContent = '保存失败：' + e.message; }
+      addPending(c.title, c.content);
+      done(c.title, c.content);
     };
+    bindGo('goMain2');
   }
+
+  /* 桌面一步直达的引导只在「从主程序点随手记进来、且桌面还没装图标」时
+     出现；已经从桌面图标进来过一次，页面从此保持干净，不再重复说明。 */
+  (function deskGuide() {
+    if (ISOLATED) {
+      const t = document.getElementById('isolatedTip');
+      if (t) t.hidden = false;
+    }
+    /* 能进到这一页就证明桌面图标存在且可用，先把事实记进本分区 */
+    if (FROM_DESK) markDeskInstalled();
+    if (!FROM_APP) return;
+    const box = document.getElementById('deskTip');
+    const urlEl = document.getElementById('deskUrl');
+    if (!box || !urlEl) return;
+    const hide = () => { box.hidden = true; };
+    if (!FORCE_GUIDE && deskKnown()) hide();
+    else {
+      urlEl.textContent = DESK_URL;
+      box.hidden = false;
+    }
+    /* 另一个窗口刚装好图标时，这一页也立刻收起引导，不用重开 */
+    window.addEventListener('storage', (e) => {
+      if (e && e.key === DESK_FLAG && e.newValue === '1' && !FORCE_GUIDE) hide();
+    });
+    const hideBtn = document.getElementById('hideDesk');
+    if (hideBtn) hideBtn.onclick = () => { markDeskInstalled(); hide(); };
+    const btn = document.getElementById('copyDesk');
+    const st = document.getElementById('copyState');
+    if (btn) btn.onclick = async () => {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(DESK_URL);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = DESK_URL;
+          ta.setAttribute('readonly', '');
+          ta.style.cssText = 'position:fixed;opacity:0;left:-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          if (!document.execCommand('copy')) throw new Error('copy failed');
+          ta.remove();
+        }
+        if (st) st.textContent = '已复制，到浏览器地址栏打开它';
+      } catch (_) {
+        if (st) st.textContent = '复制失败，请长按上面的地址手动复制';
+      }
+    };
+  })();
+
+  /* 从主程序按返回键、或浏览器把本页从 bfcache 复原时，DOM 可能还停在
+     「已记下 / 打开拾笺」确认页。再次进随手记应看到干净的编辑页。
+     只在确认页时重置，绝不覆盖用户正在输入但还没保存的那段文字。 */
+  window.addEventListener('pageshow', (e) => {
+    if (!e || !e.persisted) return;
+    if (qs.get('text') || qs.get('url') || qs.get('title')) return;
+    if (document.getElementById('again')) editor();
+  });
 
   const text = qs.get('text') || '';
   const url = qs.get('url') || '';
@@ -115,21 +351,30 @@
   const KEY = 'sj_quick_last';
   let already = false;
   try { already = localStorage.getItem(KEY) === sig; } catch (_) {}
-  if (already) { done(c.title, c.content); return; }
-  saveNote(c.title, content).then(() => {
+  if (!already) {
+    addPending(c.title, content);
     try { localStorage.setItem(KEY, sig); } catch (_) {}
-    done(c.title, c.content);
-  }).catch((e) => {
-    view.innerHTML = '<h1>没能存下来</h1><p>' + esc(e.message) + '</p>' +
-      '<div class="row"><a class="btn primary" href="' + openLink + '">打开拾笺</a></div>';
-  });
+  }
+  /* 系统分享进来时直接把内容送进主程序，避免用户关掉页面就丢 */
+  goMain();
+  done(c.title, c.content);
 })();
 </script>
 <script>
-/* 注册 Service Worker，让本页也能被「添加到主屏幕」独立安装成 App */
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js?sharecode=3J7BKHTGFD', { scope: '/' }).catch(function () {});
-}
+/* 让速记页也满足「可安装 PWA」的条件：standalone 启动需要一个已激活的
+   Service Worker。必须先查已有注册 —— 主程序已经注册了带 &v= 版本号的
+   /sw.js（scope 覆盖整站），这里若用另一个 URL 注册，两处会互相顶替
+   安装，每次打开主程序都触发 controllerchange → 整页自动刷新。 */
+(function () {
+  if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
+  var SWV = '2026-11-10-71';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
+  var sc = new URLSearchParams(location.search).get('sharecode') || '3J7BKHTGFD';
+  var url = '/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SWV;
+  navigator.serviceWorker.getRegistration().then(function (reg) {
+    if (reg && reg.active) return;      /* 已有 SW：直接复用，绝不重复注册 */
+    return navigator.serviceWorker.register(url, { scope: '/' });
+  }).catch(function () {});
+})();
 </script>
 </body>
 </html>

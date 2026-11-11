@@ -11,7 +11,7 @@
            所有 js/css 全部 403 —— 表现为「界面在、进度条卡住、按钮点不动」。
            所以每个同源请求都由 SW 主动补上访问码，不依赖 cookie。
    ============================================================ */
-const VERSION = 'sj-2026-11-08-4';
+const VERSION = 'sj-2026-11-10-71';
 const CACHE = 'shijian-' + VERSION;
 
 const SC_KEY = 'sharecode';
@@ -36,6 +36,9 @@ const RAW_SHELL = [
   '/manifest.webmanifest',
   '/quick.webmanifest',
   '/style.css',
+  /* 品牌字子集（只含「拾」「笺」两字）：手机没有系统楷体，
+     不预缓存时离线会掉回宋体，与电脑版看不齐。 */
+  '/sj-brand.woff2',
   '/sjplus.css',
   '/app.js',
   '/sjplus.js',
@@ -55,6 +58,14 @@ const RAW_SHELL = [
   '/icons/icon-maskable-512.png',
   '/icons/apple-touch-icon.png',
   '/icons/favicon-32.png',
+  /* 速记专用图标（绿色铅笔）：桌面快捷方式 / manifest 解析都要用，
+     必须一起预缓存，否则离线或换版时又变回默认的红色「拾」图标。 */
+  '/icons/icon-quick-192.png',
+  '/icons/icon-quick-512.png',
+  '/icons/icon-quick-maskable-192.png',
+  '/icons/icon-quick-maskable-512.png',
+  '/icons/apple-touch-icon-quick.png',
+  '/icons/favicon-quick-32.png',
   '/vendor/workbuddy-cloud-sdk.js',
   '/vendor/docx.umd.js',
   '/vendor/marked.min.js',
@@ -146,6 +157,26 @@ function offlinePage() {
   );
 }
 
+/* ---------------------------------------------------------- 声明式下载中转
+   页面内保存下载时，app.js 先把文件字节写进这个独立缓存（键是
+   /__sjdl/<文件名>?t=…），再用隐藏 iframe 指向同一个地址，由本 SW 把字节带
+   响应头回给浏览器。为什么要绕这一圈：华为内核会忽略 <a download>，改用
+   blob: 地址里的 UUID 当文件名；而 Content-Disposition 是内核唯一不会绕过
+   的文件名来源。缓存名刻意不用 shijian- 前缀，避免 activate 清旧缓存时误删
+   正在下载的字节；页面侧 120 秒后自行删除条目。 */
+const DL_CACHE = 'sjdl-v1';
+async function handleDownload(req) {
+  try {
+    const cache = await caches.open(DL_CACHE);
+    const hit = await cache.match(req.url, { ignoreSearch: true });
+    if (hit) return hit;
+  } catch (_) {}
+  return new Response('文件已过期，请回到拾笺重新点一次下载。', {
+    status: 404,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+  });
+}
+
 /* 页面导航：网络优先；裸链接也会自动补访问码 */
 async function handleNavigate(req) {
   const cache = await caches.open(CACHE);
@@ -231,6 +262,21 @@ if (typeof self !== 'undefined') self.addEventListener('fetch', (event) => {
   /* 跨域（云端数据库 / 存储 / OTP）直连，不参与缓存 */
   if (url.origin !== self.location.origin) return;
 
+  /* 存储对象路由（签名短链 /objects/s/… 与网关 /.cloud/storage/…）一律直连，
+     不参与缓存、也绝不当页面导航处理。否则 SW 会把文件跳转当 navigate 拦截，
+     跟随其跨域 302 拿到 opaque 响应后回退成「暂时打不开拾笺」离线页——这会让
+     附件在手机端（WebAPK 或已注册本 PWA SW 的系统浏览器）永远下不了。放行后
+     由浏览器原生跟随 302 把文件下载 / 预览。（sign 端点是 POST，上层 method
+     过滤已跳过；这里再兜底 GET 也不拦。） */
+  if (/^\/(?:objects\/|\.cloud\/storage\/)/.test(url.pathname)) return;
+
+  /* 声明式下载：必须排在 navigate 之前处理，否则会被当成页面导航，跟随一个
+     不存在的服务端路由 → 落进离线页，文件永远下不来。 */
+  if (url.pathname.indexOf('/__sjdl/') === 0) {
+    event.respondWith(handleDownload(req));
+    return;
+  }
+
   if (req.mode === 'navigate') {
     event.respondWith(handleNavigate(req));
     return;
@@ -241,20 +287,11 @@ if (typeof self !== 'undefined') self.addEventListener('fetch', (event) => {
   event.respondWith(handleAsset(req));
 });
 
-/* 让页面可以主动问「有新版本吗」 */
 if (typeof self !== 'undefined') self.addEventListener('message', (event) => {
   if (event.data === 'skip-waiting') self.skipWaiting();
-  if (event.data === 'version' && event.source) {
-    event.source.postMessage({ type: 'version', version: VERSION });
-  }
   /* 页面每次打开都把当前链接里的访问码同步过来，重新发布换码后不用手动清缓存 */
   if (event.data && event.data.type === 'sharecode') {
     const v = String(event.data.value || '');
     if (v && /^[A-Za-z0-9_-]{4,64}$/.test(v)) SC_VAL = v;
   }
 });
-
-/* 测试钩子：供 Node 单测复用，不影响浏览器运行 */
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { VERSION, ASSET_PATHS, ensureSC, SC_VAL };
-}

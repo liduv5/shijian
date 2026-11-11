@@ -667,7 +667,6 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
 .tb-btn.active { background: var(--accent-soft); color: var(--accent); }
 .tb-sep { width: 1px; height: 15px; background: var(--border); margin: 0 5px; flex: none; }
 .tb-text { font-weight: 700; font-size: 12.5px; letter-spacing: -.02em; }
-.tb-spacer { flex: 1; }
 
 /* 编辑主体 */
 .editor-body {
@@ -990,6 +989,46 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
 .att-act.del:hover { color: var(--danger); background: rgba(192,68,47,.08); }
 .att-act svg { width: 13px; height: 13px; }
 
+/* 图片附件预览：悬停快看 + 点击全屏原图（桌面端专属）。
+   触屏端云端另有一套 openAttView；这里只在有鼠标的设备上启用悬停。 */
+.att-thumb.clickable { cursor: zoom-in; }
+.att-hover {
+  position: fixed; z-index: 1600;
+  width: 300px; height: 220px; padding: 8px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-lg);
+  display: grid; place-items: center;
+  pointer-events: none;
+  animation: fade .12s;
+}
+.att-hover img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+.att-lightbox {
+  position: fixed; inset: 0; z-index: 3000;
+  background: rgba(10, 12, 11, .95);
+  display: grid; place-items: center; padding: 20px;
+  cursor: zoom-out;
+  animation: fade .14s;
+}
+.att-lightbox img {
+  max-width: 100%; max-height: 100%; object-fit: contain;
+  -webkit-user-select: none; user-select: none;
+}
+.att-lightbox-tip {
+  position: absolute; left: 0; right: 0; bottom: 16px;
+  text-align: center; color: rgba(255, 255, 255, .82);
+  font-size: 12px; pointer-events: none;
+}
+.att-lightbox-dl {
+  position: absolute; left: 50%; bottom: 44px; transform: translateX(-50%);
+  padding: 7px 16px; border-radius: 999px;
+  background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .28);
+  color: #fff; font-size: 12.5px; text-decoration: none; cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.att-lightbox-dl:hover { background: rgba(255, 255, 255, .26); }
+
 .attach-empty {
   font-size: 12px;
   color: var(--text-3);
@@ -1198,8 +1237,6 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
   border-radius: 50%;
 }
 .tag-chip .tag-x:hover { opacity: 1; color: var(--danger); }
-.tag-chip.bare { background: transparent; border: 1px solid var(--border); }
-.tag-chip.bare:hover { background: var(--surface-2); }
 
 .tag-add {
   width: 22px; height: 22px;
@@ -1494,7 +1531,11 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
     background: var(--surface);
     border-bottom: 1px solid var(--border);
   }
-  .m-bar .icon-btn { flex: 0 0 auto; min-width: 42px; min-height: 42px; }
+  .m-bar .icon-btn {
+    flex: 0 0 auto; min-width: 42px; min-height: 42px;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none; user-select: none;
+  }
   .m-bar-title {
     flex: 1; min-width: 0; text-align: center;
     font-family: "Microsoft YaHei", "微软雅黑", "PingFang SC", "HarmonyOS Sans SC",
@@ -1936,13 +1977,6 @@ img.sj-img-picked {
 .e2ee-row { margin-bottom: 10px; }
 .e2ee-file { font-size: 13px; color: var(--text-2); display: block; }
 .e2ee-msg { font-size: 12.5px; margin-top: 6px; min-height: 16px; }
-
-/* 链接即口令提示 */
-.pwd-tip { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9000; display: flex; align-items: center; gap: 12px;
-  padding: 10px 16px; background: #2f6f5e; color: #fff; font-size: 13px; box-shadow: 0 -4px 16px rgba(0,0,0,.12); }
-.pwd-tip span { flex: 1; line-height: 1.5; }
-.pwd-tip button { flex: none; border: 0; background: rgba(255,255,255,.18); color: #fff; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
-.pwd-tip button:hover { background: rgba(255,255,255,.3); }
 
 /* 打印区：单篇导出 PDF / Word 使用 */
 #printArea { display: none; }

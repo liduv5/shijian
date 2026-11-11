@@ -7,8 +7,7 @@
   "dir": "ltr",
   "start_url": "/?sharecode=3J7BKHTGFD&fs=pwa",
   "scope": "/",
-  "display": "standalone",
-  "display_override": ["standalone", "minimal-ui"],
+  "display": "minimal-ui",
   "orientation": "portrait",
   "background_color": "#faf7f2",
   "theme_color": "#faf7f2",
@@ -30,8 +29,8 @@
     {
       "name": "随手记",
       "short_name": "随手记",
-      "url": "/quick.html?sharecode=3J7BKHTGFD",
-      "icons": [{ "src": "/icons/icon-192.png?sharecode=3J7BKHTGFD", "sizes": "192x192" }]
+      "url": "/quick.html?sharecode=3J7BKHTGFD&from=desk",
+      "icons": [{ "src": "/icons/icon-quick-192.png?sharecode=3J7BKHTGFD", "sizes": "192x192" }]
     }
   ],
   "share_target": {

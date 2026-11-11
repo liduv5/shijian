@@ -40,6 +40,10 @@
     image: '<svg viewBox="0 0 24 24" class="ico"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.4"/><path d="M4 17l5-5 4 4 3-3 4 4"/></svg>',
   };
 
+  /* 只记「上次所在类别」，不记上次打开的那篇笔记：知识片段按类收集，
+     冷启动回到类别/列表，别把人直接塞回某一条正文里继续写。 */
+  const SJ_LAST_CAT = 'sj_last_cat';
+
   /* ---------------------------------------------------------- 状态 */
   const state = {
     categories: [],
@@ -56,22 +60,123 @@
   const catMap = () => new Map(state.categories.map((c) => [c.id, c]));
   const noteById = (id) => state.notes.find((n) => n.id === id) || null;
 
+  /* ---------------------------------------------------------- 空白新建草稿
+     -70：以前点「+」立刻 POST /api/notes，哪怕一个字没写也会落一条空白记录，
+     切回列表 / 目录时就看见一篇「无标题笔记」。现改为先只在内存里放一篇草稿：
+     离开编辑器时若仍全空就同步丢弃（一个请求都不发），有内容才落库。
+     草稿不进 state.notes，因此不会被同步刷新 / 导入 / 整库导出当成真笔记。 */
+  const DRAFT_ID = '__sj_draft__';
+  let draftNote = null;      // 仅在编辑中的那篇空白草稿；落库或丢弃后即清空
+  let draftSaving = null;    // 落库 Promise，防止并发重复创建两篇
+
+  const draftFields = (n) => ({
+    categoryId: n.categoryId || null,
+    title: n.title || '', content: n.content || '',
+    format: n.format === 'rich' ? 'rich' : 'md',
+    starred: !!n.starred, tags: (n.tags || []).slice(),
+  });
+
+  /* 富文本编辑器空聚焦会留下 <p><br></p>；Markdown 里的尖括号是正文，不能剥。 */
+  function blankContent(s, rich) {
+    const t = String(s || '');
+    if (!rich) return !t.trim();
+    return !t.replace(/<br\s*\/?>/gi, '').replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;|\u00a0/gi, ' ').trim();
+  }
+
+  function isBlankNote(n) {
+    if (!n) return true;
+    if (String(n.title || '').trim()) return false;
+    if (!blankContent(n.content, n.format === 'rich')) return false;
+    if (n.tags && n.tags.length) return false;
+    if (n.attachments && n.attachments.length) return false;
+    if (n.starred) return false;
+    return true;
+  }
+
+  function discardDraft() {
+    if (!draftNote) return;
+    draftNote = null;
+    state.selNote = null;
+    state.dirty = false;
+    savedSnapshot = '';
+    /* 空白草稿从未进过 state.notes，这里只需收起编辑器并重绘列表。 */
+    closeEditor();
+  }
+
+  async function settleDraft(force) {
+    if (!draftNote) return null;
+    if (draftSaving) return draftSaving;
+    const d = draftNote;
+    if (!force && isBlankNote(d)) { discardDraft(); return null; }
+    const sent = draftFields(d);
+    const sentSig = JSON.stringify(sent);
+    draftSaving = (async () => {
+      try {
+        const real = await api('/api/notes', { method: 'POST', body: sent });
+        /* POST 往返期间可能又敲了字：把最新字段补回同一个对象，再 PATCH 写盘。
+           保持对象身份，uploadFiles 等持有旧引用的代码不会写到已丢弃的草稿上。 */
+        const cur = draftFields(d);
+        Object.assign(d, real);
+        state.notes.push(d);
+        draftNote = null;
+        if (state.selNote === DRAFT_ID) {
+          state.selNote = d.id;
+          state.dirty = false;
+          savedSnapshot = snapshot(d);
+          setSaveState('saved');
+        }
+        if (JSON.stringify(cur) !== sentSig) {
+          Object.assign(d, cur);
+          const upd = await api(`/api/notes/${d.id}`, { method: 'PATCH', body: cur });
+          Object.assign(d, upd);
+          if (state.selNote === d.id) {
+            savedSnapshot = snapshot(d);
+            setSaveState('saved');
+          }
+        }
+        renderList();
+        return d.id;
+      } catch (e) {
+        /* 落库失败不能丢内容：保留草稿并标脏，下次离开再试。 */
+        if (state.selNote === DRAFT_ID) {
+          state.dirty = true;
+          setSaveState('error', '保存失败，请重试');
+        }
+        toast(e.message);
+        return null;
+      } finally { draftSaving = null; }
+    })();
+    return draftSaving;
+  }
+
+  async function guardDraftPath(path, method) {
+    const prefix = '/api/notes/' + DRAFT_ID;
+    if (!draftNote || path.indexOf(prefix) !== 0) return path;
+    /* 读操作不为了一次查询凭空建笔记；写操作是用户明确动作，必须落库。 */
+    const realId = await settleDraft(method !== 'GET');
+    return realId ? '/api/notes/' + realId + path.slice(prefix.length) : path;
+  }
+
   /* ---------------------------------------------------------- API
      云端版：路径与参数保持和本地版一致，实际读写走 SJCloud.api，
      由它映射到云端数据库。界面层完全感知不到差异。            */
   async function api(path, { method = 'GET', body } = {}) {
+    path = await guardDraftPath(path, method);
     if (!window.SJLocal) throw new Error('本地存储未就绪');
     return window.SJLocal.api(path, { method, body });
   }
 
   /* ---------------------------------------------------------- Toast */
   let toastTimer;
-  function toast(msg) {
+  /* -66：加可选时长。页内下载「成功」时页面没有任何别的变化（没有窗口、没有跳页），
+     两秒的 toast 常常看不到 —— 那正是 -64 让用户以为没下成的原因。关键结论给 4 秒。 */
+  function toast(msg, ms) {
     const el = $('#toast');
     el.textContent = msg;
     el.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('show'), 2000);
+    toastTimer = setTimeout(() => el.classList.remove('show'), ms || 2000);
   }
 
   /* ---------------------------------------------------------- Markdown */
@@ -479,6 +584,12 @@
   }
 
   function renderList() {
+    /* 每次切换类别都会重绘列表，顺手把当前类别记下来（值不变就不写盘）。
+       比逐个给 selCat 赋值点加钩子可靠，也不会漏掉标签/收藏等伪类别。 */
+    try {
+      const v = String(state.selCat || 'all');
+      if (localStorage.getItem(SJ_LAST_CAT) !== v) localStorage.setItem(SJ_LAST_CAT, v);
+    } catch (_) {}
     const box = $('#noteList');
     const list = notesInScope();
     box.innerHTML = '';
@@ -923,7 +1034,8 @@
   if (tagManageBtn) tagManageBtn.addEventListener('click', openTagManager);
 
   /* ---------------------------------------------------------- 编辑器 */
-  const currentNote = () => noteById(state.selNote);
+  /* -70：空白新建草稿不在 state.notes 里，编辑期间由 currentNote 直接返回。 */
+  const currentNote = () => (state.selNote === DRAFT_ID ? draftNote : noteById(state.selNote));
 
   function setSaveState(kind, text) {
     const el = $('#saveState');
@@ -954,7 +1066,8 @@
     /* 离开当前笔记：先把脏数据落盘，再切换选中项。所有打开笔记的路径
        （列表、搜索、双链、外部调用）都会经过这里，不用逐个补钩子。 */
     if (state.selNote && state.selNote !== id) void saveNow();
-    const note = noteById(id);
+    /* -70：草稿只存在于内存，按哨兵取，别去 state.notes 里找。 */
+    const note = id === DRAFT_ID ? draftNote : noteById(id);
     if (!note) return;
     /* 崩溃恢复标记：正常跑完会在函数末尾清掉。若上次打开这篇时
        渲染卡死 / 抛异常，标记会留下，下次启动就跳过它，保证能进应用。 */
@@ -1054,6 +1167,13 @@
   }
 
   async function saveNow() {
+    /* -70：空白新建草稿：全空就同步丢弃（一个请求都不发），有内容才落库。
+       已有笔记的「输入只标脏、离开时 PATCH」链路保持原样。 */
+    if (draftNote && state.selNote === DRAFT_ID) {
+      if (isBlankNote(draftNote)) { discardDraft(); return; }
+      await settleDraft(false);
+      return;
+    }
     const note = currentNote();
     if (!note || !state.dirty) return;
     const savingId = note.id;
@@ -1704,12 +1824,935 @@
     return '/api/files/' + a.id;                                // 桌面端走服务端
   }
 
+  /* 把 data URL 还原成 Blob。手写解码而不是 fetch(data:)，
+     部分手机浏览器不支持 fetch data: 协议，且大文件多一次拷贝。 */
+  function dataUrlToBlob(u) {
+    try {
+      const m = /^data:([^;,]*)(;base64)?,([\s\S]*)$/.exec(u);
+      if (!m) return null;
+      const mime = m[1] || 'application/octet-stream';
+      if (m[2]) {
+        const bin = atob(m[3]);
+        const buf = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+        return new Blob([buf], { type: mime });
+      }
+      return new Blob([decodeURIComponent(m[3])], { type: mime });
+    } catch (_) { return null; }
+  }
+
+  /* 附件下载：把本机二进制交给浏览器保存。
+     渲染 / 预览时先把二进制备进内存，点击那一刻同步造 blob: URL 并新建
+     隐藏 <a download> 触发；本机没有时再按需从附件仓 / 云端取。
+     URL 必须在用户点击的调用栈里新建 —— 预建的旧 URL 可能已失效。 */
+  const dlRaw = new Map();     // attId -> Blob（点击当场用它现造 URL）
+  const dlData = new Map();    // attId -> data URL（同步可交付）
+  const dlBusy = new Set();
+
+  /* 只认内存里现成的 data URL —— 这是唯一能在手势同一次调用栈里拿到的东西。
+     云端签名地址（http）必然要发网络请求，一定丢手势，不能算「就绪」。 */
+  function localDataUrlOf(a) {
+    if (!a) return '';
+    if (a.data) return a.data;
+    if (window.SJLocal && window.SJLocal.fileUrl) {
+      const u = window.SJLocal.fileUrl(a.id) || '';
+      if (/^data:/i.test(u)) return u;
+    }
+    return '';
+  }
+
+  /* 直连附件仓读一次：SJAttStore 包装层偶尔拿不到时，这是兜底的一路。
+     自带超时，拿不到就返回空，绝不把界面挂在这里。 */
+  function directStoreGet(id, ms) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => { if (!done) { done = true; resolve(typeof v === 'string' ? v : ''); } };
+      if (!id || !window.indexedDB) return finish('');
+      const timer = setTimeout(() => finish(''), ms || 5000);
+      let req;
+      try { req = indexedDB.open('sj_att_v1', 1); } catch (_) { clearTimeout(timer); return finish(''); }
+      req.onupgradeneeded = () => { try { req.result.createObjectStore('files'); } catch (_) {} };
+      req.onerror = () => { clearTimeout(timer); finish(''); };
+      req.onsuccess = () => {
+        const db = req.result;
+        try {
+          const tx = db.transaction('files', 'readonly');
+          const r = tx.objectStore('files').get(id);
+          r.onsuccess = () => { clearTimeout(timer); finish(r.result); };
+          r.onerror = () => { clearTimeout(timer); finish(''); };
+          tx.onabort = () => { clearTimeout(timer); finish(''); };
+        } catch (_) { clearTimeout(timer); finish(''); }
+      };
+    });
+  }
+
+  /* 取附件二进制（data URL）：内存 → SJAttStore → **直连附件仓**。
+     三条都试，任何一条给出数据就够 —— 下载只需要一次成功。 */
+  async function attBinaryGet(a) {
+    if (!a || !a.id) return '';
+    const mem = localDataUrlOf(a);
+    if (mem) return mem;
+    if (dlData.has(a.id)) return dlData.get(a.id);
+    let d = '';
+    try { if (window.SJAttStore) d = (await attStoreGet(a.id, 5000)) || ''; } catch (_) {}
+    if (!d) d = await directStoreGet(a.id, 5000);
+    if (d) dlData.set(a.id, d);
+    return d;
+  }
+
+  /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
+     不参与界面，也不影响运行。 */
+  const APP_BUILD = '2026-11-10-71';
+
+  /* 把二进制是否已备好标到按钮上，供点击时同步交付；
+     真正的交付动作在 deliverNow()。 */
+  function markReady(el, a) {
+    if (!a || !a.id) return false;
+    const ready = !!(dlRaw.get(a.id) || dlData.get(a.id) || localDataUrlOf(a));
+    if (el && el.isConnected) {
+      el.dataset.ready = ready ? '1' : '';
+      el.setAttribute('title', '下载 ' + (a.name || '附件') + (ready ? '' : '（本机还没有这份文件）'));
+    }
+    return ready;
+  }
+
+  /* 取本机二进制：内存 → 附件仓。都取不到返回空。
+     附件仓一定要带超时：华为浏览器在省电 / 多标签时 IDB 打开会悬着不返回，
+     不带超时这里就永远等下去，链接永远武装不上。 */
+  function attStoreGet(id, ms) {
+    return new Promise((resolve) => {
+      let done = false;
+      const timer = setTimeout(() => { if (!done) { done = true; resolve(null); } }, ms || 6000);
+      Promise.resolve()
+        .then(() => (window.SJAttStore ? window.SJAttStore.get(id) : null))
+        .then((v) => { if (!done) { done = true; clearTimeout(timer); resolve(v || null); } },
+              () => { if (!done) { done = true; clearTimeout(timer); resolve(null); } });
+    });
+  }
+
+  /* 渲染时 / 打开大图前把二进制备进内存。只备 Blob 与 data URL，
+     不预建 blob: URL —— 预建的旧 URL 可能被回收，是个不报错的死链。 */
+  async function ensureBlob(a) {
+    if (!a || !a.id) return null;
+    const hit = dlRaw.get(a.id);
+    if (hit) return hit;
+    const data = await attBinaryGet(a);
+    if (!data) return null;
+    if (/^data:/i.test(data)) dlData.set(a.id, data);
+    const blob = dataUrlToBlob(data);
+    if (!blob) return null;
+    dlRaw.set(a.id, blob);
+    return blob;
+  }
+
+  /* 准备顺序：同步内存 → 附件仓。没有第三档。 */
+  async function prepareWhenReady(el, a) {
+    if (!el || !a || !a.id) return false;
+    if (!localDataUrlOf(a) && !dlRaw.has(a.id)) await ensureBlob(a);
+    if (!el.isConnected) return false;
+    return markReady(el, a);
+  }
+
+  /* 补图结束后把二进制再备一次，保证点击那一刻数据是同步可得的。 */
+  function refreshDownloadLinks() {
+    const note = currentNote();
+    if (!note) return;
+    const byId = new Map((note.attachments || []).map((x) => [x.id, x]));
+    $$('#attachList [data-act="dl"]').forEach((el) => {
+      const a = byId.get(el.dataset.att || '');
+      if (!a) return;
+      /* 图片的卡片按钮是「看大图」，不是下载，别把 href 抢过去 */
+      if (/^image\//.test(a.type || '')) return;
+      void prepareWhenReady(el, a).then((ok) => {
+        if (!ok) void prefetchDownload(a, el);
+      });
+    });
+  }
+  document.addEventListener('sj:files-painted', refreshDownloadLinks);
+
+  /* 附件不在本机（只在云端签名地址）时，取二进制必然要发网络请求，等用户点了
+     再取就已经离开手势。渲染后顺手预取一次，等真点下去二进制已在内存，
+     就能同步交付。取不到就保持未就绪，点击时如实说「还没存到本机」。 */
+  const dlFetching = new Set();
+  async function prefetchDownload(a, el) {
+    if (!a || !a.id || dlRaw.has(a.id) || dlFetching.has(a.id)) return;
+    dlFetching.add(a.id);
+    let ctl = null;
+    try {
+      /* ① 本机（内存 / 附件仓）。PDF 这类不渲染缩略图的附件，二进制只在仓里，
+         localDataUrlOf() 同步取不到 —— 少了这一档，它就永远准备不上。 */
+      if (await ensureBlob(a)) {
+        if (el && el.isConnected) markReady(el, a);
+        return;
+      }
+      /* ② 云端签名地址。local.js 的 attachmentUrl 已经按「内存 → 仓 → 签名地址」
+         兜过一遍，比只看 a.remoteUrl 更可靠 —— stripAtt 保存时会摘掉 remoteUrl，
+         只留 a.path，重开页面后就只能靠它自己的 remotePath 映射。 */
+      let src = '';
+      try {
+        if (window.SJLocal && window.SJLocal.attachmentUrl) src = (await window.SJLocal.attachmentUrl(a.id)) || '';
+      } catch (_) {}
+      if (!src) src = a.remoteUrl || '';
+      if (!/^https?:/i.test(src)) return;
+      /* 非图片且偏大就别为下载偷偷吃流量，留给用户点击时再取 */
+      if (!/^image\//.test(a.type || '') && (a.size || 0) > 2 * 1024 * 1024) return;
+      ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = ctl ? setTimeout(() => ctl.abort(), 15000) : 0;
+      try {
+        const r = await fetch(src, ctl ? { signal: ctl.signal } : {});
+        const b = r && r.ok ? await r.blob() : null;
+        if (b && b.size) {
+          dlRaw.set(a.id, b);
+          /* 落到附件仓，下次离线也能下载 */
+          try { await saveToStore(a.id, b); } catch (_) {}
+          if (el && el.isConnected) markReady(el, a);
+        }
+      } finally { if (timer) clearTimeout(timer); }
+    } catch (_) {
+      /* 取不到就保持未就绪，点击时如实提示 */
+    } finally {
+      dlFetching.delete(a.id);
+    }
+  }
+
+  /* Blob → data URL → 附件仓。以后 SW 读到、离线也能下载。 */
+  function saveToStore(id, blob) {
+    return new Promise((resolve) => {
+      if (!window.SJAttStore || !blob) return resolve(false);
+      try {
+        const fr = new FileReader();
+        fr.onload = () => {
+          const d = typeof fr.result === 'string' ? fr.result : '';
+          if (!d) return resolve(false);
+          Promise.resolve(window.SJAttStore.put(id, d)).then(() => resolve(true), () => resolve(false));
+        };
+        fr.onerror = () => resolve(false);
+        fr.readAsDataURL(blob);
+      } catch (_) { resolve(false); }
+    });
+  }
+
+  function triggerSave(obj, name) {
+    const link = document.createElement('a');
+    link.href = obj;
+    link.download = name;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => { link.remove(); }, 60000);
+  }
+
+  /* 交付（同步）：新建隐藏 <a download>，点击当场造 blob: URL 并触发。 */
+  function deliverNow(a) {
+    if (!a || !a.id) return false;
+    const name = a.name || ('附件-' + a.id);
+    const dataUrl = dlData.get(a.id) || localDataUrlOf(a) || '';
+    let blob = dlRaw.get(a.id) || null;
+    if (!blob && dataUrl) { blob = dataUrlToBlob(dataUrl); if (blob) dlRaw.set(a.id, blob); }
+    if (blob) {
+      const u = URL.createObjectURL(blob);
+      triggerSave(u, name);
+      return true;
+    }
+    if (dataUrl) {
+      triggerSave(dataUrl, name);
+      return true;
+    }
+    return false;
+  }
+
+  /* 本机三处都没有时，去云端取一次，取到就落回附件仓（下次离线也能下载）。 */
+  async function fetchRemoteData(a) {
+    if (!a || !a.id) return '';
+    let src = '';
+    try {
+      if (window.SJLocal && window.SJLocal.attachmentUrl) src = (await window.SJLocal.attachmentUrl(a.id)) || '';
+    } catch (_) {}
+    if (!src) src = a.remoteUrl || '';
+    if (!/^https?:/i.test(src) && !/^data:/i.test(src)) return '';
+    if (/^data:/i.test(src)) return src;
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), 15000) : 0;
+    try {
+      const r = await fetch(src, ctl ? { signal: ctl.signal } : {});
+      if (!r || !r.ok) return '';
+      const blob = await r.blob();
+      if (!blob || !blob.size) return '';
+      dlRaw.set(a.id, blob);
+      void saveToStore(a.id, blob);
+      const dataUrl = await new Promise((res) => {
+        try {
+          const fr = new FileReader();
+          fr.onload = () => res(typeof fr.result === 'string' ? fr.result : '');
+          fr.onerror = () => res('');
+          fr.readAsDataURL(blob);
+        } catch (_) { res(''); }
+      });
+      if (dataUrl) dlData.set(a.id, dataUrl);
+      return dataUrl;
+    } catch (_) {
+      return '';
+    } finally { if (timer) clearTimeout(timer); }
+  }
+
+  /* 是否处于「已添加到主屏幕 / WebAPK」的独立 Android 环境：这类环境会静默丢弃
+     脚本合成的 blob 下载（连 <a download> 也无效），同域文件跳转又被本 PWA 的
+     Service Worker 拦成离线页。只能把签名地址用 intent:// 交给系统浏览器下载。 */
+  /* 是否走「intent 唤起系统浏览器」下载：以 Android 为准。
+     背景：华为 WebAPK 常不报 display-mode（standalone/minimal-ui/fullscreen 都可能
+     为 false），而「内外高度差」又无法可靠区分状态栏与浏览器工具栏。与其赌某个
+     启发式命中导致漏判（之前就是漏判走了 blob 分支、被静默丢弃），不如只要确认是
+     Android（即手机端）就走 intent——桌面 / iOS 仍走原 blob 流程（不受此影响）。
+     Android 普通 Chrome 走 intent 也无害（同样能下载）。下方各子值仍记入日志，
+     供下一步结合真机数据做更精细的环境判定。 */
+  function isStandaloneAndroid() {
+    try {
+      /* 唯一可靠的判据就是 UA 里的 Android：华为 WebAPK 往往不报
+         display-mode: standalone，用 matchMedia 判定会漏。 */
+      return /Android/i.test(navigator.userAgent || '');
+    } catch (_) { return false; }
+  }
+  /* ------------------------------------------- Chromium 系判定（-63 / -66 恢复）
+     为什么要把 Chromium 系单独拎出来：
+       Chrome / Edge 这类浏览器在 standalone 下**能页内落盘** —— blob 锚点、SW 返回的
+       attachment 响应都能走通，下载留在本页完成：不多开窗口、没有中转页、也不需要
+       用户再去点右上角那个 ✗。
+       而华为 / 小米 / vivo 这些自带浏览器会**静默丢弃**页内下载（-20 / -50 / -58 三次
+       真机证实），只能把请求交给另一个应用，代价是多一个窗口。
+     这段来回走过一次，两点都记下来免得再绕：
+       · -63 引入 → 真机能下成（证据：系统弹出「打开 PDF 文件？」；再点一次还问
+         「是否重新下载」—— 说明文件已经在「下载」里了），但用户看不见它发生，于是
+         重复点击，同一份文件下两遍；
+       · -64 为此在卡片下方加了一行常驻说明 → 与「第二次点击」的绿框叠在一起，用户
+         明确反感那两片绿；
+       · -65 于是整条撤掉、统一走 intent → 用户又明确说「不想看到那个中转页」；
+       · -66 恢复页内通道，但**一个字都不往页面上加**：成功只给一句 toast。
+     结论：在能页内落盘的内核上，「没有页面」本身就是最强的信号 —— 系统会自己把文件
+     放进「下载」并在通知栏显示进度。判错的方向必须是安全的一侧：认不出来就返回 false，
+     退回 intent 那条已验证的路，不拿不可检测的动作去赌。 */
+  function isChromiumLikeAndroid() {
+    try {
+      const ua = navigator.userAgent || '';
+      if (!/Android/i.test(ua)) return false;
+      if (!/Chrome\/\d+/i.test(ua)) return false;
+      /* Android WebView（各家 App 内嵌）的下载交给宿主决定，策略又不一样，一律不认。 */
+      if (/;\s*wv\)|WebView/i.test(ua)) return false;
+      /* 已知 OEM / 国产内核：真机上页内下载会被吞。 */
+      if (/HuaweiBrowser|HBPC|HONORBrowser|HonorBrowser|MiuiBrowser|XiaoMi\/|VivoBrowser|HeyTap|OppoBrowser|SamsungBrowser|UCBrowser|MQQBrowser|QQBrowser|Quark|baidubrowser|BaiduBoxApp|SogouMobileBrowser|QihooBrowser|360SE|MicroMessenger|Weibo/i.test(ua)) return false;
+      return true;
+    } catch (_) { return false; }
+  }
+  /* 当前链接里的访问码（供下载中转页 dl.html 复用，保证非首页打开也能带码）。 */
+  function currentShareCode() {
+    try {
+      return new URLSearchParams(location.search).get('sharecode')
+        || localStorage.getItem('sj_sharecode') || '3J7BKHTGFD';
+    } catch (_) { return '3J7BKHTGFD'; }
+  }
+  /* 早期版本这里还有一个 buildIntentUrl()：直接把签名地址包成裸 intent 交给系统。
+     它已被下面的 buildDlIntent() 完全取代 —— 后者先经同源 dl.html 中转页，能顺手把
+     旧 SW 换成带「存储路径放行」的新版。留着两份 intent 构造只会让人改错那一份
+     （-68 体检时确认它 0 调用，删除）。 */
+
+  /* 真正用于下载的 intent：先经过同源的 dl.html 中转页（它在系统浏览器里把 SW 升级到
+     带「存储路径放行」的新版，再重定向到文件地址），从而自愈「旧 SW 把文件拦成离线页」
+     的问题。dl.html 与文件地址同主机，intent 仍由系统解析器弹出「打开」选择。 */
+  function buildDlIntent(storageUrl, name) {
+    try {
+      const target = new URL(storageUrl);
+      const sc = currentShareCode();
+      const dlPath = '/dl.html?sharecode=' + encodeURIComponent(sc)
+        + '&url=' + encodeURIComponent(target.toString())
+        + '&name=' + encodeURIComponent(name || '')
+        /* b= 让 dl.html 的日志带上本端 build，用来判定手机跑的是哪一版 app.js；
+           仅作诊断，不影响下载。 */
+        + '&b=' + encodeURIComponent(APP_BUILD);
+      const dlUrl = target.origin + dlPath;
+      return 'intent://' + target.host + dlPath
+        + '#Intent;scheme=https;action=android.intent.action.VIEW;'
+        + 'category=android.intent.category.BROWSABLE;'
+        + 'S.browser_fallback_url=' + encodeURIComponent(dlUrl) + ';end';
+    } catch (_) { return ''; }
+  }
+  /* 传入的必须是已构建好的 intent 字符串（buildDlIntent 的返回值）。
+     注意：绝不能再对入参调用 buildDlIntent —— 那会把 url= 变成整条 intent，
+     导致 dl.html 拿到的是 intent:// 而非真实文件地址，文件永远不落地（-39 的坑）。 */
+  function openViaSystemBrowser(intent) {
+    if (!intent) return false;
+    try {
+      const a = document.createElement('a');
+      a.href = intent;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { a.remove(); }, 60000);
+      return true;
+    } catch (_) { return false; }
+  }
+  /* 注意入参 el 是**那张附件卡片里的下载按钮**，不是卡片本身（startDownload 的调用点
+     传的是 dlEl）。按钮又在 .att-acts 这个 position:absolute 的浮层里：
+       · 往按钮里 append 任何节点 → 溢出到卡片右下角外面，真机看到的「右下角一片
+         混乱」就是这么来的；
+       · 插进卡片内部也不行：卡片变高后那排绝对定位的按钮会压在文字上。
+     所以统一插在**卡片正下方**一条独立说明行里，谁都不挡。 */
+  function attCardOf(el) {
+    try { return el && el.closest ? el.closest('.att') : null; } catch (_) { return null; }
+  }
+  /* 取（或建）卡片下方那条说明行。卡片重渲染时会被整块替换掉，不需要额外清理。 */
+  function attNote(card) {
+    let n = card.__sjNote;
+    if (n && n.isConnected) return n;
+    n = document.createElement('div');
+    n.className = 'sj-dl-note';
+    n.style.cssText = 'margin:-2px 2px 1px;font-size:12px;line-height:1.5;'
+      + 'color:var(--accent);word-break:break-word;';
+    try { card.parentNode.insertBefore(n, card.nextSibling); } catch (_) { return null; }
+    card.__sjNote = n;
+    return n;
+  }
+  /* await 之后已脱离用户手势，程序化 click 可能被内核静默吞掉；这时给一条真实可点的
+     <a>，由用户亲手再点一下即可（这才是被真机验证可行的机制）。 */
+  function ensureBrowserDlLink(el, intent, name) {
+    if (!intent) return;
+    const card = attCardOf(el);
+    if (!card) return;
+    const note = attNote(card);
+    if (!note) return;
+    let a = note.querySelector('.sj-browser-dl');
+    if (!a) {
+      a = document.createElement('a');
+      a.className = 'sj-browser-dl';
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = '用系统浏览器下载「' + (name || '附件') + '」（点此）';
+      note.appendChild(a);
+    }
+    a.href = intent;
+  }
+
+  /* 关于卡片下方那行常驻提示（hintDl，-59 ~ -64 用过，已删）：
+     它当初是为了交代「系统弹了个确认框，去点打开」，因为 toast 两秒就消失、用户来不及看。
+     但 -65 真机截图证明它反过来添乱：页内下载「成功」后留下的那行字（「已交给浏览器下载：
+     进度见通知栏……」）与随后第二次点击产生的绿框叠在一起，卡片下方一片绿，用户根本分不清
+     哪句是状态、哪个能点。而正常情况下（点一次 → 进 dl.html）这些字一句都不需要：
+     中转页本身就是最清楚的反馈。故整条删除，卡片下方只在「真的失败了、需要你亲手点一下」
+     时才出现东西 —— 也就是下面那个绿框。 */
+
+  /* 预签结果按「附件 id」缓存，而不是只挂在卡片 el 上。
+     两个原因：①附件列表会重渲染，旧的 el 被换掉后挂在上面的预签就丢了
+     （预签回调里原本先判 el.isConnected，结果直接把结果丢弃）；
+     ②用户可能在预签还没回来时就点下载，命中这里才谈得上「同步唤起」。
+     值：{ signed, intent } */
+  const dlSignCache = new Map();
+
+  /* 点击下载的总入口：本机已有二进制就同步交付；没有则按需取
+     （内存 → 附件仓 → 云端），取到后立刻交付。失败如实提示，不假装成功。 */
+  /* 应用内保存（手机独立 Android 首选路径）：把文件字节交给系统「保存 / 分享」面板，
+     由用户选「保存到文件管理」。全程留在笔记页，不跳浏览器、没有地址栏，也绕开
+     华为浏览器「禁止网页随意跳转」的拦截。
+     实测依据：WebAPK 内 blob / dataURL 的 <a download> 会被内核静默丢弃（-37 真机
+     验证过），所以不能走「应用内直接落盘」；而 Web Share（带 files）是系统级面板，
+     由系统完成保存动作，不受容器限制。
+     返回：'ok' 已交给系统面板 / 'cancel' 用户自己关掉面板 / '' 环境不支持需回退 */
+  /* 应用内保存的前置判定：本机是否支持「带文件」的系统分享面板。
+     华为内核不支持（真机验证：长按/分享均无可用的保存入口），先把这层挡掉，
+     免得为了一个注定失败的分享白白多下一次文件字节。 */
+  function canShareFiles() {
+    try {
+      if (!navigator.canShare) return false;
+      const probe = new File([new Blob(['x'], { type: 'text/plain' })], 'x.txt', { type: 'text/plain' });
+      return !!navigator.canShare({ files: [probe] });
+    } catch (_) { return false; }
+  }
+
+  /* 取字节：页面内保存的公共前置。签名失效时网关可能返回网页，别把它当文件存。
+     -56 起带 15 秒上限：慢网 / 登录态异常时，没有上限的 await 就是一个永久挂住
+     的入口 —— -54 的「点了没有任何反应」已经证明这类挂起在真机上真的会发生。 */
+  async function fetchSaveBlob(url) {
+    let ac = null;
+    let timer = null;
+    try {
+      const opt = { credentials: 'include' };
+      if (typeof AbortController === 'function') {
+        ac = new AbortController();
+        opt.signal = ac.signal;
+        timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, 15000);
+      }
+      const r = await fetch(url, opt);
+      if (!r || !r.ok) return null;
+      const ct = (r.headers.get('content-type') || '').toLowerCase();
+      if (ct.indexOf('text/html') >= 0) return null;
+      const b = await r.blob();
+      return (b && b.size) ? b : null;
+    } catch (_) { return null; }
+    finally { if (timer) clearTimeout(timer); }
+  }
+
+  /* 关于「用 SW 中转、靠 Content-Disposition 保住文件名」那条路（/__sjdl/）：
+     -50 首次用整页导航引入，真机无声无息失败；-56 换 location.href 仍失败，而且会把
+     正在看的笔记顶走。**-58 按真机反馈改回 iframe 导航**，并且换了判定方式：
+     不再看「页面是否失焦」（iframe 静默下载时系统根本不弹界面），改看「iframe 有没有
+     真的产生文档」——没产生就说明响应被当成下载接手了。实现见 fireIframeDl。 */
+
+  /* ------------------------------------- SW 代理下载（iframe 式，-58）
+     把字节写进独立缓存 → 用**隐藏 iframe** 导航到 /__sjdl/<文件名>，sw.js 命中缓存后
+     返回带 Content-Disposition 的标准 HTTP 响应。
+     为什么不让脚本自己拼下载：
+       ArkWeb 把「脚本用 a[download] 写 blob」判成越权下载直接丢弃；而「浏览器跟着一个
+       HTTP 响应走完下载流程」是浏览器自己的行为，不归脚本管。这是本质差别。
+     为什么用 iframe 而不是 location.href：
+       整页导航会把用户正在看的笔记顶掉（-50「停在下载页」的根因），iframe 页面不动。
+     三条必须同时满足才敢发（否则就是给用户一个 404 页面或空下载）：
+       ① 接管页面的 SW 必须是本版（旧版没有 /__sjdl/ 路由）；
+       ② 写完必须能立刻从缓存里读回来；
+       ③ 导航后要能判定这次响应是否真的被当下载接手（fireIframeDl 的返回值）。 */
+  const SW_DL_CACHE = 'sjdl-v1';
+  /* -58 新增：用隐藏 iframe 触发下载，替代原来的 location.href 整页导航。
+     为什么要换：整页导航会把正在看的笔记顶走（-50「停在下载页」就是这么来的），
+     而 iframe 是更底层的下载触发路径，页面完全不动。
+     判定方式（比「页面失焦」可靠，也不依赖用户手势）：
+       - 响应被内核按附件接手 → 不产生文档 → onload 永不触发 → 返回 true
+       - 响应被当网页渲染 / 缓存没命中 404 / 出错 → onload 立刻来 → 返回 false */
+  function fireIframeDl(url, ms) {
+    return new Promise((resolve) => {
+      let fr = null;
+      let settled = false;
+      const done = (ok) => { if (settled) return; settled = true; resolve(ok); };
+      try {
+        fr = document.createElement('iframe');
+        fr.setAttribute('aria-hidden', 'true');
+        fr.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;border:0;opacity:0;';
+        fr.onload = () => done(false);
+        fr.onerror = () => done(false);
+        fr.src = url;
+        document.body.appendChild(fr);
+      } catch (_) { done(false); return; }
+      /* 一直到窗口结束都没有 onload：说明下载被接手了。 */
+      setTimeout(() => done(true), ms || 2500);
+      /* 清理给足 30 秒：一旦内核真的开始下载，iframe 可能仍是这次下载的载体，
+         过早移除有中断大文件的风险；留着也只是个 1px 的空框。 */
+      setTimeout(() => { try { if (fr && fr.parentNode) fr.parentNode.removeChild(fr); } catch (_) {} }, 30000);
+    });
+  }
+
+  function asciiName(name) {
+    const s = String(name || 'file').replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_').trim();
+    return s || 'file';
+  }
+  async function saveViaSwProxy(blob, name) {
+    let url = '';
+    try {
+      if (!blob || !blob.size) return '';
+      if (!navigator.serviceWorker || !navigator.serviceWorker.controller) return '';
+      const ctl = navigator.serviceWorker.controller.scriptURL || '';
+      if (ctl.indexOf(APP_BUILD) < 0) return '';
+      if (typeof caches === 'undefined') return '';
+      const safe = name || 'file';
+      url = '/__sjdl/' + encodeURIComponent(safe)
+        + '?t=' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const cache = await caches.open(SW_DL_CACHE);
+      await cache.put(url, new Response(blob, {
+        headers: {
+          'Content-Type': blob.type || 'application/octet-stream',
+          'Content-Disposition': 'attachment; filename="' + asciiName(safe)
+            + "\"; filename*=UTF-8''" + encodeURIComponent(safe),
+        },
+      }));
+      if (!(await cache.match(url))) return '';
+      /* -58：改用隐藏 iframe 导航（不再 location.href）。由 fireIframeDl 自己
+         判定这次响应有没有被当成下载接手，返回 'ok' 才代表「确实进入了下载流程」。 */
+      const taken = await fireIframeDl(url, 2500);
+      return taken ? 'ok' : '';
+    } catch (_) { return ''; }
+  }
+
+  /* 关于「观察窗 + blur 判定」（watchAfter，-56 ~ -58 用过，-59 删除）：
+     它假设「有系统界面弹出 → 页面失焦」，据此提前认定下载已交给系统。真机证明
+     这个假设不成立 —— intent 弹出的「此网站请求打开APP」是系统浮层，页面不失焦，
+     于是把**成功的唤起**判成失败，进而去串后面那些必然失败的路径，反过来把系统
+     确认框顶掉。判据撒谎的代价比没有判据更大，故整条删除。 */
+
+  /* blob 直存（保底）：真实 <a download>，页面不动、不跳浏览器。
+     已真机验证在浏览器普通标签页里可原地落盘；WebAPK 容器会静默丢弃。
+     文件名用 File 而不是裸 Blob：Chromium 系在 download 属性被忽略时，会退而
+     采用 blob 记录里的 File.name（裸 Blob 没有名字，只能拿 UUID 顶替）。 */
+  function saveBlobAnchor(blob, name) {
+    let objUrl = '';
+    try {
+      let body = blob;
+      if (typeof File === 'function') {
+        try { body = new File([blob], name, { type: blob.type || 'application/octet-stream' }); } catch (_) { body = blob; }
+      }
+      objUrl = URL.createObjectURL(body);
+      const a = document.createElement('a');
+      /* 先写 download 再写 href：部分国产浏览器只在解析 href 时读一次文件名。 */
+      a.download = name;
+      a.setAttribute('download', name);
+      a.href = objUrl;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        try { URL.revokeObjectURL(objUrl); a.remove(); } catch (_) {}
+      }, 60000);
+      return 'ok';
+    } catch (_) {
+      if (objUrl) { try { URL.revokeObjectURL(objUrl); } catch (_) {} }
+      return '';
+    }
+  }
+
+  /* 页面内保存的几个落点各自独立触发（见 startDownload 的顺序说明）。 */
+
+  /* ---------------------------------------------- 直链下载（-58 起已撤下）
+     原来这里有个 saveViaDirectHref：同源 URL + a[download] + target=_blank。
+     理论上它最标准（blob 是「脚本在内存里拼字节」，直链只是一个普通资源下载请求），
+     但真机上是另一回事：
+       · ArkWeb 忽略 a[download] → 退化成把 PDF 当网页导航过去；
+       · 于是 target=_blank 多开一个标签，并弹出「打开下载」询问；
+       · 它从来没有真正落盘过 —— 反而每次都多弹一次窗（本轮反馈的那一弹就是它）。
+     结论：删掉实现。直链导航改由 ② 的 iframe 通道（fireIframeDl + SW 的 attachment
+     响应）承担：同样不取内存 blob、不拼地址，但页面不动、也不会弹询问。 */
+
+  /* 关于「系统另存为」（showSaveFilePicker）：-54 / -55 两次真机尝试均失败 ——
+     一次是它的 promise 永不 settle，整条下载链被锁死、界面毫无反应；一次加了
+     blur 守卫仍无反应（blur 被误触发，守卫误以为真弹框而继续等）。
+     结论：这条路由的代价（一次挂起 = 用户什么都做不了）远大于收益，已从主路径
+     撤下并删除实现。若将来 ArkWeb 真支持，重写时务必给 await 一个硬上限，
+     且判据不能只依赖 blur 这种会被误触发的信号。 */
+
+  async function saveInApp(url, name, type) {
+    if (!url || !canShareFiles()) return '';
+    const blob = await fetchSaveBlob(url);
+    if (!blob) return '';
+    let file = null;
+    try {
+      file = new File([blob], name, { type: blob.type || type || 'application/octet-stream' });
+    } catch (_) { return ''; }
+    try {
+      if (!navigator.canShare({ files: [file] })) return '';
+    } catch (_) { return ''; }
+    try {
+      await navigator.share({ files: [file], title: name });
+      return 'ok';
+    } catch (e) {
+      /* 用户主动关掉面板不算失败，不要再强行跳浏览器。 */
+      if (e && e.name === 'AbortError') return 'cancel';
+      return '';
+    }
+  }
+
+  /* ------------------------------------------- 页内下载（-63 / -66 恢复）
+     和 startDownload 里那套「交给系统浏览器」的分工：
+       · Chromium 系：本页就能下，下载留在本页完成 → 一步点完，不出现中转页；
+       · 其余 Android：页内下载会被内核吞掉，只能跳出去（见 startDownload 的 ⓪①②③）。
+     顺序沿用已验证的偏好：SW 代理 + 隐藏 iframe（带 Content-Disposition，落盘名不会被
+     内核改写）→ blob 锚点（保底）。
+     返回 'ok' 只代表「下载动作已经发出去」，不代表内核真的写了文件 —— 浏览器不给这种
+     回调。所以调用方要给一句可执行的后路（再点一次改走系统浏览器），不能报成功就完事。
+     -67：成功时**不许**写 __sjDlTried。那是给 intent 通道记「上次唤起过了」用的时间戳，
+     页内成功也写进去的话，第二次点击就会被判成 retry → 直接跳中转页（真机现象：第一次
+     下成功，再点一次就弹「是否重新下载文件」的中转页）。改为成功时清 __sjInPageFailed、
+     写 __sjDoneAt（只用于 10 秒内防重复下载）。 */
+  async function tryInPageDownload(a, el, name) {
+    let signed = (el && el.__sjSigned) || '';
+    if (!signed && window.SJSignedUrl) {
+      toast('正在准备文件…');
+      try { const r = await window.SJSignedUrl(a); signed = (r && r.url) || ''; } catch (_) {}
+      if (signed && el) el.__sjSigned = signed;
+    }
+    if (!signed || !/^https?:/i.test(signed)) return '';
+    const blob = await fetchSaveBlob(signed);
+    if (!blob) return '';
+    toast('正在保存「' + name + '」…');
+    if ((await saveViaSwProxy(blob, name)) === 'ok') {
+      if (el) { el.__sjDoneAt = Date.now(); el.__sjInPageFailed = 0; }
+      return 'ok';
+    }
+    if (saveBlobAnchor(blob, name) === 'ok') {
+      if (el) { el.__sjDoneAt = Date.now(); el.__sjInPageFailed = 0; }
+      return 'ok';
+    }
+    return '';
+  }
+
+  async function startDownload(a, el) {
+    if (!a || !a.id) return;
+    const name = a.name || ('附件-' + a.id);
+    /* 先自检：index.html 每次都是从网络取的、一定是新的，而 app.js 可能被旧 SW
+       塞了缓存。版本不一致时，下面跑的全是旧逻辑 —— 界面上却完全看不出来，用户
+       只会觉得「又没反应」。这种情况必须明说，而不是继续演一遍旧行为。 */
+    const pageBuild = window.__SJ_SWV__ || '';
+    if (pageBuild && pageBuild !== APP_BUILD) {
+      toast('脚本还是旧版（' + APP_BUILD + '，页面已是 ' + pageBuild + '）：请完全关闭拾笺再重新打开');
+      return;
+    }
+    /* 手机 Android 的下载顺序（-59 定稿，-66 收敛）。历史：-54/-55 的「系统另存为」会
+       永久挂起，已删；-56 的「直链 href」真机从来没落盘过、还每次多弹一个「打开下载」
+       询问，也已删；-63 的页内下载 -65 曾撤掉、-66 恢复（用户不愿看到中转页）。
+       现在的顺序：
+       ⓐ Chromium 系（Chrome / Edge 及同等内核）点击即页内下载（SW 代理 + 隐藏 iframe →
+          blob 锚点），下完就结束 —— 没有中转页、没有窗口、不用点 ✗。**点多少次都一样**：
+          -67 起判据是「页内有没有失败过」，而不是「这是第几次点击」（旧判据会把「下成了
+          但用户没看见、于是又点一下」误判成失败，直接跳页）。10 秒内重复点击只重播提示，
+          不再下第二份。只有页内真的发不出下载动作时，下一次点击才改走 ⓪。
+       ⓪ 预签 intent 同步唤起 —— 渲染时就把签名地址和 intent 备好，点击瞬间（任何 await
+          之前）同步唤起，进 dl.html 中转页，那一页上明写「下载已开始」，点左上角 ✗ 即回。
+          真机证据：系统会弹「此网站请求打开APP」，说明这条通路是活的；但它必须由用户点
+          「打开」，所以唤起后只做一件事 —— 返回，绝不再做任何会顶掉那个系统确认框的动作。
+       ① SW 代理 + **隐藏 iframe** 导航 —— 仅在拿不到 intent（未预签成功）时尝试；
+       ② blob 直存 —— 同上，最后再试一次；
+       ③ 现签 intent + 绿色链接 —— 拿不到预签或唤起本身抛错时的兜底。
+       任何一条都不要用「页面失焦」当判据：系统浮层不会触发 blur，那个假设已经不成立。 */
+    if (isStandaloneAndroid() && !/^image\//.test(a.type || '')) {
+      /* 快速路径（-58）：渲染时就预签好的 intent，必须在**任何 await 之前**同步唤起。
+         之前它排在 ①②③ 之后（老的 ④），那时已经 await 了 3 秒多，用户手势早失效，
+         内核把唤起静默吞掉 → 每次都退到绿色兜底框。挪到最前面，单击一次就能直接
+         把下载交给系统浏览器，中间不弹任何东西、也不停留。
+         注意：这里不能改成先 await 再唤起，一旦 await 就又会丢手势。 */
+      /* retry 必须在使用之前算好：第二次点击（15 秒内）意味着上一次唤起没成，
+         这时才给「亲手可点的链接」，第一次绝不给 —— 用户明确反感那个绿框。 */
+      const retry = !!(el && el.__sjDlTried && Date.now() - el.__sjDlTried < 20000);
+      /* -67：页内通道「要不要跳过」不再看 retry。
+         retry 的判据是「20 秒内又点了一次」，它默认「又点一次 = 上次没成」——这个假设在
+         intent 时代成立，在页内时代不成立：页内是**默默下完了**（-64 已真机证实），用户
+         看不见又点一次，于是被判成失败、直接跳中转页，还弹「是否重新下载文件」。
+         真机反馈（23:43）：第一次点下载成功，第二次点就跳页 —— 就是这么来的。
+         改成看「页内是不是真的失败过」：__sjInPageFailed 只在两条路都没发出下载动作时写，
+         成功会清掉；60 秒后自动失效，偶发失败不会把页内通道永久关死。 */
+      const inPageBroken = !!(el && el.__sjInPageFailed
+        && Date.now() - el.__sjInPageFailed < 60000);
+      /* -67：10 秒内重复点同一个附件，不再下第二份 —— 用户真实行为就是「看不见反馈再点
+         一下」（-64 因此把同一份文件下了两遍，系统还追问「是否重新下载」）。这里只重播
+         提示，不发任何新请求，也就不可能跳页。超过 10 秒视为真的要再下一次。 */
+      const justDone = !!(el && el.__sjDoneAt && Date.now() - el.__sjDoneAt < 10000);
+      if (isChromiumLikeAndroid() && justDone) {
+        toast('「' + name + '」正在下载，进度见通知栏；同一文件不用再点', 4000);
+        return;
+      }
+      /* -66：Chromium 系第一次点击直接在页内下完 —— 不产生中转页，也就不需要有人去点 ✗
+         （用户 23:36 的诉求：「可以不出现这个页面吗」）。真机已证明这条能落盘：-64 那轮
+         系统弹出「打开 PDF 文件？」，再点一次还问「是否重新下载」。
+         -67：判据从「第几次点击」改成「页内是否失败过」—— 只要没失败过，点多少次都在
+         页内完成（用户 23:43 的诉求：「无论点多少次都不跳转」）。
+         注意这里**不许插任何常驻文字**：-64 加过一行说明，与第二次点击的绿框叠成一团，
+         用户明确反感。成功只给一句 toast。 */
+      if (isChromiumLikeAndroid() && !inPageBroken) {
+        if ((await tryInPageDownload(a, el, name)) === 'ok') {
+          toast('已开始下载「' + name + '」，进度见通知栏', 4000);
+          return;
+        }
+        /* 页内没发出去：记下「这条路在这台机器上不通」，同时按老语义写 __sjDlTried，
+           让下一次点击能拿到绿链兜底。然后停在这里 —— await 之后手势已失效，
+           接着唤起 intent 只会把界面搞乱。 */
+        if (el) { el.__sjInPageFailed = Date.now(); el.__sjDlTried = Date.now(); }
+        toast('没开始下载？再点一次按钮，改用系统浏览器');
+        return;
+      }
+      const fastIntent = (el && el.__sjIntent)
+        || ((dlSignCache.get(a.id) || {}).intent) || '';
+      if (fastIntent && openViaSystemBrowser(fastIntent)) {
+        /* -59：唤起之后**必须立刻收手**，这是本轮真机反馈定位到的根因。
+           真机表现：intent 确实把请求交给了系统，弹出「此网站请求打开APP」——
+           说明这条通路是活的。但这个确认框是**系统浮层，页面不会 blur**，老代码
+           据此判成「唤起没生效」，接着去开应用内分享面板、iframe、blob，最后再
+           唤起第二次并渲染绿色兜底框。这些动作在 1.5 秒内把系统确认框顶掉了，
+           用户根本没机会点「允许」，看到的就只剩「弹窗一闪 + 绿框」。
+           所以：唤起成功即返回，后续任何路径都不许再动界面。 */
+        if (el) el.__sjDlTried = Date.now();
+        if (!retry) {
+          /* 只留一句 toast（两秒自动消失，不占版面）。卡片下方不再挂常驻说明：
+             -65 真机截图证明那行绿字会和「第二次点击」的绿框叠在一起，用户分不清
+             哪句是状态、哪个能点。中转页本身就是最清楚的反馈。 */
+          toast('请点系统提示里的「打开」');
+          return;
+        }
+        /* 第二次点击 = 上一次没走通（用户取消 / 没弹窗）。仍先唤起，同时补一条
+           亲手可点的链接，不让人卡死在这里。 */
+        ensureBrowserDlLink(el, fastIntent, name);
+        toast('若没弹出浏览器，请点卡片里的「用系统浏览器下载」');
+        return;
+      }
+      /* 渲染时已预签好地址，直接复用；没有才现签。 */
+      let signed = (el && el.__sjSigned) || '';
+      if (!signed && window.SJSignedUrl) {
+        toast('正在准备文件…');
+        try { const r = await window.SJSignedUrl(a); signed = (r && r.url) || ''; } catch (_) {}
+        if (signed && el) el.__sjSigned = signed;
+      }
+      if (!retry && signed && /^https?:/i.test(signed)) {
+        const st = await saveInApp(signed, name, a.type);
+        /* 分享面板 resolve 只代表用户走完了面板，保存位置是他自己选的，算「交给系统」，
+           不能说成「已保存」——文件名和落点都还没被确认。 */
+        if (st === 'ok') { toast('已交给系统保存「' + name + '」'); return; }
+        if (st === 'cancel') return;
+        /* 先给一句反馈：下面几条是「试了才知道」的路径，要花两三秒，不给提示的话
+           用户会以为又没反应 —— 那正是这两轮反复踩的坑。 */
+        toast('正在准备下载「' + name + '」…');
+        /* ①（原「直链 href + target=_blank」）已移除。真机上它只会多开一个标签、
+           弹出「打开下载」询问，从来没有真正落盘过（本轮用户反馈的那一弹就是它）。
+           它的活交给下面 ② 的 iframe 通道做：同样是直链导航，但不跳页、不弹询问。 */
+        /* ② SW 代理 + iframe 导航：让下载成为浏览器自己的 HTTP 下载流程。
+           不再用「页面失焦」判定 —— iframe 静默下载时系统未必弹界面，用失焦会误判
+           成失败。改由 fireIframeDl 看这次响应有没有真的被当下载接手。 */
+        const blob = await fetchSaveBlob(signed);
+        if (blob) {
+          if ((await saveViaSwProxy(blob, name)) === 'ok') {
+            if (el) el.__sjDlTried = Date.now();
+            toast('已开始下载「' + name + '」；请到手机的「下载」里查看');
+            return;
+          }
+          /* ③ blob 直存：标签页里验证过能原地落盘。 */
+          if (saveBlobAnchor(blob, name) === 'ok') {
+            if (el) el.__sjDlTried = Date.now();
+            toast('已交给系统下载「' + name + '」；请到手机的「下载」里查看');
+            return;
+          }
+        }
+        /* 取字节本身就失败了（网络 / 登录态），下面交给浏览器再试一次。 */
+      }
+      /* ④ 第二击，或 ①②③ 都没成功：直接落到 intent，不再重试不可检测的路径。 */
+      if (retry) toast('改用浏览器下载…');
+      /* 渲染时已预签好：在本次点击手势内同步唤起，单次点击即可弹出系统选择。 */
+      if (el && el.__sjIntent && openViaSystemBrowser(el.__sjIntent)) return;
+      toast('正在准备下载链接…');
+      try {
+        const r = signed ? { url: signed } : (window.SJSignedUrl ? await window.SJSignedUrl(a) : null);
+        const s = r && r.url;
+        if (s && /^https?:/i.test(s)) {
+          const intent = buildDlIntent(s, name);
+          if (el) { el.__sjSigned = s; el.__sjIntent = intent; }
+          /* 写进 id 级缓存：用户「再点一下」时能命中上面的快速路径，
+             不必依赖绿色框里那条手动链接。 */
+          dlSignCache.set(a.id, { signed: s, intent });
+          /* await 后手势已失效，程序化 click 可能无效 —— 无论同步是否成功，
+             都补一条真实可点的链接，保证用户再点一下必能唤起系统浏览器。 */
+          openViaSystemBrowser(intent);
+          ensureBrowserDlLink(el, intent, name);
+          return;
+        }
+      } catch (_) {}
+      toast('无法生成下载链接：请连网并在「同步」里确认已登录后再试');
+      return;
+    }
+    if (deliverNow(a)) {
+      toast('已开始下载「' + name + '」');
+      return;
+    }
+    if (dlBusy.has(a.id)) return;
+    dlBusy.add(a.id);
+    toast('正在把这个文件准备到手机上…');
+    try {
+      let data = await attBinaryGet(a);
+      if (!data) data = await fetchRemoteData(a);
+      if (!data) {
+        toast('这份文件还没存到手机里：连网后点右上「同步」→「从云端拉取」，回来再点下载');
+        return;
+      }
+      dlData.set(a.id, data);
+      if (!dlRaw.has(a.id)) {
+        const blob = dataUrlToBlob(data);
+        if (blob) dlRaw.set(a.id, blob);
+      }
+      if (el && el.isConnected) markReady(el, a);
+      if (deliverNow(a)) {
+        toast('已开始下载「' + name + '」；若没出现下载，再点一下按钮');
+      } else {
+        toast('文件已取到手机，但这次没能交给浏览器：请再点一下下载按钮');
+      }
+    } finally {
+      dlBusy.delete(a.id);
+    }
+  }
+
+  /* 附件大图：手机浏览器若仍拦截下载，这是保底出口 —— 全屏看图后长按保存，
+     所有国产手机浏览器都支持。点任意位置关闭。 */
+  function closeAttView() {
+    const old = document.getElementById('attView');
+    if (old) old.remove();
+    try { document.body.classList.remove('att-view-open'); } catch (_) {}
+  }
+  /* 触屏判据只用于决定大图底部的长按提示文案。 */
+  function coarsePointer() {
+    try { return window.matchMedia('(hover: none)').matches; } catch (_) { return false; }
+  }
+  function openAttView(src, name, att) {
+    if (!src) return;
+    closeAttView();
+    const touch = coarsePointer();
+    const box = document.createElement('div');
+    box.className = 'att-view';
+    box.id = 'attView';
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = name || '';
+    const tip = document.createElement('div');
+    tip.className = 'att-view-tip';
+    if (touch) {
+      /* 触屏上这条是保底指引：长按图片保存不依赖任何脚本路径 */
+      const bubble = document.createElement('span');
+      bubble.textContent = '长按图片 → 保存图片 / 保存到相册　·　点空白处关闭';
+      tip.appendChild(bubble);
+    } else {
+      tip.textContent = '点空白处关闭';
+    }
+    box.appendChild(img);
+    /* 「下载原图」与附件卡片走同一条 startDownload()。 */
+    const href = /^\/api\/files\//.test(src) ? '' : src;
+    if (href || att) {
+      const dl = document.createElement('button');
+      dl.className = 'att-view-dl';
+      dl.type = 'button';
+      dl.textContent = '下载原图';
+      dl.addEventListener('click', (e) => {
+        e.stopPropagation();                 // 别让点击冒泡去关掉大图
+        if (att) { startDownload(att, dl); return; }
+        if (/^(data|blob):/i.test(href)) {
+          triggerSave(href, name || '附件');
+          toast('已开始下载「' + (name || '附件') + '」；没出现下载就长按图片保存');
+        }
+      });
+      box.appendChild(dl);
+    }
+    box.appendChild(tip);
+    box.addEventListener('click', closeAttView);
+    document.body.appendChild(box);
+    /* 让提示条在大图打开时上移，别压住「下载原图」和长按提示 */
+    try { document.body.classList.add('att-view-open'); } catch (_) {}
+  }
+
+  /* 打开图片大图。地址要的是「能显示」的 data:/blob:。
+     开大图前先把二进制备进内存，点「下载原图」时才能同步现造 URL 交付。 */
+  async function openImagePreview(a) {
+    if (!a || !a.id) return;
+    let src = localDataUrlOf(a) || attDisplaySrc(a);
+    if (!src || /^\/api\/files\//.test(src)) {
+      try {
+        if (window.SJLocal && window.SJLocal.attachmentUrl) src = await window.SJLocal.attachmentUrl(a.id);
+      } catch (_) {}
+    }
+    if (!src || /^\/api\/files\//.test(src)) {
+      toast('图片还没存到本机，点右上「同步」→「从云端拉取」后再看');
+      return;
+    }
+    /* 先把二进制备进内存，点「下载原图」时才能在同一个调用栈里现造 URL 交付 */
+    await ensureBlob(a);
+    openAttView(src, a.name, a);
+  }
+
   function renderAttachments() {
     const note = currentNote();
     const box = $('#attachList');
     box.innerHTML = '';
     if (!note) return;
     const list = note.attachments || [];
+    /* 回收不再属于当前笔记的二进制缓存，避免翻很多篇后内存一直涨。
+       现在缓存的是 Blob 本身，不是 blob: URL —— URL 点击现造、用完即弃。 */
+    const keepDl = new Set(list.map((x) => x.id));
+    for (const id of dlRaw.keys()) if (!keepDl.has(id)) dlRaw.delete(id);
+    for (const id of dlData.keys()) if (!keepDl.has(id)) dlData.delete(id);
     $('#attCount').textContent = list.length;
 
     if (!list.length) {
@@ -1736,12 +2779,52 @@
         </div>
         <div class="att-acts">
           <button class="att-act" data-act="insert" title="插入到正文">${I.plus}</button>
-          <a class="att-act" href="${attDisplaySrc(a)}" download="${escapeHtml(a.name)}" title="下载">${I.download}</a>
+          <button class="att-act" data-act="dl" data-att="${escapeHtml(a.id)}" title="下载">${I.download}</button>
           <button class="att-act del" data-act="del" title="删除附件">${I.x}</button>
         </div>`;
       el.querySelector('[data-act="insert"]').addEventListener('click', () => insertAttachment(a));
+      /* 附件卡片按钮：图片先给大图（可长按保存），其余附件直接下载。 */
+      const dlEl = el.querySelector('[data-act="dl"]');
+      if (isImg) {
+        /* 图片的大图里另有「下载原图」；不看二进制是否就绪，
+           图坏了但地址在的时候，用户照样需要能存下这张图。 */
+        dlEl.setAttribute('title', '查看大图（可长按保存）');
+        dlEl.addEventListener('click', (e) => {
+          e.preventDefault();
+          void openImagePreview(a);
+        });
+      } else {
+        /* 下载按钮用 <button>，回调里直接交付，不消耗本次点击手势。 */
+        dlEl.addEventListener('click', () => { startDownload(a, dlEl); });
+        /* 手机独立 Android：渲染时就异步预签下载链接并缓存到卡片上，用户点击
+           下载时即可在手势内同步唤起系统浏览器（避免 await 后手势失效被静默吞）。 */
+        if (isStandaloneAndroid() && window.SJSignedUrl) {
+          void Promise.resolve(window.SJSignedUrl(a)).then((r) => {
+            const signed = r && r.url;
+            if (!signed || !/^https?:/i.test(signed)) return;
+            const intent = buildDlIntent(signed, a.name);
+            /* 先写 id 级缓存：卡片就算已经被重渲染换掉，这次预签也不算白做。 */
+            dlSignCache.set(a.id, { signed, intent });
+            if (!el.isConnected) return;
+            el.__sjSigned = signed;
+            el.__sjIntent = intent;
+          }).catch(() => {});
+        }
+      }
       el.querySelector('[data-act="del"]').addEventListener('click', () => deleteAttachment(a));
+      if (isImg) {
+        const thumb = el.querySelector('.att-thumb');
+        if (thumb) thumb.addEventListener('click', () => { void openImagePreview(a); });
+      }
       box.appendChild(el);
+      /* 非图片先预取二进制，点下去才能在同一个调用栈里同步交付。
+         图片的卡片按钮是「看大图」，打开大图前另有一次 ensureBlob()。 */
+      if (!isImg) {
+        void prepareWhenReady(dlEl, a).then((ok) => {
+          /* 本机附件仓里没有、同步来源也拿不到 → 试一次云端 */
+          if (!ok) void prefetchDownload(a, dlEl);
+        });
+      }
     }
   }
 
@@ -1934,7 +3017,7 @@
         </label>
         <label class="choice" data-mode="delete">
           <span class="radio"></span>
-          <span><b>连同笔记一起删除</b><span>笔记与附件将被永久删除，无法恢复</span></span>
+          <span><b>连同笔记一起删除</b><span>类别直接删除；笔记连同附件移到回收站，30 天内可恢复</span></span>
         </label>
       </div>
       <div class="modal-actions">
@@ -2017,26 +3100,29 @@
   /* 笔记操作 */
   async function createNote(categoryId) {
     await saveNow();
+    if (draftSaving) await draftSaving;
     let target = categoryId;
     if (target === undefined) {
       target = state.categories.some((c) => c.id === state.selCat) ? state.selCat : null;
     }
-    try {
-      const note = await api('/api/notes', {
-        method: 'POST',
-        body: { categoryId: target, title: '', content: '', format: 'md' },
-      });
-      state.notes.push(note);
-      if (state.selCat !== 'all' && state.selCat !== 'starred' && state.selCat !== 'uncat') {
-        // 保持当前类别视图
-      } else {
-        state.selCat = 'all';
-      }
-      renderTree();
-      openNote(note.id, { focusTitle: true });
-      renderList();
-      closeDrawer(); // 手机上建完立刻回到编辑区
-    } catch (e) { toast(e.message); }
+    /* -70：不再立刻 POST。空白草稿只在内存里；离开时按是否有内容决定
+       落库或丢弃，所以「点了 + 没写就回列表」不会留下无标题笔记。 */
+    const t = Date.now();
+    draftNote = {
+      id: DRAFT_ID,
+      categoryId: target, title: '', content: '', format: 'md',
+      starred: false, tags: [], attachments: [],
+      createdAt: t, updatedAt: t,
+    };
+    if (state.selCat !== 'all' && state.selCat !== 'starred' && state.selCat !== 'uncat') {
+      // 保持当前类别视图
+    } else {
+      state.selCat = 'all';
+    }
+    renderTree();
+    openNote(DRAFT_ID, { focusTitle: true });
+    renderList();
+    closeDrawer(); // 手机上建完立刻回到编辑区
   }
 
   function closeEditor() {
@@ -2056,10 +3142,15 @@
   }
 
   function deleteNote(note) {
+    /* -70：空白草稿还没进库，直接丢弃，不必创建再移进回收站。 */
+    if (note === draftNote) { discardDraft(); return; }
     const attCount = (note.attachments || []).length;
     openConfirm({
       title: '删除笔记',
-      message: `「${escapeHtml(note.title || '无标题笔记')}」将被永久删除${attCount ? `，同时删除 ${attCount} 个附件` : ''}，无法恢复。`,
+      /* -68：原文案写「永久删除…无法恢复」，但 local.js 的 DELETE /notes/:id 是软删除
+         （只写 deletedAt，附件与历史版本都留着，30 天后才真删，回收站里可恢复）。
+         文案必须与行为一致，否则用户会以为删掉就找不回了。 */
+      message: `「${escapeHtml(note.title || '无标题笔记')}」将移到回收站${attCount ? `，${attCount} 个附件一并保留` : ''}，30 天内可恢复。`,
       confirmText: '删除',
       danger: true,
       onConfirm: async () => {
@@ -2068,7 +3159,7 @@
         closeEditor();
         renderTree();
         renderList();
-        toast('笔记已删除');
+        toast('已移到回收站，30 天内可恢复');
       },
     });
   }
@@ -2086,6 +3177,8 @@
     const note = currentNote();
     if (!note) return;
     await saveNow();
+    /* -70：空白草稿可能已被丢弃；此时不该再拿临时 id 去查版本接口。 */
+    if (!currentNote()) return;
     let versions = [];
     try {
       versions = (await api(`/api/notes/${note.id}/versions`)).versions || [];
@@ -2463,40 +3556,125 @@
   /* ---------------------------------------------------------- 手机端抽屉 */
   const NARROW = () => window.matchMedia('(max-width: 980px)').matches;
 
+  let drawerOpenedAt = 0;
+  let lastDrawerTap = { kind: '', at: -1 };
   function openDrawer(kind) {
     document.body.classList.remove('m-tree', 'm-list');
     document.body.classList.add(kind === 'tree' ? 'm-tree' : 'm-list');
+    drawerOpenedAt = Date.now();
   }
   function closeDrawer() {
     document.body.classList.remove('m-tree', 'm-list');
+  }
+  /* 部分安卓浏览器（含华为自带浏览器）会把一次轻触派发成两次 click。
+     原来按钮是 toggle 写法，第二次 click 会把刚打开的抽屉立刻收回去，
+     用户看到的就是「列表闪一下又回到笔记」。同一个按钮 500ms 内的
+     重复 click 一律忽略；切不同按钮（目录→列表）不受影响。 */
+  function toggleDrawer(kind, e) {
+    const now = (e && e.timeStamp) || Date.now();
+    if (lastDrawerTap.kind === kind && now - lastDrawerTap.at < 500) return;
+    lastDrawerTap = { kind, at: now };
+    void saveNow();
+    const cls = kind === 'tree' ? 'm-tree' : 'm-list';
+    if (document.body.classList.contains(cls)) closeDrawer();
+    else openDrawer(kind);
   }
   /** 手机端点完分类/标签直接进列表，少点一次 */
   function afterPickCategory() {
     if (NARROW()) openDrawer('list');
   }
-  /** 顶栏标题：有选中笔记显示标题，否则显示当前列表名 */
+  /** 顶栏固定展示品牌区（朱砂方块 + 书法体拾笺 + 朱点），与电脑版一致。
+      原本这里写的是「当前笔记名 / 列表名」，改成品牌后不再覆盖可见文字；
+      位置信息仍由列表页头部 #listTitle 与编辑器标题框呈现，
+      这里只把它写进 aria-label 供读屏使用，避免导航信息彻底丢失。 */
   function syncBarTitle() {
     const el = $('#mBarTitle');
     if (!el) return;
     const note = currentNote();
-    el.textContent = note ? (note.title || '无标题笔记') : ($('#listTitle').textContent || '拾笺');
+    const where = note ? (note.title || '无标题笔记') : (($('#listTitle') && $('#listTitle').textContent) || '全部笔记');
+    el.setAttribute('aria-label', '拾笺 · ' + where);
   }
 
   /* 返回菜单 / 打开列表 = 离开编辑页，脏数据在这里落盘。 */
-  $('#mTreeBtn').addEventListener('click', () => {
-    void saveNow();
-    if (document.body.classList.contains('m-tree')) closeDrawer();
-    else openDrawer('tree');
-  });
+  $('#mTreeBtn').addEventListener('click', (e) => toggleDrawer('tree', e));
   /* 「笔记列表」是打开笔记后的返回出口：手机端三栏收成抽屉，
      没有这个按钮用户会被困在编辑页，只能靠目录里的分类绕回去。 */
-  $('#mListBtn').addEventListener('click', () => {
-    void saveNow();
-    if (document.body.classList.contains('m-list')) closeDrawer();
-    else openDrawer('list');
-  });
+  $('#mListBtn').addEventListener('click', (e) => toggleDrawer('list', e));
   $('#mNewBtn').addEventListener('click', () => createNote());
-  $('#mMask').addEventListener('click', closeDrawer);
+  /* 「随手记」入口：华为 / EMUI 自带浏览器不读 manifest 的 shortcuts，
+     长按桌面图标没有快捷菜单，所以入口必须做在 App 里。
+     用同标签跳转（不 window.open）：独立标签 / 独立安装的 PWA 会拿到
+     隔离的 localStorage，速记就又写不进主程序的笔记库了。 */
+  function quickUrl(from) {
+    let sc = '';
+    try {
+      sc = new URLSearchParams(location.search).get('sharecode')
+        || localStorage.getItem('sj_sharecode') || '';
+    } catch (_) {}
+    const u = new URL('/quick.html', location.origin);
+    u.searchParams.set('sharecode', sc || '3J7BKHTGFD');
+    u.searchParams.set('from', from || 'app');
+    return u.toString();
+  }
+  function openQuick() {
+    void saveNow();                    // 离开编辑页前把脏数据落盘
+    location.href = quickUrl('app');
+  }
+  /* 从桌面「随手记」图标进来、点过「打开拾笺」之后，这个标签的文档已经
+     变成主程序。部分手机浏览器（含华为自带浏览器）再点桌面图标时只把
+     已有窗口切回前台、并不重新导航到 quick.html，用户就卡在主程序列表页。
+     速记页跳走前留一个一次性标记：只要用户还没碰过主程序，切回前台时
+     就送回速记页；一旦点了列表 / 新建 / 任意位置，立即作废，不再打扰。 */
+  function armQuickReturn() {
+    let armed = false;
+    /* 读取即消费：标记只服务「刚点完打开拾笺」的这一次导航，不能残留到
+       以后从 bfcache 恢复或重新加载时又把自己武装起来。 */
+    try {
+      armed = sessionStorage.getItem('sj_quick_return') === '1';
+      if (armed) sessionStorage.removeItem('sj_quick_return');
+    } catch (_) {}
+    if (!armed) return;
+    let leftOnce = false, done = false;
+    const armedAt = Date.now();
+    const disarm = () => {
+      armed = false;
+      try { sessionStorage.removeItem('sj_quick_return'); } catch (_) {}
+    };
+    const restore = () => {
+      if (done || !armed || !leftOnce || Date.now() - armedAt < 800) return;
+      done = true; disarm();
+      location.replace(quickUrl('desk'));
+    };
+    /* 页面刚加载时浏览器自己派发的 blur/focus 不算「用户离开过」，
+       否则首屏可能立刻被弹回速记页。 */
+    const markLeft = () => { if (Date.now() - armedAt >= 800) leftOnce = true; };
+    /* 有些浏览器点桌面图标只是 bring-to-front，visibility 不一定变化，
+       所以 blur/focus 也接一路；必须先离开过一次，避免首次加载的 focus
+       就把刚打开的主程序弹回速记页。 */
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') markLeft();
+      else if (document.visibilityState === 'visible') restore();
+    });
+    window.addEventListener('blur', markLeft);
+    window.addEventListener('focus', restore);
+    /* 用户一旦在主程序里点了列表 / 新建 / 任意位置，自动返回立即作废 */
+    const opt = { capture: true, passive: true, once: true };
+    document.addEventListener('pointerdown', disarm, opt);
+    document.addEventListener('keydown', disarm, opt);
+    window.addEventListener('pageshow', (e) => { if (e && e.persisted) disarm(); });
+    /* 5 分钟后作废，别让一次性状态长期挂着 */
+    setTimeout(disarm, 5 * 60 * 1000);
+  }
+  armQuickReturn();
+  ['#mQuickBtn', '#quickNoteBtn'].forEach((sel) => {
+    const b = $(sel); if (b) b.addEventListener('click', openQuick);
+  });
+  $('#mMask').addEventListener('click', () => {
+    /* 抽屉刚打开的一瞬间不响应遮罩点击，避免同一次轻触的「幽灵 click」
+       穿透到遮罩把列表关掉。400ms 之后照常点遮罩关闭。 */
+    if (Date.now() - drawerOpenedAt < 400) return;
+    closeDrawer();
+  });
 
   /* 同步按钮：本地优先，只有手动点才登录并上传 / 拉取 */
   $('#mSyncBtn').addEventListener('click', () => { if (window.SJSync) window.SJSync.open(); });
@@ -2618,6 +3796,7 @@
     }
   });
   $('#closeAttachBtn').addEventListener('click', () => $('#attachPanel').classList.add('hidden'));
+
   $('#attachAddBtn').addEventListener('click', () => {
     const fi = $('#fileInput');
     fi.accept = '';
@@ -2798,6 +3977,7 @@
   window.addEventListener('pagehide', saveOnHide);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') saveOnHide();
+    else scheduleRefresh();
   });
 
   $('#modalRoot').addEventListener('click', (e) => {
@@ -2806,8 +3986,165 @@
 
   /* ---------------------------------------------------------- 启动
      本地优先：脚本加载完直接启动，不需要登录；只有点「同步」时才走 mobilesync.js。 */
+  /* 随手记（quick.html）不持有本地库：速记存在共享队列 sj_quick_pending，
+     也允许随链接 q 带过来。只有在主程序这边真正落盘成功，才写
+     sj_quick_imported 并把该条从队列移除 —— 点过「打开拾笺」但另一个
+     窗口没收到时，速记还能再补发一次，不会因为提前标记已发送而丢掉。 */
+  const Q_PENDING = 'sj_quick_pending';
+  const Q_IMPORTED = 'sj_quick_imported';
+  /* 桌面速记图标存在与否：quick.html 从桌面入口跳回主程序时在链接上带
+     deskInstalled=1。被独立安装的速记窗口可能有一套隔离的 localStorage，
+     只有链接参数一定送得到；收到后写进主程序自己的分区（cookie 再给同
+     origin 的普通标签兜底），速记页据此不再重复显示安装引导。 */
+  const Q_DESK = 'sj_quick_desk_installed';
+  function rememberDeskInstalled() {
+    try { localStorage.setItem(Q_DESK, '1'); } catch (_) {}
+    try { document.cookie = Q_DESK + '=1; path=/; max-age=31536000; SameSite=Lax'; }
+    catch (_) {}
+  }
+  let draining = false;
+  async function drainQuick() {
+    if (draining) return 0;
+    draining = true;
+    try {
+      const u = new URL(location.href);
+      const raw = u.searchParams.get('q');   // URLSearchParams 已解码过一次
+      const deskSeen = u.searchParams.get('deskInstalled') === '1';
+      if (raw || deskSeen) {
+        try {
+          u.searchParams.delete('q');
+          u.searchParams.delete('deskInstalled');
+          history.replaceState(null, '', u.toString());
+        } catch (_) {}
+      }
+      if (deskSeen) rememberDeskInstalled();
+      let urlItems = [];
+      try { const v = JSON.parse(raw); if (Array.isArray(v)) urlItems = v; } catch (_) {}
+      let queue = [];
+      try {
+        const v = JSON.parse(localStorage.getItem(Q_PENDING) || '[]');
+        if (Array.isArray(v)) queue = v;
+      } catch (_) {}
+      const items = urlItems.concat(queue);
+      if (!items.length) return 0;
+
+      let existing = [];
+      try { existing = (await api('/api/state')).notes || []; } catch (_) {}
+      const have = new Set(existing.map((n) => (n.title || '') + '|' + (n.content || '')));
+      let seen = [];
+      try { seen = JSON.parse(localStorage.getItem(Q_IMPORTED) || '[]'); } catch (_) {}
+      if (!Array.isArray(seen)) seen = [];
+
+      const done = new Set();
+      let added = 0, cut = 0;
+      for (const it of items) {
+        if (!it || typeof it.sig !== 'string') continue;
+        /* 已导入过 / 内容无效的条目也要从队列清掉，否则会永远占位 */
+        if (seen.includes(it.sig) || typeof it.content !== 'string' || !it.content.trim()) {
+          done.add(it.sig); continue;
+        }
+        const title = it.title || '随手记';
+        if (have.has(title + '|' + it.content)) { seen.push(it.sig); done.add(it.sig); continue; }
+        try {
+          await api('/api/notes', { method: 'POST', body: {
+            title, content: it.content, format: it.format === 'rich' ? 'rich' : 'md',
+          } });
+          seen.push(it.sig); done.add(it.sig); added++;
+          if (it.cut) cut++;
+        } catch (_) {}
+      }
+      if (seen.length) {
+        try { localStorage.setItem(Q_IMPORTED, JSON.stringify(seen.slice(-300))); } catch (_) {}
+      }
+      /* 只清确实被消费的条目。两个窗口数据分区隔离时，本窗口读不到那个
+         队列，速记页会一直留着，用户再点一次仍能补发；这边靠 seen 去重。 */
+      if (done.size && queue.length) {
+        const rest = queue.filter((x) => !x || !x.sig || !done.has(x.sig));
+        if (rest.length !== queue.length) {
+          try { localStorage.setItem(Q_PENDING, JSON.stringify(rest)); } catch (_) {}
+        }
+      }
+      if (added) toast('已从随手记带入 ' + added + ' 条笔记，见「全部笔记」顶部'
+        + (cut ? '（有长文被截断，长文请直接在主程序里写）' : ''));
+      return added;
+    } finally { draining = false; }
+  }
+
+  /* 另一个窗口写入本地库后，已经打开的主程序窗口不会自动重绘：boot 只在
+     启动时读一次 /api/state，手机浏览器还常把后台的 PWA 窗口直接切回前台、
+     根本不重新加载。所以 storage 事件 / 回到前台 / pageshow / focus 都重读
+     一次；正在编辑时先落盘，绝不用外部数据盖掉用户刚敲的字。 */
+  let refreshing = false;
+  let booted = false;
+  let refreshTimer = 0;
+  const storeSig = (arr) => arr.map((n) => n.id + ':' + (n.updatedAt || 0)).join('|');
+  async function refreshFromStore() {
+    /* 页面刚加载时 focus / pageshow 也会触发，别和 boot() 抢着渲染 */
+    if (refreshing || !booted) return;
+    refreshing = true;
+    try {
+      if (state.dirty) { try { await saveNow(); } catch (_) {} }
+      const added = await drainQuick();
+      let data;
+      try { data = await api('/api/state'); } catch (_) { return; }
+      const cats = data.categories || [], list = data.notes || [];
+      const oldSig = storeSig(state.notes) + '#' + storeSig(state.categories);
+      const newSig = storeSig(list) + '#' + storeSig(cats);
+      if (!added && oldSig === newSig) return;
+      /* 随手记刚带进来一条时，用户可能正停在某个具体类别：新笔记默认未分类，
+         会被筛选掉，看起来又像「没同步进来」。回到「全部笔记」让它置顶可见；
+         只换左侧筛选，不动 selNote，正在编辑的那篇不受影响。 */
+      if (added && state.selCat !== 'all') state.selCat = 'all';
+      const prev = state.notes.find((n) => n.id === state.selNote);
+      state.categories = cats;
+      state.notes = list;
+      renderTree();
+      renderList();
+      $('#statText').textContent = `${state.notes.length} 篇 · ${state.categories.length} 个类别`;
+      const cur = state.notes.find((n) => n.id === state.selNote);
+      if (cur && !state.dirty && prev && (prev.content !== cur.content || prev.title !== cur.title)) {
+        openNote(cur.id);
+      }
+    } finally { refreshing = false; }
+  }
+  function scheduleRefresh() {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => { void refreshFromStore(); }, 120);
+  }
+  window.addEventListener('storage', (e) => {
+    if (!e || (e.key !== 'sj_mobile_v1' && e.key !== Q_PENDING)) return;
+    scheduleRefresh();
+  });
+  window.addEventListener('pageshow', scheduleRefresh);
+  window.addEventListener('focus', scheduleRefresh);
+
+  /** 冷启动回到上次所在的类别；类别/标签若已被删就退回「全部笔记」。
+      只恢复类别，绝不恢复上次打开的那篇笔记。 */
+  function restoreLastCat() {
+    let v = '';
+    try { v = localStorage.getItem(SJ_LAST_CAT) || ''; } catch (_) {}
+    if (!v || v === 'all') return;
+    let ok = v === 'starred' || v === 'uncat';
+    if (!ok && String(v).startsWith('tag:')) {
+      ok = state.notes.some((n) => (n.tags || []).includes(v.slice(4)));
+    }
+    if (!ok) ok = state.categories.some((c) => c.id === v);
+    if (ok) state.selCat = v;
+  }
+
+  /* v-53 曾在这里试过「进入时把内部滚动容器下推 1px 以收起地址栏」，真机确认
+     **无效**：华为浏览器的工具栏只跟随根滚动（root scroller），内部容器滚动不算数，
+     脚本滚动更是被当作「非用户滚动」，内核直接忽略。地址栏归浏览器所有，网页没有
+     任何 API 可以隐藏它（防钓鱼的平台边界）。想要进入即满屏，只能走 standalone
+     容器（桌面图标 / 添加到主屏幕）——那条路由 manifest 的 display 决定，与本文件无关。
+     这段代码已按「无效即删」移除，不再每次启动白跑一次。 */
+
   async function boot(keepId) {
+    /* boot() 不只冷启动会调：同步拉取、解密、回收站恢复也会用它重渲染。
+       只有冷启动改落点；会话内重载必须留在用户正在看的那篇。 */
+    const cold = !booted;
     applyTheme(state.theme);
+    const quickAdded = await drainQuick();
     try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (_) {}
     /* 手机端附件二进制存在 IndexedDB，先把索引读进内存再渲染，
        否则首屏的图片拿不到地址、只会显示文件名。 */
@@ -2829,30 +4166,58 @@
       toast('加载数据失败：' + e.message);
     }
 
+    /* 随手记带进来的新笔记默认未分类：若上次停在某个具体类别，用户会
+       以为又没同步进来。有新速记时强制回到「全部笔记」，让它置顶可见。 */
+    if (cold && !quickAdded) restoreLastCat();
+
     $('#statText').textContent = `${state.notes.length} 篇 · ${state.categories.length} 个类别`;
     renderTree();
     renderList();
 
-    /* 同步拉取后要重渲染一次：优先留在用户原本正在看的那篇，
-       找不到（被删）才退回最近修改的一篇。 */
+    /* 深链：?note=<id> 直接打开目标笔记。读完就删参数，避免刷新或后续
+       会话内重载又把用户拽回这一篇。 */
+    let deepId = '';
+    if (cold) {
+      try {
+        const u = new URL(location.href);
+        deepId = u.searchParams.get('note') || '';
+        if (deepId) {
+          u.searchParams.delete('note');
+          history.replaceState(null, '', u.toString());
+        }
+      } catch (_) {}
+    }
+
+    /* 上次某篇笔记没打开完（渲染中断）会留下标记。列表开场本来就能进应用，
+       这个守卫只负责提示一下，不再决定启动落点、也不再自动跳过笔记。 */
     let stuck = '';
     try {
       stuck = localStorage.getItem('sj_opening_note') || '';
       localStorage.removeItem('sj_opening_note');
     } catch (_) {}
-    const want = keepId || state.selNote;
-    const sorted = state.notes.slice().sort((a, b) => b.updatedAt - a.updatedAt);
-    let target = (want && state.notes.find((n) => n.id === want)) || sorted[0];
-    /* 上次启动卡在某一篇笔记的渲染里：这次跳过它，宁可停在列表也不让用户
-       每次重开都落在同一张「点不动」的页面上。清标记后恢复正常使用。 */
-    if (stuck && target && target.id === stuck) {
+    if (cold && stuck) {
       const bad = state.notes.find((n) => n.id === stuck);
-      target = sorted.find((n) => n.id !== stuck) || null;
-      toast('上次打开「' + ((bad && bad.title) || '一篇笔记') + '」没完成，已跳过；可在列表里删除它');
+      toast('上次编辑「' + ((bad && bad.title) || '一篇笔记') + '」未结束，已停在列表；若打不开可在列表里删除');
     }
-    if (target) openNote(target.id);
-    else $('#statText').textContent = `${state.notes.length} 篇 · ${state.categories.length} 个类别`;
+
+    const want = keepId || state.selNote;
+    if (deepId && state.notes.some((n) => n.id === deepId)) {
+      openNote(deepId);
+    } else if (want && state.notes.some((n) => n.id === want)) {
+      /* 会话内重载（同步拉取 / 解密 / 回收站恢复），或 ?action=new 等快捷
+         方式已经先建好笔记：保持当前这篇，不把用户踢回列表。 */
+      openNote(want);
+    } else if (cold) {
+      /* 冷启动：列表开场。宽屏三栏里列表本就常驻，只需收起编辑器；
+         窄屏把列表抽屉滑出来，点一条即进入编辑。保存时机一律不动。 */
+      closeEditor();
+      if (NARROW()) openDrawer('list');
+      else closeDrawer();
+    } else {
+      closeEditor();
+    }
     if (window.SJLocal) window.SJLocal.watchFiles();
+    booted = true;
   }
 
   /* 手机端为本地优先：不自动与云端通信，只有在「同步」面板里手动点
@@ -2863,7 +4228,8 @@
   /* 供 sjplus.js（回收站 / 回顾 / 整库导出）调用 */
   window.SJRefresh = () => { renderTree(); renderList(); };
   window.SJOpenNote = (id) => openNote(id);
-  window.SJCurrentNoteId = () => state.selNote || '';
+  /* -70：草稿没有真实 id，不能把它当 keepId 交给同步 / 重载流程。 */
+  window.SJCurrentNoteId = () => (state.selNote === DRAFT_ID ? '' : (state.selNote || ''));
   /* v1.8.0：暴露给增强模块（全文检索 / 反向链接 / 冲突 / 加密） */
   window.SJState = state;
   window.SJNotes = () => state.notes;

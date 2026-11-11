@@ -40,6 +40,10 @@
     });
     if (healed) save();
     purgeExpiredTrash();
+    /* 标记「本分区跑过主程序」。quick.html 靠它区分「sj_mobile_v1 就是
+       主库」与「旧版独立速记图标遗留的库」：前者绝不能当待迁移速记
+       灌进链接参数，后者仍要能带回。清站点数据后下次启动自动重建。 */
+    try { localStorage.setItem('sj_main_lib', '1'); } catch (_) {}
   }
 
   /* 富文本编辑器插入的图片固定写成 <img src="/api/files/…> 或 data:image/…。
@@ -131,6 +135,20 @@
   }
   load();
 
+  /* 另一个标签 / 独立窗口改了本地库时，本窗口的 db 还是旧的内存快照，
+     app.js 再怎么刷新界面也会读到旧数据。这里只替换 db，不做 heal、
+     purge、写盘，避免再触发对端的 storage 形成自激环。 */
+  window.addEventListener('storage', (e) => {
+    if (!e || e.key !== LS_KEY || e.newValue == null) return;
+    try {
+      const d = JSON.parse(e.newValue);
+      if (!d || !Array.isArray(d.notes)) return;
+      db.categories = Array.isArray(d.categories) ? d.categories : [];
+      db.notes = d.notes;
+      db.versions = (d.versions && typeof d.versions === 'object') ? d.versions : {};
+    } catch (_) {}
+  });
+
   const uid = () => {
     const b = new Uint8Array(6);
     crypto.getRandomValues(b);
@@ -220,6 +238,29 @@
     });
   }
 
+  /* 附件「下载」专用取址：内存 → 附件仓 → 云端签名地址。
+     与 ensureUrl 分开，不共用 noLocal 缓存 —— 首屏渲染时附件仓可能还没
+     就绪，那一次判定的「没有」不能让用户以后永远下载不到这份附件。 */
+  function attachmentUrl(id) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => {
+        if (done) return;
+        done = true; clearTimeout(timer); resolve(v || '');
+      };
+      const fallback = remotePath.get(id) || '';
+      const timer = setTimeout(() => finish(fallback), 2500);
+      const hit = filePath.get(id);
+      if (hit && hit.url) { finish(hit.url); return; }
+      let p = null;
+      try { p = window.SJAttStore && window.SJAttStore.get(id); } catch (_) {}
+      Promise.resolve(p).then((d) => {
+        if (d) { remember(id, d); finish(d); }
+        else finish(fallback);
+      }, () => finish(fallback));
+    });
+  }
+
   let paintTimer = 0;
   let painting = false;
   /* throttle 而不是 debounce：页面渲染 DOM 变动密集，debounce 会被一直重置。
@@ -270,10 +311,18 @@
         if (el.getAttribute('src') !== url) el.setAttribute('src', url);
       } else if (el.getAttribute('href') !== url) {
         el.setAttribute('href', url);
-        el.setAttribute('target', '_blank');
-        el.setAttribute('rel', 'noopener');
+        /* 只有「正文里插入的附件链接」才该开新标签。带 download 的链接是
+           保存文件，加 target=_blank 会让部分手机浏览器忽略下载、改成开标签。 */
+        if (!el.hasAttribute('download')) {
+          el.setAttribute('target', '_blank');
+          el.setAttribute('rel', 'noopener');
+        }
       }
     }
+    /* 补图完成：通知 app.js 把附件下载链接武装成可直接点的原生下载。
+       移动浏览器的下载必须由用户手势同步触发，不能等点击后再异步取二进制，
+       所以这个地址得在用户点下去之前就准备好。 */
+    try { document.dispatchEvent(new CustomEvent('sj:files-painted')); } catch (_) {}
   }
   let watching = false;
   function watchFiles() {
@@ -658,5 +707,5 @@
     save();
   }
 
-  window.SJLocal = { api, fileUrl, watchFiles, indexNote, exportBackup, getState, setState, reset, uid, ready, flushAtt };
+  window.SJLocal = { api, fileUrl, attachmentUrl, watchFiles, indexNote, exportBackup, getState, setState, reset, uid, ready, flushAtt };
 })();
