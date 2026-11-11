@@ -4,7 +4,9 @@
    因此落地为「口令保护的加密备份（.vault）」：整库导出为一个
    必须输入口令才能解开的加密文件，可安全放到网盘 / 邮件。
    导入时本地用口令解密后还原为普通备份再汇入。不触碰任何实时数据，零风险。
-   用法：点侧栏品牌行右侧的 🔒 按钮打开面板。
+   用法（-72）：点笔记右上角导出菜单里的「🔒 加密备份（.vault）」打开面板。
+   早先注释写「侧栏品牌行右侧的 🔒 按钮」，但云端从来没有那个按钮，
+   导致手机端只能导入 .vault、不能导出；现在两端导出菜单均有入口。
    ============================================================ */
 (function () {
   'use strict';
@@ -61,12 +63,21 @@
       data: { categories: state.categories || [], notes: notes, versions: state.versions || {} },
     };
     var blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-    var a = document.createElement('a');
     var d = new Date();
-    a.download = '拾笺加密备份-' + d.getFullYear() + ('' + (d.getMonth() + 1)).padStart(2, '0') + ('' + d.getDate()).padStart(2, '0') + '.vault';
-    a.href = URL.createObjectURL(blob);
-    a.click();
-    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    var name = '拾笺加密备份-' + d.getFullYear() + ('' + (d.getMonth() + 1)).padStart(2, '0') + ('' + d.getDate()).padStart(2, '0') + '.vault';
+    /* -72：手机上裸 <a download> 在 WebAPK 里会被内核静默丢弃（附件下载踩过 9 轮）。
+       改走 app.js 暴露的 -67 三级通道；没有该钩子时保留原来的锚点下载。 */
+    if (window.SJSaveBlobFile) {
+      var st = await window.SJSaveBlobFile(blob, name);
+      if (st === 'cancel') throw new Error('已取消保存');
+      if (!st) throw new Error('本机没有可用的下载通道，请在电脑端导出加密备份');
+    } else {
+      var a = document.createElement('a');
+      a.download = name;
+      a.href = URL.createObjectURL(blob);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    }
     return notes.length;
   }
 

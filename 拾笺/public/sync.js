@@ -454,6 +454,30 @@
       if (window.SJLocal && window.SJLocal.saveNow) window.SJLocal.saveNow();
       const data = await (await fetch('/api/export')).json();
       const owner = session.user.id;
+      /* -72 推送方向冲突预检：以前只有拉取方向 computeConflicts，上传是整库
+         upsert 直接 LWW。首次同步（无 lastSyncAt）不拦截，保持现行为。 */
+      const skipIds = new Set();
+      if (window.SJConflict) {
+        const cloudRes = await cloud.database.from('sj_notes').select('*').eq('owner_id', owner);
+        if (cloudRes.error) {
+          throw new Error('读取云端现有笔记失败，为避免覆盖已停止上传：' + friendly(cloudRes.error));
+        }
+        const conflicts = computeConflicts((cloudRes.data || []).map(rowToNote));
+        if (conflicts.length) {
+          await new Promise((resolve) => {
+            window.SJConflict.show(conflicts, (res) => {
+              res = res || {};
+              /* push 方向「保留云端 / 两者都留」都先跳过这篇，不覆盖云端；
+                 副本请在拉取方向生成。 */
+              conflicts.forEach((c) => {
+                if ((res[c.id] || 'mine') !== 'mine') skipIds.add(c.id);
+              });
+              resolve();
+            });
+          });
+          if (skipIds.size) toast(`已跳过 ${skipIds.size} 篇冲突笔记，未覆盖云端`);
+        }
+      }
       const cats = (data.categories || []).map((c) => Object.assign(catToRow(c), { owner_id: owner }));
 
       const cache = attUpCache();
@@ -461,6 +485,7 @@
       const attErrs = [];
       let attOk = 0, attFail = 0;
       for (const n of (data.notes || [])) {
+        if (skipIds.has(n.id)) continue;
         const row = Object.assign(noteToRow(n), { owner_id: owner });
         const meta = [];
         for (const a of (Array.isArray(n.attachments) ? n.attachments : [])) {

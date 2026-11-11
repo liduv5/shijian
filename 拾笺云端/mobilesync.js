@@ -20,7 +20,7 @@
   const LS_EMAIL = 'sj_cloud_session_email';
   const LS_LAST = 'sj_last_sync';
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对。 */
-  const BUILD = '2026-11-10-71';
+  const BUILD = '2026-11-11-72';
   let session = null;
   let pendingOtp = null;
   let cooldownTimer = null;
@@ -536,6 +536,7 @@
           '<button class="auth-btn ghost" id="syncPull">从云端拉取到本地</button>' +
           (gcN ? '<button class="auth-btn ghost" id="syncGc">清理云端无用附件（' + gcN + '）</button>' : '') +
           '<button class="auth-btn ghost" id="syncSetPwd">设置 / 修改同步口令</button>' +
+          '<button class="auth-btn ghost" id="syncRestore">恢复上次同步前的本机内容</button>' +
           '<button class="auth-btn ghost" id="syncLogout">退出登录</button>'
         : '<div class="sync-info">用 QQ 邮箱登录后，手机和电脑共用同一份笔记。</div>' +
           '<div class="auth-tabs">' +
@@ -577,6 +578,7 @@
       const pull = $('#syncPull'); if (pull) pull.onclick = () => doPull();
       const out = $('#syncLogout'); if (out) out.onclick = () => doLogout();
       const gc = $('#syncGc'); if (gc) gc.onclick = () => doGc();
+      const restore = $('#syncRestore'); if (restore) restore.onclick = () => restoreBeforeSync();
       const setPwd = $('#syncSetPwd'); if (setPwd) setPwd.onclick = () => openSetPwd();
     } else {
       const codeBtn = $('#syncCodeBtn'); if (codeBtn) codeBtn.onclick = () => sendCode($('#syncEmail').value.trim(), codeBtn);
@@ -729,6 +731,55 @@
   }
 
   /* ---------------------------------------------------------- 上传：本地 → 云端 */
+  /* -72 推送方向冲突判定（与拉取方向同一把尺子）：上次同步之后两端都改过、
+     且正文不同才算真冲突。首次同步没有 lastSyncAt，一律不拦截，保持现行为。 */
+  function pushConflicts(localNotes, cloudNotes) {
+    const last = lastSyncAt();
+    if (!last) return [];
+    const map = new Map(localNotes.map((n) => [n.id, n]));
+    const edited = (n) => Number(n.updatedAt) > Number(last) + 1000;
+    const sig = (n) => (n ? String(n.content || '').slice(0, 240) : '');
+    const out = [];
+    cloudNotes.forEach((c) => {
+      const l = map.get(c.id);
+      if (l && edited(l) && edited(c) && sig(l) !== sig(c)) {
+        out.push({ id: c.id, title: l.title || c.title || '无标题笔记' });
+      }
+    });
+    return out;
+  }
+
+  /* -72：把「上次从云端拉取之前」的本机状态找回来。覆盖当前内容不可逆，
+     必须先确认；快照不存在 / 附件仓不可用都如实说明，不假装成功。 */
+  async function restoreBeforeSync() {
+    if (!window.SJAttStore || !window.SJAttStore.getSnap) {
+      syncMsg('本机不支持同步前快照'); return;
+    }
+    const snap = await window.SJAttStore.getSnap();
+    if (!snap || !Array.isArray(snap.notes)) { syncMsg('没有可恢复的同步前快照'); return; }
+    const t = new Date(snap.at || 0);
+    const m = window.openModal(
+      '<div class="hist-head"><div><h3>恢复同步前的本机内容</h3><p>快照时间：'
+      + escapeHtml(t.toLocaleString('zh-CN')) + '，共 ' + snap.notes.length + ' 篇</p></div>'
+      + '<button class="icon-btn" data-act="close" title="关闭">✕</button></div>'
+      + '<div class="sj-batch-form"><p class="e2ee-warn">当前本机内容会被这份快照覆盖，'
+      + '建议先导出一次普通备份。</p>'
+      + '<div class="modal-actions"><button class="btn ghost" data-act="close">取消</button>'
+      + '<button class="btn primary" id="sjRestoreGo">确认恢复</button></div></div>');
+    m.querySelectorAll('[data-act="close"]').forEach((b) => b.addEventListener('click', window.closeModal));
+    m.querySelector('#sjRestoreGo').addEventListener('click', async () => {
+      try {
+        window.SJLocal.setState({
+          categories: snap.categories || [], notes: snap.notes, versions: snap.versions || {},
+        });
+        if (window.SJBoot) await window.SJBoot();
+        window.closeModal();
+        syncMsg('已恢复上次同步前的本机内容（' + snap.notes.length + ' 篇）', 'ok');
+        toast('已恢复同步前状态');
+      } catch (e) { syncMsg('恢复失败：' + e.message); }
+    });
+  }
+
   async function doPush() {
     if (!session || !session.user) return;
     cancelAutoClose(); lastMsg = ''; lastKind = '';
@@ -737,6 +788,37 @@
     try {
       if (window.SJSaveNow) window.SJSaveNow();
       const local = window.SJLocal.getState();
+
+      /* -72 推送方向冲突预检：以前只有拉取方向检测冲突，上传是逐篇 upsert
+         直接 LWW，云端较新的内容会被无声覆盖。读不到云端现状就整轮停下，
+         宁可不传也不写坏云端那份数据。 */
+      const skipIds = new Set();
+      if (window.SJConflict && lastSyncAt()) {
+        let rows = null;
+        try {
+          rows = await withTimeout(() => restRead('sj_notes', owner), 8000, null);
+          if (!rows && cloud) rows = await withTimeout(
+            () => cloud.database.from('sj_notes').select('*').eq('owner_id', owner), 6000, null);
+        } catch (_) {}
+        if (!rows || rows.error) {
+          throw new Error('读取云端现有笔记失败，为避免覆盖已停止上传，请检查网络后重试');
+        }
+        const conflicts = pushConflicts(local.notes, (rows.data || []).map(rowToNote));
+        if (conflicts.length) {
+          await new Promise((resolve) => {
+            window.SJConflict.show(conflicts, (res) => {
+              res = res || {};
+              /* push 方向没有安全的「另存副本」落点（会牵动附件路径与本机库），
+                 「保留云端 / 两者都留」都先跳过这篇；副本请在拉取方向生成。 */
+              conflicts.forEach((c) => {
+                if ((res[c.id] || 'mine') !== 'mine') skipIds.add(c.id);
+              });
+              resolve();
+            });
+          });
+          if (skipIds.size) toast(`已跳过 ${skipIds.size} 篇冲突笔记，未覆盖云端`);
+        }
+      }
 
       const catRows = local.categories.map((c) => catToRow(c, owner));
       if (catRows.length) {
@@ -754,6 +836,7 @@
         throw new Error('读不到云端已有的附件记录，为避免覆盖附件路径已停止上传，请检查网络后重试');
       }
       for (const n of local.notes) {
+        if (skipIds.has(n.id)) continue;
         // 回收站里的笔记只同步墓碑和已有路径，不再重传文件本体
         const atts = n.deletedAt
           ? { list: (n.attachments || []).filter((a) => a && a.id).map((a) => {
@@ -1028,6 +1111,19 @@
       };
       const finalCats = merge(local.categories, cloudCats);
       const finalNotes = merge(local.notes, cloudNotes);
+      /* -72 同步前自动快照：拉取会整库覆盖本机内容。桌面端走
+         /api/import?mode=lww 时服务端本就写 backup-*.json，云端没有这层保护。
+         这里把覆盖前的状态存进 IndexedDB 独立仓（不占 localStorage 配额，
+         也不会被当附件读回来）；失败只如实提示，绝不阻断同步。 */
+      let snapOk = false;
+      try {
+        if (window.SJAttStore && window.SJAttStore.putSnap) {
+          snapOk = await window.SJAttStore.putSnap({
+            at: Date.now(), categories: local.categories,
+            notes: local.notes, versions: local.versions,
+          });
+        }
+      } catch (_) {}
       window.SJLocal.setState({
         categories: finalCats,
         notes: finalNotes,
@@ -1057,6 +1153,7 @@
       if (attCount) extra += `；${attCount} 张图片正在后台补充，不影响文字`;
       if (!uiOk) extra += '；界面未自动刷新，请重开页面确认';
       if (!saveOk) extra += '；本机保存校验未通过（可能存储已满），请重开页面确认笔记还在';
+      if (!snapOk) extra += '；同步前快照未保存';
       syncMsg(`已从云端拉取最新内容（类别 ${cloudCats.length}，笔记 ${cloudNotes.length}，本机 ${finalNotes.length} 篇）${extra}`, 'ok');
       toast('已从云端同步到本地');
       clearTimeout(hardTimer);

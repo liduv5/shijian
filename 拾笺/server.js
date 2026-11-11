@@ -421,10 +421,12 @@ function writeVersions(noteId, list) {
 
 function snapshotVersion(note, reason) {
   if (!note.content && !note.title) return;
+  const force = reason === 'format' || reason === 'restore' || reason === 'manual';
   const list = readVersions(note.id);
   const last = list[0];
-  if (last && last.content === note.content && last.title === note.title) return;
-  const force = reason === 'format' || reason === 'restore' || reason === 'manual';
+  /* -72：同内容去重同样只对自动版本生效。用户点「存为版本」/恢复/转格式
+     是明确动作，即使与上一版内容相同也要留一份可回退的锚点。 */
+  if (!force && last && last.content === note.content && last.title === note.title) return;
   if (!force && last && Date.now() - last.ts < SNAPSHOT_GAP) return;
   list.unshift({
     id: uid(),
@@ -609,7 +611,9 @@ async function handleApi(req, res, pathname, query) {
       const titleChanged = typeof body.title === 'string' && body.title !== note.title;
       const formatChanged = (body.format === 'md' || body.format === 'rich') && body.format !== note.format;
       if (contentChanged || titleChanged || formatChanged) {
-        snapshotVersion(note, formatChanged ? 'format' : (body.forceVersion ? 'manual' : 'auto'));
+        /* -72：forceVersion 是前端从未发过的死参数，已移除。
+           手动存版本改走 POST /api/notes/:id/versions 专门端点。 */
+        snapshotVersion(note, formatChanged ? 'format' : 'auto');
       }
 
       if (typeof body.title === 'string') note.title = body.title;
@@ -641,6 +645,13 @@ async function handleApi(req, res, pathname, query) {
     const note = findNote(seg[1]);
     if (!note) return sendError(res, 404, '笔记不存在');
     const vid = seg[3];
+
+    /* -72「存为版本」：不借 PATCH（PATCH 会顶新 updatedAt、扰乱 LWW），
+       也不覆盖正文；空笔记不留版本。与云端 local.js 同形。 */
+    if (req.method === 'POST' && !vid) {
+      snapshotVersion(note, 'manual');
+      return sendJSON(res, 200, { ok: true, count: readVersions(note.id).length });
+    }
 
     if (req.method === 'GET' && !vid) {
       const list = readVersions(note.id);

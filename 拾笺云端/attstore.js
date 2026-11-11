@@ -18,6 +18,9 @@
 
   const DB_NAME = 'sj_att_v1';
   const STORE = 'files';
+  /* -72：独立的快照仓，与附件二进制分开存。all() 只遍历 files，
+     所以快照不会被当成附件灌回内存；也不占 localStorage 配额。 */
+  const SNAP_STORE = 'snapshots';
   const mem = new Map();     // 内存缓存 + IDB 不可用时的降级仓
   const MEM_MAX = 60;        // 内存里最多留 60 份，多了按先后淘汰（避免越用越大）
   function trimMem() {
@@ -42,7 +45,9 @@
         return reject(new Error('IndexedDB 不可用'));
       }
       let req;
-      try { req = indexedDB.open(DB_NAME, 1); } catch (e) { usable = false; return reject(e); }
+      /* 版本 2 只新增 snapshots 仓；已装到桌面的旧库会走一次 upgrade，
+         files 仓原样保留，不需要迁移任何附件数据。 */
+      try { req = indexedDB.open(DB_NAME, 2); } catch (e) { usable = false; return reject(e); }
       /* 部分手机浏览器（多标签 / 省电冻结 / 隐私模式）会让 open 既不 success、
          也不 error、也不 blocked，Promise 永远悬着。所有附件读写都会卡在
          store() 上，界面表现为「点了没反应」。 */
@@ -52,6 +57,7 @@
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+        if (!db.objectStoreNames.contains(SNAP_STORE)) db.createObjectStore(SNAP_STORE);
       };
       req.onsuccess = () => { clearTimeout(timer); resolve(req.result); };
       req.onerror = () => { clearTimeout(timer); usable = false; reject(req.error); };
@@ -139,11 +145,28 @@
     })).catch(() => new Map(mem));
   }
 
-  /* 清空（重置本地数据时用） */
+  /* 同步前快照（-72）：只留最近一份，键固定为 'before'。 */
+  function snapStore(mode) {
+    return open().then((db) => db.transaction(SNAP_STORE, mode).objectStore(SNAP_STORE));
+  }
+  function putSnap(data) {
+    if (!usable) return Promise.resolve(false);
+    return snapStore('readwrite').then((s) => reqP(s.put(data, 'before')))
+      .then(() => true).catch(() => false);
+  }
+  function getSnap() {
+    if (!usable) return Promise.resolve(null);
+    return snapStore('readonly').then((s) => reqP(s.get('before'))).catch(() => null);
+  }
+
+  /* 清空（重置本地数据时用）：附件与快照一起清，避免重置后还能恢复出旧库。 */
   function clear() {
     mem.clear();
     if (!usable) return Promise.resolve();
-    return store('readwrite').then((s) => reqP(s.clear())).catch(() => {});
+    return Promise.all([
+      store('readwrite').then((s) => reqP(s.clear())).catch(() => {}),
+      snapStore('readwrite').then((s) => reqP(s.clear())).catch(() => {}),
+    ]).then(() => {});
   }
 
   /* 粗略统计已占多少（给「数据管理」用） */
@@ -153,5 +176,5 @@
     return { count: mem.size, bytes };
   }
 
-  window.SJAttStore = { put, get, has, del, clear, all, usage, get usable() { return usable; } };
+  window.SJAttStore = { put, get, has, del, clear, all, usage, putSnap, getSnap, get usable() { return usable; } };
 })();

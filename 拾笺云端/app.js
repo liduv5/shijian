@@ -100,6 +100,7 @@
     state.selNote = null;
     state.dirty = false;
     savedSnapshot = '';
+    clearEditDraft(DRAFT_ID);
     /* 空白草稿从未进过 state.notes，这里只需收起编辑器并重绘列表。 */
     closeEditor();
   }
@@ -125,6 +126,7 @@
           state.dirty = false;
           savedSnapshot = snapshot(d);
           setSaveState('saved');
+          clearEditDraft(DRAFT_ID);
         }
         if (JSON.stringify(cur) !== sentSig) {
           Object.assign(d, cur);
@@ -544,6 +546,193 @@
     return t.replace(/\s+/g, ' ').trim();
   }
 
+  /* ---------------------------------------------------------- 列表批量整理（-72）
+     排序与置顶是「本机视图偏好」，存 localStorage，不写进笔记数据：
+     不动数据格式、不动服务端 / 同步 / 导出 / 旧库；换设备不跟随（已知取舍）。 */
+  const SORT_KEY = 'sj_sort_v1';
+  const PIN_KEY = 'sj_pinned_v1';
+  let batchMode = false;
+  const batchSel = new Set();
+
+  function pinnedIds() {
+    try { const v = JSON.parse(localStorage.getItem(PIN_KEY) || '[]'); return Array.isArray(v) ? v : []; }
+    catch (_) { return []; }
+  }
+  function setPinnedIds(ids) {
+    try { localStorage.setItem(PIN_KEY, JSON.stringify(ids.slice(0, 200))); } catch (_) {}
+  }
+  function sortNotes(list) {
+    let mode = 'updated';
+    try { mode = localStorage.getItem(SORT_KEY) || 'updated'; } catch (_) {}
+    const pins = new Set(pinnedIds());
+    return list.slice().sort((a, b) => {
+      const pa = pins.has(a.id) ? 1 : 0, pb = pins.has(b.id) ? 1 : 0;
+      if (pa !== pb) return pb - pa;                       // 置顶恒在最前
+      if (mode === 'created') return (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0);
+      if (mode === 'title') return String(a.title || '').localeCompare(String(b.title || ''), 'zh');
+      return (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0);
+    });
+  }
+  function batchNotes() { return state.notes.filter((n) => batchSel.has(n.id)); }
+  function exitBatch() { batchMode = false; batchSel.clear(); renderList(); }
+  function toggleBatch(id) {
+    if (!id) return;
+    if (batchSel.has(id)) batchSel.delete(id); else batchSel.add(id);
+    renderList();
+  }
+  function renderBatchBar() {
+    const bar = $('#sjBatchBar');
+    if (bar) bar.classList.toggle('hidden', !batchMode);
+    const cnt = $('#sjBatchCount');
+    if (cnt) cnt.textContent = batchMode ? `已选 ${batchSel.size} 篇` : '';
+    const btn = $('#sjBatchBtn');
+    if (btn) btn.classList.toggle('on', batchMode);
+    const list = $('#noteList');
+    if (list) list.classList.toggle('batch-mode', batchMode);
+  }
+  function batchUI() {
+    const head = $('.list-head');
+    if (!head) return;
+    let acts = head.querySelector('.list-head-actions');
+    if (!acts) {
+      /* 桌面版 index.html 没有 .list-head-actions 容器，动态补一个并把
+         原有「新建」按钮移进去，两端结构就一致了（不改 HTML）。 */
+      acts = document.createElement('div');
+      acts.className = 'list-head-actions';
+      const nb = $('#newNoteBtn2');
+      if (nb) acts.appendChild(nb);
+      head.appendChild(acts);
+    }
+    if (!$('#sjBatchBtn')) {
+      const btn = document.createElement('button');
+      btn.className = 'icon-btn sm'; btn.id = 'sjBatchBtn';
+      btn.title = '多选整理'; btn.setAttribute('aria-label', '多选整理');
+      btn.textContent = '☑';
+      btn.addEventListener('click', () => {
+        batchMode = !batchMode;
+        if (!batchMode) batchSel.clear();
+        renderList();
+      });
+      acts.insertBefore(btn, acts.firstChild);
+      const sel = document.createElement('select');
+      sel.id = 'sjSortSel'; sel.className = 'sj-sort-sel';
+      sel.innerHTML = '<option value="updated">按更新时间</option>'
+        + '<option value="created">按创建时间</option>'
+        + '<option value="title">按标题</option>';
+      try { sel.value = localStorage.getItem(SORT_KEY) || 'updated'; } catch (_) {}
+      sel.addEventListener('change', () => {
+        try { localStorage.setItem(SORT_KEY, sel.value); } catch (_) {}
+        renderList();
+      });
+      acts.appendChild(sel);
+    }
+    if (!$('#sjBatchBar')) {
+      const bar = document.createElement('div');
+      bar.id = 'sjBatchBar'; bar.className = 'sj-batch-bar hidden';
+      bar.innerHTML = '<span id="sjBatchCount"></span>'
+        + '<button class="btn ghost" data-batch="move">移动类别</button>'
+        + '<button class="btn ghost" data-batch="pin">置顶/取消</button>'
+        + '<button class="btn ghost" data-batch="export">导出 Markdown</button>'
+        + '<button class="btn ghost danger" data-batch="del">移到回收站</button>'
+        + '<button class="btn ghost" data-batch="exit">退出多选</button>';
+      bar.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-batch]');
+        if (!b) return;
+        const act = b.dataset.batch;
+        if (act === 'move') batchMove();
+        else if (act === 'pin') batchPin();
+        else if (act === 'export') batchExport();
+        else if (act === 'del') batchDelete();
+        else if (act === 'exit') exitBatch();
+      });
+      const pane = $('.list-pane');
+      if (pane) pane.insertBefore(bar, $('#noteList'));
+    }
+    renderBatchBar();
+  }
+  function batchMove() {
+    const ids = [...batchSel];
+    if (!ids.length) { toast('先勾选笔记'); return; }
+    const opts = ['<option value="">未分类</option>']
+      .concat(state.categories.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`)).join('');
+    const m = window.openModal(
+      '<div class="hist-head"><div><h3>批量移动类别</h3><p>已选 ' + ids.length + ' 篇</p></div>'
+      + '<button class="icon-btn" data-act="close" title="关闭">✕</button></div>'
+      + '<div class="sj-batch-form"><select id="sjBatchCat" class="tag-input" style="width:100%">' + opts + '</select>'
+      + '<div class="modal-actions"><button class="btn ghost" data-act="close">取消</button>'
+      + '<button class="btn primary" id="sjBatchGo">移动</button></div></div>');
+    m.querySelectorAll('[data-act="close"]').forEach((b) => b.addEventListener('click', window.closeModal));
+    m.querySelector('#sjBatchGo').addEventListener('click', async () => {
+      const cat = m.querySelector('#sjBatchCat').value || null;
+      let ok = 0;
+      /* 只发 categoryId，绝不整篇覆盖（与标签 PATCH 同一条约束）。 */
+      for (const id of ids) {
+        try { await api(`/api/notes/${id}`, { method: 'PATCH', body: { categoryId: cat } }); ok++; } catch (_) {}
+      }
+      window.closeModal();
+      exitBatch();
+      toast(`已移动 ${ok} 篇到${cat ? '所选类别' : '未分类'}`);
+      if (window.SJRefresh) window.SJRefresh();
+    });
+  }
+  function batchPin() {
+    const ids = [...batchSel];
+    if (!ids.length) { toast('先勾选笔记'); return; }
+    const pins = new Set(pinnedIds());
+    const allPinned = ids.every((id) => pins.has(id));
+    ids.forEach((id) => { if (allPinned) pins.delete(id); else pins.add(id); });
+    setPinnedIds([...pins]);
+    renderList();
+    toast(allPinned ? `已取消置顶 ${ids.length} 篇` : `已置顶 ${ids.length} 篇`);
+  }
+  function batchExport() {
+    const list = batchNotes();
+    if (!list.length) { toast('先勾选笔记'); return; }
+    const parts = list.map((n) => {
+      let body = n.content || '';
+      if (n.format === 'rich' && typeof td !== 'undefined' && td && td.turndown) {
+        try { body = td.turndown(body); } catch (_) {}
+      }
+      return `# ${n.title || '无标题笔记'}\n\n${body}\n`;
+    });
+    const text = parts.join('\n---\n\n');
+    const name = `拾笺批量导出-${new Date().toISOString().slice(0, 10)}.md`;
+    const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+    /* 云端走 -67 已验证的页内下载通道；桌面用标准锚点下载。 */
+    if (window.SJSaveBlobFile) { window.SJSaveBlobFile(blob, name); }
+    else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.download = name; a.href = url; a.style.display = 'none';
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { try { URL.revokeObjectURL(url); a.remove(); } catch (_) {} }, 60000);
+    }
+    toast(`已导出 ${list.length} 篇（合并为一个 Markdown 文件）`);
+  }
+  function batchDelete() {
+    const ids = [...batchSel];
+    if (!ids.length) { toast('先勾选笔记'); return; }
+    openConfirm({
+      title: '批量移到回收站',
+      /* -68：DELETE 是软删除，文案必须与行为一致。 */
+      message: `选中的 ${ids.length} 篇笔记将移到回收站，附件一并保留，30 天内可恢复。`,
+      confirmText: '移到回收站',
+      danger: true,
+      onConfirm: async () => {
+        let ok = 0;
+        for (const id of ids) {
+          try { await api(`/api/notes/${id}`, { method: 'DELETE' }); ok++; } catch (_) {}
+        }
+        const doomed = new Set(ids);
+        state.notes = state.notes.filter((n) => !doomed.has(n.id));
+        if (state.selNote && doomed.has(state.selNote)) closeEditor();
+        exitBatch();
+        toast(`已移到回收站 ${ok} 篇，30 天内可恢复`);
+        if (window.SJRefresh) window.SJRefresh();
+      },
+    });
+  }
+
   function notesInScope() {
     let list = state.notes;
     if (state.search.trim()) {
@@ -561,7 +750,7 @@
             : hay.includes(t));
         });
       }
-      return list.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+      return sortNotes(list);
     }
     if (state.selCat === 'starred') list = list.filter((n) => n.starred);
     else if (state.selCat === 'uncat') list = list.filter((n) => !n.categoryId);
@@ -580,7 +769,7 @@
       }
       list = list.filter((n) => ids.has(n.categoryId));
     }
-    return list.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+    return sortNotes(list);
   }
 
   function renderList() {
@@ -593,6 +782,7 @@
     const box = $('#noteList');
     const list = notesInScope();
     box.innerHTML = '';
+    batchUI();
 
     let title = '全部笔记';
     if (state.search.trim()) title = '搜索结果';
@@ -615,14 +805,17 @@
     }
 
     const frag = document.createDocumentFragment();
+    const pins = new Set(pinnedIds());
     for (const n of list) {
       const card = document.createElement('div');
-      card.className = 'note-card' + (state.selNote === n.id ? ' active' : '');
+      card.className = 'note-card' + (state.selNote === n.id ? ' active' : '') + (batchSel.has(n.id) ? ' selected' : '');
       card.dataset.id = n.id;
-      card.draggable = true;
+      card.draggable = !batchMode;
       const snippet = plainText(n).slice(0, 90);
       card.innerHTML = `
+        <input type="checkbox" class="sj-sel" ${batchSel.has(n.id) ? 'checked' : ''} aria-label="选择这篇笔记">
         <button class="note-more" data-more="1" aria-label="更多操作" title="更多操作">${I.dots}</button>
+        ${pins.has(n.id) ? '<span class="sj-pin">置顶</span>' : ''}
         <div class="note-card-title">
           ${n.starred ? I.starFill.replace('<svg', '<svg fill="currentColor"') : ''}
           <span>${escapeHtml(n.title || '无标题笔记')}</span>
@@ -1035,6 +1228,100 @@
 
   /* ---------------------------------------------------------- 编辑器 */
   /* -70：空白新建草稿不在 state.notes 里，编辑期间由 currentNote 直接返回。 */
+  /* ---------------------------------------------------------- 编辑草稿崩溃恢复（-72）
+     以前「编辑期只标脏」的内容只在内存里：进程被强杀且 pagehide / visibilitychange
+     都没触发时，整段编辑会丢（代码审查报告 P1-4 一直挂着）。这里只把当前正在
+     编辑的那一份内容存进 localStorage 做崩溃恢复，不新增任何 PATCH、定时器或
+     写盘时机 —— 保存时机红线一字未动。空白新建草稿不暂存，避免 -70 语义回退。 */
+  const EDIT_DRAFT_KEY = 'sj_edit_draft_v1';
+  const EDIT_DRAFT_MAX = 200 * 1024;
+
+  function readEditDraft() {
+    try {
+      const raw = localStorage.getItem(EDIT_DRAFT_KEY);
+      if (!raw) return null;
+      const d = JSON.parse(raw);
+      return (d && typeof d.content === 'string') ? d : null;
+    } catch (_) { return null; }
+  }
+  function clearEditDraft(savedId) {
+    try {
+      if (savedId) {
+        const cur = readEditDraft();
+        /* 已经切到别的笔记时，别用旧笔记的保存完成清掉新笔记的草稿。 */
+        if (cur && (cur.draft ? DRAFT_ID : cur.id) !== savedId) return;
+      }
+      localStorage.removeItem(EDIT_DRAFT_KEY);
+    } catch (_) {}
+  }
+  function saveEditDraft(note) {
+    try {
+      if (!note) return;
+      if (state.selNote === DRAFT_ID && isBlankNote(note)) { clearEditDraft(DRAFT_ID); return; }
+      const raw = JSON.stringify({
+        id: note.id || '', draft: state.selNote === DRAFT_ID,
+        title: note.title || '', content: note.content || '',
+        format: note.format === 'rich' ? 'rich' : 'md',
+        categoryId: note.categoryId || null, starred: !!note.starred,
+        tags: (note.tags || []).slice(), at: Date.now(),
+      });
+      if (raw.length > EDIT_DRAFT_MAX) return;  // 超大正文不冒 localStorage 配额风险
+      localStorage.setItem(EDIT_DRAFT_KEY, raw);
+    } catch (_) { /* 配额满 / 隐私模式：静默忽略，绝不影响编辑 */ }
+  }
+  function offerEditDraft() {
+    const d = readEditDraft();
+    const pane = $('.editor-pane');
+    if (!d || !pane || $('#sjDraftBar')) return;
+    const bar = document.createElement('div');
+    bar.id = 'sjDraftBar';
+    bar.className = 'sj-draft-bar';
+    const t = new Date(d.at || Date.now());
+    bar.innerHTML = `<span>检测到上次未保存的内容（${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}）</span>`
+      + `<button class="btn primary" data-draft="restore">恢复</button>`
+      + `<button class="btn ghost" data-draft="drop">丢弃</button>`;
+    bar.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-draft]');
+      if (!b) return;
+      if (b.dataset.draft === 'drop') { clearEditDraft(); bar.remove(); return; }
+      try { if (restoreEditDraft(d)) bar.remove(); }
+      catch (err) { toast('恢复失败：' + err.message); }
+    });
+    pane.prepend(bar);
+  }
+  function restoreEditDraft(d) {
+    if (d.draft && !draftNote) {
+      draftNote = {
+        id: DRAFT_ID, title: '', content: '', format: 'md',
+        categoryId: d.categoryId || null, starred: false, tags: [],
+        attachments: [], createdAt: Date.now(), updatedAt: Date.now(),
+      };
+    }
+    const id = d.draft ? DRAFT_ID : d.id;
+    /* 笔记还没从本地库读回来时，保留草稿副本让用户稍后再点，绝不静默清掉。 */
+    if (!d.draft && !noteById(id)) { toast('原笔记暂未找到（数据可能还在加载），请稍后再点恢复'); return false; }
+    /* 先按库里的旧内容打开（savedSnapshot 记的是旧值），再把草稿字段覆盖上去，
+       markDirty() 才会判定为「有未保存改动」，离开时正常走 PATCH。 */
+    openNote(id);
+    const n = currentNote();
+    if (!n) return false;
+    Object.assign(n, {
+      title: d.title || '', content: d.content || '',
+      format: d.format === 'rich' ? 'rich' : 'md',
+      starred: !!d.starred, tags: Array.isArray(d.tags) ? d.tags.slice() : [],
+    });
+    $('#titleInput').value = n.title || '';
+    $('#mdInput').value = n.format === 'rich' ? '' : (n.content || '');
+    $('#richPane').innerHTML = n.format === 'rich' ? DOMPurify.sanitize(n.content || '') : '';
+    viewFormat = n.format === 'rich' ? 'rich' : 'md';
+    applyFormat(viewFormat);
+    if (viewFormat === 'md') refreshPreview();
+    renderNoteTags(); renderList(); wordCount();
+    markDirty();
+    toast('已恢复上次未保存的内容，离开时会保存');
+    return true;
+  }
+
   const currentNote = () => (state.selNote === DRAFT_ID ? draftNote : noteById(state.selNote));
 
   function setSaveState(kind, text) {
@@ -1159,10 +1446,13 @@
     if (!note) return;
     if (snapshot(note) === savedSnapshot) {
       state.dirty = false;
+      /* 改回原样 = 没有未保存内容，草稿副本也该清掉，别下次启动误报。 */
+      clearEditDraft(state.selNote === DRAFT_ID ? DRAFT_ID : note.id);
       setSaveState('saved');
       return;
     }
     state.dirty = true;
+    saveEditDraft(note);
     setSaveState('dirty', '未保存 · 离开时保存');
   }
 
@@ -1171,6 +1461,7 @@
        已有笔记的「输入只标脏、离开时 PATCH」链路保持原样。 */
     if (draftNote && state.selNote === DRAFT_ID) {
       if (isBlankNote(draftNote)) { discardDraft(); return; }
+      setSaveState('saving');
       await settleDraft(false);
       return;
     }
@@ -1178,6 +1469,7 @@
     if (!note || !state.dirty) return;
     const savingId = note.id;
     state.dirty = false;
+    setSaveState('saving');
     try {
       const updated = await api(`/api/notes/${note.id}`, {
         method: 'PATCH',
@@ -1192,6 +1484,7 @@
         savedSnapshot = snapshot(note);
         setSaveState('saved');
       }
+      clearEditDraft(savingId);
       renderList();
     } catch (e) {
       state.dirty = true;
@@ -1902,7 +2195,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-10-71';
+  const APP_BUILD = '2026-11-11-72';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -3277,6 +3570,20 @@
     }
   }
 
+  /* ---------------------------------------------------------- 存为版本（-72）
+     服务端与本地库各有一个专门端点，不借 PATCH 触发 —— PATCH 会把 updatedAt
+     顶新、扰乱同步 LWW 与列表排序，而且没改内容时根本不会产生快照。 */
+  async function saveAsVersion() {
+    if (!currentNote()) { toast('请先打开一篇笔记'); return; }
+    await saveNow();
+    const note = currentNote();
+    if (!note || state.selNote === DRAFT_ID) { toast('请先写完并保存这篇笔记'); return; }
+    try {
+      const r = await api(`/api/notes/${note.id}/versions`, { method: 'POST', body: {} });
+      toast(`已存为版本（共 ${r && r.count ? r.count : '若干'} 个）`);
+    } catch (e) { toast('存为版本失败：' + e.message); }
+  }
+
   /* ---------------------------------------------------------- 导出 */
   async function openExportMenu(anchor) {
     const note = currentNote();
@@ -3284,8 +3591,12 @@
     const r = anchor.getBoundingClientRect();
     showCtx(r.right - 208, r.bottom + 6, [
       { label: '导出为 Word (.docx)', icon: I.doc, onClick: () => doExport('docx') },
-      { label: '导出为 PDF（打印）', icon: I.eye, onClick: () => doExport('pdf') },
+      /* -72：手机浏览器普遍不支持「另存为 PDF」，打印入口点了没结果。
+         项目 8.28 已因同一理由彻底移除 PDF 合集导出，这里只收掉云端入口，
+         桌面办公场景仍保留。export.js 的 toPdf() 代码不删，桌面还在用。 */
       { label: '导出为 Markdown (.md)', icon: I.code, onClick: () => doExport('md') },
+      { label: '存为版本（手动快照）', icon: I.doc, onClick: () => saveAsVersion() },
+      { label: '🔒 加密备份（.vault）', icon: I.lock || I.doc, onClick: () => { if (window.SJE2EE) window.SJE2EE.openPanel(); } },
     ]);
   }
 
@@ -3488,6 +3799,12 @@
   $('#noteList').addEventListener('click', (e) => {
     const card = e.target.closest('.note-card');
     if (!card) return;
+    /* -72 多选模式：点卡片只切换勾选，不打开笔记、不弹菜单。 */
+    if (batchMode && !e.target.closest('[data-more]')) {
+      e.preventDefault();
+      toggleBatch(card.dataset.id);
+      return;
+    }
     const note = noteById(card.dataset.id);
     if (!note) return;
 
@@ -3513,6 +3830,7 @@
 
   /* 长按唤起笔记菜单 */
   $('#noteList').addEventListener('pointerdown', (e) => {
+    if (batchMode) return;
     const card = e.target.closest('.note-card');
     if (!card || e.target.closest('[data-more]')) return;
     if (e.pointerType === 'mouse') return;
@@ -3539,6 +3857,7 @@
   });
 
   $('#noteList').addEventListener('dragstart', (e) => {
+    if (batchMode) { e.preventDefault(); return; }
     const card = e.target.closest('.note-card');
     if (!card) return;
     e.dataTransfer.setData('text/note-id', card.dataset.id);
@@ -4234,8 +4553,30 @@
   window.SJState = state;
   window.SJNotes = () => state.notes;
   window.SJPlain = plainText;
+  /* -72：给 .vault 加密备份与批量导出用的通用文件交付口。
+     完全复用 -67 已真机验证的三级通道，不新造下载链路：
+     系统分享面板（WebAPK 首选）→ SW 代理隐藏 iframe（Chromium 页内）→ blob 锚点。
+     返回 'ok' / 'share' / 'cancel' / ''，调用方据此给如实反馈。 */
+  window.SJSaveBlobFile = async (blob, name) => {
+    if (!blob || !blob.size) return '';
+    let obj = '';
+    try { obj = URL.createObjectURL(blob); } catch (_) {}
+    const revoke = () => { if (obj) setTimeout(() => { try { URL.revokeObjectURL(obj); } catch (_) {} }, 60000); };
+    try {
+      if (obj) {
+        const st = await saveInApp(obj, name, blob.type || 'application/octet-stream');
+        if (st) { revoke(); return st; }
+      }
+      if ((await saveViaSwProxy(blob, name)) === 'ok') { revoke(); return 'ok'; }
+      const r = saveBlobAnchor(blob, name);
+      revoke();
+      return r;
+    } catch (_) { revoke(); return ''; }
+  };
   /* v1.8.0：增强模块（冲突 / 加密）用到的弹窗助手 */
   window.openModal = openModal;
   window.closeModal = closeModal;
+  /* -72：崩溃恢复提示排到首屏之后，不与启动渲染抢 DOM。 */
+  setTimeout(offerEditDraft, 600);
   boot().catch((e) => console.error('启动失败', e));
 })();

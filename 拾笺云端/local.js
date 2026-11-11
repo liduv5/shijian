@@ -10,6 +10,10 @@
 
   const LS_KEY = 'sj_mobile_v1';
   const MAX_VERSIONS = 40;
+  /* -72：与桌面 server.js 的 SNAPSHOT_GAP 对齐。以前手机端每次 PATCH 都留一条
+     版本，写几个字离开一次就刷一条，40 个槽很快被挤满；localStorage 一紧张
+     还会把每篇裁到 5 条，等于真正想回退的旧版本被静默丢掉。 */
+  const SNAPSHOT_GAP = 120000;
 
   /* ---------------------------------------------------------- 内存库 */
   let db = { categories: [], notes: [], versions: {} };
@@ -362,9 +366,19 @@
     };
   }
 
-  /* ---------------------------------------------------------- 历史版本 */
+  /* ---------------------------------------------------------- 历史版本
+     -72：与桌面 server.js snapshotVersion() 同语义：
+       · 空笔记不留版本；
+       · 2 分钟内不重复留自动版本（auto）；同内容也不重复留；
+       · format / restore / manual 是用户明确动作，绕过去重。
+     PATCH 的调用时机与写盘时机一个字没改，只改「要不要真的留一条」。 */
   function snapshot(note, reason) {
+    if (!note.content && !note.title) return;
+    const force = reason === 'format' || reason === 'restore' || reason === 'manual';
     const list = db.versions[note.id] || (db.versions[note.id] = []);
+    const last = list[0];
+    if (!force && last && last.content === note.content && last.title === note.title) return;
+    if (!force && last && Date.now() - last.ts < SNAPSHOT_GAP) return;
     list.unshift({
       id: uid(),
       ts: Date.now(),
@@ -566,6 +580,17 @@
       const noteId = seg[1];
       const vid = seg[3];
 
+      /* -72「存为版本」：专门端点，不借 PATCH 触发。
+         这样不会把 updatedAt 顶新（否则会扰乱同步 LWW 和列表排序），
+         也不会覆盖正文；空笔记与桌面端一样不留版本。 */
+      if (method === 'POST' && !vid) {
+        const n = db.notes.find((x) => x.id === noteId);
+        if (!n) throw new Error('笔记不存在');
+        snapshot(n, 'manual');
+        save();
+        return { ok: true, count: (db.versions[noteId] || []).length };
+      }
+
       if (method === 'GET' && !vid) {
         const list = db.versions[noteId] || [];
         return {
@@ -707,5 +732,12 @@
     save();
   }
 
-  window.SJLocal = { api, fileUrl, attachmentUrl, watchFiles, indexNote, exportBackup, getState, setState, reset, uid, ready, flushAtt };
+  /* -72：桌面 SJLocal 早有 importBackup，云端这份漏了 —— e2ee.js 的
+     「解密并汇入」会调到它，缺了就必然报「本地存储不支持汇入」。
+     补齐后加密备份在手机端也能真正闭环（导出 + 导入）。 */
+  async function importBackup(backup) {
+    return api('/api/import', { method: 'POST', body: backup });
+  }
+
+  window.SJLocal = { api, fileUrl, attachmentUrl, watchFiles, indexNote, exportBackup, importBackup, getState, setState, reset, uid, ready, flushAtt };
 })();

@@ -11,7 +11,7 @@
            所有 js/css 全部 403 —— 表现为「界面在、进度条卡住、按钮点不动」。
            所以每个同源请求都由 SW 主动补上访问码，不依赖 cookie。
    ============================================================ */
-const VERSION = 'sj-2026-11-10-71';
+const VERSION = 'sj-2026-11-11-72';
 const CACHE = 'shijian-' + VERSION;
 
 const SC_KEY = 'sharecode';
