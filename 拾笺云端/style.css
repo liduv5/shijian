@@ -38,6 +38,10 @@ html[data-theme="light"] {
   --text: #22201c;
   --text-2: #6c675d;
   --text-3: #9c968a;
+  /* 分类层级色卡：中性灰阶（不换色相，色弱与深色模式都成立）。只两档：
+     一级略深，二级及更深统一——层级主要靠缩进，颜色只做轻提示 */
+  --lv-0: #3a352d;   /* 10.9:1 一级 */
+  --lv-1: #4d483f;   /*  8.2:1 二级及更深 */
   --accent: #2f6f5e;
   --accent-hover: #255a4c;
   --accent-soft: rgba(47, 111, 94, .10);
@@ -61,6 +65,9 @@ html[data-theme="dark"] {
   --text: #e9e6e0;
   --text-2: #a3a7a3;
   --text-3: #767c78;
+  /* 深色主题同理：一级略亮，二级及更深统一 */
+  --lv-0: #d8d3ca;   /* 12.2:1 */
+  --lv-1: #beb9af;   /*  9.3:1 */
   --accent: #63b79d;
   --accent-hover: #7cc9b0;
   --accent-soft: rgba(99, 183, 157, .12);
@@ -144,26 +151,26 @@ kbd {
   background: var(--bg);
   border-right: 1px solid var(--border);
   min-height: 0;
-  padding: 14px 10px 10px;
+  padding: 12px 10px 8px;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 2px 6px 15px;
+  padding: 2px 6px 10px;
 }
 
 /* 朱砂小印：比原来的渐变色块更贴合「笺」的气质 */
 .logo {
-  width: 36px; height: 36px;
-  border-radius: 9px;
+  width: 32px; height: 32px;
+  border-radius: 8px;
   background: linear-gradient(150deg, #c25b41, #a8412c);
   color: #fff;
   display: grid;
   place-items: center;
   font-family: var(--font-brand);
-  font-size: 22px;
+  font-size: 20px;
   line-height: 1;
   padding-bottom: 2px;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .38),
@@ -234,9 +241,9 @@ html[data-theme="dark"] .ico-moon { display: none; }
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 34px;
+  height: 32px;
   padding: 0 9px;
-  margin: 0 2px 14px;
+  margin: 0 2px 10px;
   background: var(--surface-2);
   border: 1px solid transparent;
   border-radius: var(--r-sm);
@@ -264,7 +271,7 @@ html[data-theme="dark"] .ico-moon { display: none; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 4px 6px 10px;
+  padding: 0 4px 5px 10px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: .1em;
@@ -282,11 +289,70 @@ html[data-theme="dark"] .ico-moon { display: none; }
   margin: 0 -2px;
 }
 
+/* 侧栏中段：最近笔记 + 目录树共用一个滚动区，新增的「最近笔记」不会
+   再单独吃掉目录树的高度。 */
+.side-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.side-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.side-scroll > .tree { flex: none; overflow: visible; }
+
+/* 目录头与最近笔记之间加一道细线，两段式结构才看得出来（recent-head 在
+   .recent-section 里，不是 side-scroll 的直接子节点，所以不会误伤） */
+.side-scroll > .tree-head { border-top: 1px solid var(--border); margin-top: 3px; padding-top: 6px; }
+
+/* 最近笔记：每行「文档图标 + 标题 + 右侧日期」，默认收起 */
+.recent-head { cursor: pointer; }
+.recent-head .tag-caret { transition: transform .18s var(--ease); }
+.recent-section:not(.collapsed) .recent-head .tag-caret { transform: rotate(90deg); }
+.recent-section.collapsed .recent-head .tag-caret { transform: rotate(0deg); }
+.recent-section.collapsed .recent-list { display: none; }
+.recent-list { padding: 2px 0 6px; }
+.recent-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 8px 0 6px;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  user-select: none;
+  transition: background .13s, color .13s;
+}
+.recent-item:hover { background: var(--surface-2); color: var(--text); }
+.recent-item.active { background: var(--accent-soft); color: var(--accent); }
+.recent-ico { width: 13px; height: 13px; flex: none; color: var(--text-3); }
+.recent-item.active .recent-ico { color: var(--accent); }
+.recent-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-date {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
 .tree-row {
   display: flex;
   align-items: center;
   gap: 5px;
-  height: 31px;
+  height: 34px;
   padding-right: 4px;
   border-radius: var(--r-sm);
   cursor: pointer;
@@ -295,6 +361,8 @@ html[data-theme="dark"] .ico-moon { display: none; }
   user-select: none;
   transition: background .13s, color .13s;
 }
+/* 一级目录组之间拉开一档，形成「大类 > 子目录 > 笔记」的宏观分区 */
+#tree > .tree-row[data-depth="0"] ~ .tree-row[data-depth="0"] { margin-top: 6px; }
 .tree-row:hover { background: var(--surface-2); color: var(--text); }
 .tree-row.active {
   background: var(--accent-soft);
@@ -321,14 +389,34 @@ html[data-theme="dark"] .ico-moon { display: none; }
 .tree-row.collapsed .caret { transform: rotate(-90deg); }
 .caret.leaf { visibility: hidden; }
 
+/* 树里的层级表达：极简。缩进是主力（JS 行内每层 18px），颜色只做轻提示。
+   分类只分两档——一级略深，二级及更深统一一档；不加粗、不描边、不逐层变色，
+   字号统一 13.5px。这样整栏干净，层级靠缩进一眼可读。 */
 .tree-label {
   flex: 1;
   min-width: 0;
   font-size: 13.5px;
+  font-weight: 500;
+  color: var(--lv-1);
+  letter-spacing: .01em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 主入口（全部笔记/收藏/未分类）是导航里唯一大一档的标题 */
+.tree-row[data-pseudo] > .tree-label { font-size: 14px; font-weight: 650; color: var(--text); letter-spacing: .012em; }
+/* 分类行的文件夹图标：和笔记行的圆点形成最直接的一眼区分 */
+.tree-label > .tree-folder {
+  width: 13px; height: 13px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  color: #d8a340;
+}
+/* 一级分类比二级深一点点，仅此一档差异 */
+.tree-row[data-depth="0"] > .tree-label { font-weight: 600; color: var(--lv-0); }
+/* 选中态：压过上面的层级色卡（特异性同档，靠位置在后生效） */
+.tree-row.active[data-id] > .tree-label,
+.tree-row.active[data-pseudo] > .tree-label { color: var(--accent); }
 
 .tree-count {
   font-size: 10.5px;
@@ -372,12 +460,32 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
   cursor: pointer;
   color: var(--text-2);
   user-select: none;
+  position: relative;
   transition: background .13s, color .13s;
 }
 .tree-note:hover { background: var(--surface-2); color: var(--text); }
 .tree-note.active { background: var(--accent-soft); color: var(--accent); }
 .tree-note.active .tree-note-name { color: var(--accent); font-weight: 600; }
 .tree-note.pressed { background: var(--surface-3); }
+/* 多选整理：勾选框常驻 DOM，只在 .tree.batch-mode 时显形。绝对定位落在
+   缩进留出的左侧圆点栏里，因此不改变任何一行的缩进与行高。 */
+.tree-note-check {
+  display: none;
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.tree.batch-mode .tree-note-check { display: block; }
+/* 多选态下勾选框替掉了行首圆点，避免「方框 + 圆点」两个标记挤在一起 */
+.tree.batch-mode .tree-note-dot { display: none; }
+.tree-note.selected { background: var(--accent-soft); }
+.tree-note.selected .tree-note-name { color: var(--accent); }
 .tree-note-dot {
   width: 5px; height: 5px; border-radius: 50%;
   background: var(--text-3); flex: none; opacity: .8;
@@ -389,7 +497,9 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
 }
 .tree-note-title svg { width: 12px; height: 12px; color: var(--accent); flex: none; }
 .tree-note-name {
-  font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13px;
+  font-weight: 400;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tree-note-meta {
   display: flex; align-items: center; gap: 7px; flex: none;
@@ -417,7 +527,7 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
-  padding-top: 10px;
+  padding-top: 8px;
   border-top: 1px solid var(--border);
   margin-top: 2px;
 }
@@ -434,13 +544,13 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 2px;
   min-width: 0;
-  height: 50px;
+  height: 40px;
   border-radius: 9px;
   background: var(--surface-2);
   color: var(--text-2);
-  font-size: 10.5px;
+  font-size: 10px;
   line-height: 1;
   letter-spacing: .04em;
   transition: background .16s var(--ease), color .16s var(--ease), transform .1s;
@@ -1378,8 +1488,16 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   min-height: 0;
   border-top: 1px solid var(--border);
   margin-top: 5px;
-  padding: 8px 0 10px;
+  padding: 6px 0 8px;
 }
+/* 标签区可折叠：点标题行收起，高度整块让给目录树（目录是主区，标签是辅助筛选） */
+.tag-head { cursor: pointer; user-select: none; padding-left: 6px; }
+.tag-head:hover { color: var(--text-2); }
+.tag-head-left { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.tag-caret { width: 12px; height: 12px; flex: none; transform: rotate(90deg); transition: transform .16s var(--ease); }
+.tag-section.collapsed { padding: 8px 0 3px; }
+.tag-section.collapsed .tag-caret { transform: rotate(0deg); }
+.tag-section.collapsed .tag-cloud { display: none; }
 .tag-total { font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .tag-cloud {
   display: flex;
@@ -2486,6 +2604,22 @@ body.m-list .pwa-tip {
 .sj-batch-bar #sjBatchCount { margin-right: 4px; font-weight: 600; color: var(--accent); }
 .sj-batch-bar .btn { padding: 3px 8px; font-size: 11.5px; }
 .sj-batch-bar .btn.danger { background: transparent; color: var(--danger); border-color: var(--danger); }
+/* 宽屏批量条：桌面端列表栏整栏隐藏，改浮在编辑区底部居中。
+   只在多选模式下出现，退出即消失，不动任何既有布局。 */
+.sj-batch-bar.float {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 7px 10px 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .16);
+  flex-wrap: nowrap;
+  z-index: 40;
+}
 .sj-batch-form { padding: 14px 18px 4px; }
 .sj-batch-form .modal-actions { margin-top: 14px; }
 

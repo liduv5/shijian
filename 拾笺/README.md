@@ -53,9 +53,9 @@ node server.js
 
 **然后（手机端）**
 
-4. 手机浏览器打开：<https://shijian-notes-46125.app.workbuddy.host/?sharecode=FKSO3QK6B4>
+4. 手机浏览器打开：<https://2120533470581252096.app.workbuddy.host/?sharecode=SSYXUMSNMI>
 
-> 链接必须完整保留 `?sharecode=FKSO3QK6B4`。参数被聊天工具截断时会出现「链接不完整」或界面卡住、按钮无响应；用完整链接重新打开即可。v1.7.2 起页面会自动补参数，加载失败时也会给出「重新打开拾笺」按钮。
+> 链接必须完整保留 `?sharecode=SSYXUMSNMI`。参数被聊天工具截断时会出现「链接不完整」或界面卡住、按钮无响应；用完整链接重新打开即可。v1.7.2 起页面会自动补参数，加载失败时也会给出「重新打开拾笺」按钮。
 5. 用同一个 QQ 邮箱收验证码登录
 
 **日常**

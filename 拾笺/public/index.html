@@ -45,23 +45,41 @@
       <kbd>⌘K</kbd>
     </div>
 
-    <div class="tree-head">
-      <span>目录</span>
-      <div class="tree-head-actions">
-        <button class="icon-btn sm" id="collapseAllBtn" title="全部收起">
-          <svg viewBox="0 0 24 24" class="ico"><path d="M4 9l8-6 8 6M4 15l8 6 8-6"/></svg>
-        </button>
-        <button class="icon-btn sm" id="addRootCatBtn" title="新建顶层类别">
-          <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
-        </button>
+    <div class="side-body">
+      <div class="side-scroll" id="sideScroll">
+        <!-- 最近笔记：仿 LumiNote 的两段式侧栏，先给最近 6 条，再给分类树。
+             默认收起——上一轮明确要保住目录高度，展开与否记在本地。 -->
+        <div class="recent-section collapsed" id="recentSection">
+          <div class="tree-head recent-head" id="recentHead" role="button" tabindex="0" aria-expanded="false" title="展开 / 收起最近笔记">
+            <span class="tag-head-left">
+              <svg viewBox="0 0 24 24" class="ico tag-caret"><path d="M9 6l6 6-6 6"/></svg><span>最近笔记</span>
+            </span>
+          </div>
+          <div class="recent-list" id="recentList"></div>
+        </div>
+
+        <div class="tree-head">
+          <span>目录</span>
+          <div class="tree-head-actions">
+            <button class="icon-btn sm" id="collapseAllBtn" title="全部收起">
+              <svg viewBox="0 0 24 24" class="ico"><path d="M4 9l8-6 8 6M4 15l8 6 8-6"/></svg>
+            </button>
+            <button class="icon-btn sm" id="addRootCatBtn" title="新建顶层类别">
+              <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <nav class="tree" id="tree"></nav>
       </div>
+      <div class="tree-meta" id="treeMeta"></div>
     </div>
 
-    <nav class="tree" id="tree"></nav>
-
     <div class="tag-section" id="tagSection">
-      <div class="tree-head">
-        <span>标签</span>
+      <div class="tree-head tag-head" id="tagHead" role="button" tabindex="0" aria-expanded="true" title="收起 / 展开标签">
+        <span class="tag-head-left">
+          <svg viewBox="0 0 24 24" class="ico tag-caret"><path d="M9 6l6 6-6 6"/></svg><span>标签</span>
+        </span>
         <span class="tag-head-right">
           <span class="tag-total" id="tagTotal"></span>
           <button class="tag-manage" id="tagManageBtn" title="管理标签">管理</button>
@@ -107,21 +125,27 @@
 
   <!-- ============ 编辑区 ============ -->
   <main class="editor-pane">
-    <div class="empty" id="emptyState">
-      <div class="empty-art">
-        <svg viewBox="0 0 200 160" fill="none">
-          <rect x="34" y="26" width="98" height="120" rx="8" stroke="currentColor" stroke-width="1.6" opacity=".28"/>
-          <rect x="46" y="14" width="98" height="120" rx="8" fill="var(--surface)" stroke="currentColor" stroke-width="1.6" opacity=".55"/>
-          <path d="M64 42h62M64 60h62M64 78h44M64 96h52" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" opacity=".22"/>
-          <path d="M64 114h30" stroke="var(--accent)" stroke-width="2.8" stroke-linecap="round" opacity=".8"/>
-        </svg>
-      </div>
-      <h3>选一条继续整理，或新建一条知识片段</h3>
-      <p>随手记下的内容会收进「全部笔记」顶部</p>
-    </div>
+    <!-- 首页：没打开笔记时占据主区。仿 LumiNote 的卡片网格，两个视图——
+         「全部笔记」看内容摘要与分类路径，「文件夹」看分类本身。 -->
+    <section class="home" id="emptyState">
+      <header class="home-head">
+        <div class="home-tabs" role="tablist" aria-label="视图">
+          <button class="home-tab on" id="homeTabNotes" data-home-tab="notes" role="tab" aria-selected="true">全部笔记</button>
+          <button class="home-tab" id="homeTabFolders" data-home-tab="folders" role="tab" aria-selected="false">文件夹</button>
+        </div>
+        <div class="home-acts">
+          <button class="btn ghost sm" id="homeNewFolder">+ 新建文件夹</button>
+          <button class="btn primary sm" id="homeNewNote">+ 新建笔记</button>
+        </div>
+      </header>
+      <div class="home-grid" id="homeGrid"></div>
+    </section>
 
     <div class="editor-wrap hidden" id="editorWrap">
       <header class="editor-head">
+        <button class="icon-btn editor-back" id="editorBack" title="返回全部笔记" aria-label="返回全部笔记">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M15 6l-6 6 6 6"/></svg>
+        </button>
         <input id="titleInput" class="title-input" placeholder="无标题笔记" spellcheck="false">
         <div class="editor-actions">
           <div class="segmented" id="formatSwitch">

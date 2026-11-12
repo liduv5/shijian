@@ -454,26 +454,60 @@
     return state.notes.filter((n) => n.categoryId === catId);
   }
 
-  /* 点击某节点时收起其它顶层节点（伪节点 + 根类别），实现手风琴。 */
+  /* 一次只展开一层：目标分类的父链保持展开，目标展开后只露出「子分类 + 本级笔记」；
+     目标之下的子分类一律收起（不往下自动展开），其余旁支分类也收起。 */
+  function openOnly(targetId, open) {
+    const target = state.categories.find((c) => c.id === targetId);
+    if (!target) return;
+    ['all', 'starred', 'uncat'].forEach((k) => setOpen(k, false));
+    const chain = new Set();
+    for (let cur = target; cur;) {
+      chain.add(cur.id);
+      cur = cur.parentId ? state.categories.find((c) => c.id === cur.parentId) : null;
+    }
+    const desc = new Set();
+    (function walk(pid) {
+      state.categories.forEach((c) => {
+        if (c.parentId === pid && !desc.has(c.id)) { desc.add(c.id); walk(c.id); }
+      });
+    })(targetId);
+    const patch = [];
+    state.categories.forEach((c) => {
+      const want = desc.has(c.id) ? false : (c.id === targetId ? !!open : chain.has(c.id));
+      if (!!c.expanded !== want) { c.expanded = want; patch.push(c.id); }
+    });
+    patch.forEach((cid) => {
+      const c = state.categories.find((x) => x.id === cid);
+      api(`/api/categories/${cid}`, { method: 'PATCH', body: { expanded: !!c.expanded } }).catch(() => {});
+    });
+  }
+
+  /* 点伪节点（全部笔记 / 收藏 / 未分类）时收起所有分类，保持「一次只亮一个」。 */
   function accordion(except) {
     ['all', 'starred', 'uncat'].forEach((k) => { if (k !== except) setOpen(k, false); });
-    state.categories.filter((c) => !c.parentId && c.id !== except && c.expanded)
+    state.categories.filter((c) => c.expanded)
       .forEach((c) => {
         c.expanded = false;
         api(`/api/categories/${c.id}`, { method: 'PATCH', body: { expanded: false } }).catch(() => {});
       });
   }
 
-  function noteRow(n) {
+  /* depth = 所属分类的层级；笔记在分类标签下方再缩进一级，且只显示标题（不带标签/日期）。
+     行内 padding-left 直接算出来，不依赖嵌套 .tree-children 累积缩进。 */
+  function noteRow(n, depth) {
+    const d = depth || 0;
     const row = document.createElement('div');
-    row.className = 'tree-note' + (state.selNote === n.id ? ' active' : '');
+    row.className = 'tree-note' + (state.selNote === n.id ? ' active' : '') + (batchSel.has(n.id) ? ' selected' : '');
     row.dataset.nid = n.id;
     row.draggable = true;
-    const tags = (n.tags && n.tags.length) ? n.tags.slice(0, 3).map((t) => '#' + escapeHtml(t)).join(' ') : '';
+    row.style.paddingLeft = 28 + d * 18 + 'px';
+    row.title = n.title || '无标题笔记';
+    /* 批量子集不换 DOM 结构：勾选框常驻，只在 .tree.batch-mode 时显形，
+       这样进出多选不必重建整棵树，行高也不会跳。 */
     row.innerHTML = `
+      <input type="checkbox" class="tree-note-check"${batchSel.has(n.id) ? ' checked' : ''} aria-label="选择这篇笔记">
       <span class="tree-note-dot"></span>
-      <span class="tree-note-title">${n.starred ? I.starFill.replace('<svg', '<svg fill="currentColor"') : ''}<span class="tree-note-name">${escapeHtml(n.title || '无标题笔记')}</span></span>
-      <span class="tree-note-meta">${tags ? '<span class="tree-note-tags">' + tags + '</span>' : ''}<span class="tree-note-date">${fmtDate(n.updatedAt)}</span></span>`;
+      <span class="tree-note-title">${n.starred ? I.starFill.replace('<svg', '<svg fill="currentColor"') : ''}<span class="tree-note-name">${escapeHtml(n.title || '无标题笔记')}</span></span>`;
     return row;
   }
 
@@ -590,10 +624,10 @@
     row.className = 'tree-row' + (state.selCat === cat.id ? ' active' : '') + (open ? '' : ' collapsed');
     row.dataset.id = cat.id;
     row.dataset.depth = depth;
-    row.style.paddingLeft = 4 + depth * 14 + 'px';
+    row.style.paddingLeft = 4 + depth * 18 + 'px';
     row.innerHTML = `
       <span class="caret${kids.length ? '' : ' leaf'}" data-act="toggle">${I.chevron}</span>
-      <span class="tree-label">${escapeHtml(cat.name)}</span>
+      <span class="tree-label">${I.folder.replace('class="ico"', 'class="ico tree-folder"')}${escapeHtml(cat.name)}</span>
       <span class="tree-count">${subtreeCount(cat.id, state.notes)}</span>
       <span class="tree-acts">
         <button class="tree-act" data-act="add" title="新建子类别">${I.plus}</button>
@@ -605,7 +639,7 @@
       const box = document.createElement('div');
       box.className = 'tree-children';
       kids.forEach((k) => box.appendChild(catNode(k, depth + 1)));
-      notesUnder(cat.id).forEach((n) => box.appendChild(noteRow(n)));
+      notesUnder(cat.id).forEach((n) => box.appendChild(noteRow(n, depth)));
       frag.appendChild(box);
     }
     return frag;
@@ -614,8 +648,8 @@
   function toggleCat(id) {
     const cat = state.categories.find((c) => c.id === id);
     if (!cat) return;
-    cat.expanded = !cat.expanded;
-    api(`/api/categories/${id}`, { method: 'PATCH', body: { expanded: cat.expanded } }).catch(() => {});
+    /* 展开时把子分类一并收起，保证每点一次只多露一层 */
+    openOnly(id, !cat.expanded);
     renderTree();
   }
 
@@ -679,22 +713,49 @@
     });
   }
   function batchNotes() { return state.notes.filter((n) => batchSel.has(n.id)); }
-  function exitBatch() { batchMode = false; batchSel.clear(); renderList(); }
+  function exitBatch() { batchMode = false; batchSel.clear(); renderList(); renderTree(); }
   function toggleBatch(id) {
     if (!id) return;
     if (batchSel.has(id)) batchSel.delete(id); else batchSel.add(id);
     renderList();
+    renderTree();
   }
   function renderBatchBar() {
     const bar = $('#sjBatchBar');
-    if (bar) bar.classList.toggle('hidden', !batchMode);
+    if (bar) { bar.classList.toggle('hidden', !batchMode); placeBatchBar(bar); }
     const cnt = $('#sjBatchCount');
     if (cnt) cnt.textContent = batchMode ? `已选 ${batchSel.size} 篇` : '';
+    /* 入口按钮双落位：宽屏挂到目录树头（桌面端列表栏整栏隐藏，原位置看不见），
+       窄屏仍旧留在列表头。窗口跨界时靠这里重新落位，无需额外监听。 */
     const btn = $('#sjBatchBtn');
-    if (btn) btn.classList.toggle('on', batchMode);
+    if (btn) {
+      btn.classList.toggle('on', batchMode);
+      const want = (!NARROW() && $('.tree-head:not(.tag-head) .tree-head-actions'))
+        || $('.list-head .list-head-actions');
+      if (want && btn.parentElement !== want) want.insertBefore(btn, want.firstChild);
+    }
     const list = $('#noteList');
     if (list) list.classList.toggle('batch-mode', batchMode);
+    const tree = $('#tree');
+    if (tree) tree.classList.toggle('batch-mode', batchMode);
   }
+  /* 批量整理条落位。宽屏没有列表栏可挂，改浮在编辑区底部（.editor-pane 已是
+     position:relative），只在这种临时模式下出现，不占文档高度、不动既有布局；
+     窄屏保持原样：列表栏内、笔记列表上方。 */
+  function placeBatchBar(bar) {
+    if (!bar) return;
+    const wide = !NARROW();
+    const host = wide ? $('.editor-pane') : $('.list-pane');
+    if (!host) return;
+    bar.classList.toggle('float', wide);
+    if (bar.parentElement === host) return;
+    const list = $('#noteList');
+    if (!wide && list && list.parentElement === host) host.insertBefore(bar, list);
+    else host.appendChild(bar);
+  }
+  /* 跨 980px 边界时把入口按钮与整理条重新落位：不监听的话，宽屏切窄屏后
+     按钮会留在已被抽屉化的树头里，列表头反而找不到多选入口。 */
+  window.addEventListener('resize', () => renderBatchBar());
   function batchUI() {
     const head = $('.list-head');
     if (!head) return;
@@ -712,7 +773,8 @@
       const btn = document.createElement('button');
       btn.className = 'icon-btn sm'; btn.id = 'sjBatchBtn';
       btn.title = '多选整理'; btn.setAttribute('aria-label', '多选整理');
-      btn.textContent = '☑';
+      /* 与目录头其它按钮同一套线性图标，避免 ☑ 字形被系统字体画成实心方块 */
+      btn.innerHTML = '<svg viewBox="0 0 24 24" class="ico"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.4 12.4l2.6 2.6 4.6-5.2"/></svg>';
       btn.addEventListener('click', () => {
         batchMode = !batchMode;
         if (!batchMode) batchSel.clear();
@@ -888,6 +950,10 @@
     const list = notesInScope();
     box.innerHTML = '';
     batchUI();
+    /* 首页网格与「最近笔记」跟列表同一份数据，这里统一刷一次：
+       所有会改 state 的入口最终都会走到 renderList，不必到处埋钩子。 */
+    renderHome();
+    renderRecent();
 
     let title = '全部笔记';
     if (state.search.trim()) title = '搜索结果';
@@ -934,6 +1000,129 @@
       frag.appendChild(card);
     }
     box.appendChild(frag);
+  }
+
+  /* ---------------------------------------------------------- 最近笔记 */
+  /* 侧栏顶部「最近笔记」：按更新时间取前 6 条，平铺显示，点它直接进编辑。
+     默认收起（目录高度优先），展开/收起状态存本地。 */
+  const RECENT_KEY = 'sj_recent_collapsed';
+  const RECENT_N = 6;
+  function recentNotes() {
+    return state.notes.slice()
+      .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0))
+      .slice(0, RECENT_N);
+  }
+  function renderRecent() {
+    const list = $('#recentList');
+    if (!list) return;
+    list.innerHTML = recentNotes().map((n) => `
+      <div class="recent-item${state.selNote === n.id ? ' active' : ''}" data-nid="${n.id}" title="${escapeHtml(n.title || '无标题笔记')}">
+        ${I.doc.replace('class="ico"', 'class="ico recent-ico"')}
+        <span class="recent-title">${escapeHtml(n.title || '无标题笔记')}</span>
+        <span class="recent-date">${fmtDate(n.updatedAt)}</span>
+      </div>`).join('');
+  }
+  function applyRecentState() {
+    const sec = $('#recentSection');
+    if (!sec) return;
+    let collapsed = true;
+    try { collapsed = localStorage.getItem(RECENT_KEY) !== '0'; } catch (_) {}
+    sec.classList.toggle('collapsed', collapsed);
+    const head = $('#recentHead');
+    if (head) head.setAttribute('aria-expanded', String(!collapsed));
+  }
+  function toggleRecent() {
+    const sec = $('#recentSection');
+    if (!sec) return;
+    const collapsed = !sec.classList.contains('collapsed');
+    sec.classList.toggle('collapsed', collapsed);
+    try { localStorage.setItem(RECENT_KEY, collapsed ? '1' : '0'); } catch (_) {}
+    const head = $('#recentHead');
+    if (head) head.setAttribute('aria-expanded', String(!collapsed));
+  }
+
+  /* ---------------------------------------------------------- 首页卡片网格 */
+  /* 没打开笔记时主区显示的东西：两个视图（笔记 / 文件夹）。
+     笔记卡 = 图标 + 标题 + 摘要 + 分类路径 + 日期，把合并掉列表栏后
+     丢掉的卡片信息补回来；文件夹卡 = 名字 + 子文件夹数 + 笔记数 + 最后更新。 */
+  let homeTab = 'notes';
+  function catPath(id) {
+    const parts = [];
+    let c = state.categories.find((x) => x.id === id);
+    let guard = 0;
+    while (c && guard++ < 12) {
+      parts.unshift(c.name);
+      const pid = c.parentId;
+      c = pid ? state.categories.find((x) => x.id === pid) : null;
+    }
+    return parts.join(' / ');
+  }
+  function scopeName(scope) {
+    if (state.search.trim()) return '搜索结果';
+    if (scope === 'starred') return '收藏';
+    if (scope === 'uncat') return '未分类';
+    if (String(scope).startsWith('tag:')) return '#' + scope.slice(4);
+    if (scope && scope !== 'all') {
+      const c = state.categories.find((x) => x.id === scope);
+      if (c) return c.name;
+    }
+    return '全部笔记';
+  }
+  function renderHome() {
+    const grid = $('#homeGrid');
+    if (!grid) return;                       // 没有首页网格的端（云端旧空态）直接跳过
+    const scope = state.selCat || 'all';
+    const notes = notesInScope();
+    const tn = $('#homeTabNotes'), tf = $('#homeTabFolders');
+    if (tn) {
+      tn.textContent = `${scopeName(scope)} ${notes.length}`;
+      tn.classList.toggle('on', homeTab === 'notes');
+      tn.setAttribute('aria-selected', String(homeTab === 'notes'));
+    }
+    if (tf) {
+      tf.classList.toggle('on', homeTab === 'folders');
+      tf.setAttribute('aria-selected', String(homeTab === 'folders'));
+    }
+
+    if (homeTab === 'folders') {
+      const isCat = scope && scope !== 'all' && !String(scope).startsWith('tag:')
+        && scope !== 'starred' && scope !== 'uncat';
+      const pid = isCat ? scope : null;
+      const folds = state.categories.filter((c) => (c.parentId || null) === pid).sort(byOrder);
+      if (tf) tf.textContent = `文件夹 ${folds.length}`;
+      if (!folds.length) {
+        grid.innerHTML = '<div class="home-empty">这一层还没有文件夹。点右上角「+ 新建文件夹」建一个，比如「工作」「学习」。</div>';
+        return;
+      }
+      grid.innerHTML = folds.map((c) => {
+        const subs = state.categories.filter((k) => k.parentId === c.id).length;
+        const cnt = subtreeCount(c.id, state.notes);
+        const ns = notesUnder(c.id);
+        const last = ns.length ? Math.max(...ns.map((n) => Number(n.updatedAt) || 0)) : 0;
+        return `<article class="home-card folder" data-cid="${c.id}">
+          <div class="home-card-title">${I.folder}<span>${escapeHtml(c.name)}</span></div>
+          <p class="home-card-snippet">${subs ? `${subs} 个文件夹 · ` : ''}${cnt} 篇笔记</p>
+          <div class="home-card-foot"><span class="home-card-path"></span><span class="home-card-date">${last ? fmtDate(last) : ''}</span></div>
+        </article>`;
+      }).join('');
+      return;
+    }
+
+    if (!notes.length) {
+      grid.innerHTML = '<div class="home-empty">这里还没有笔记。点右上角「+ 新建笔记」写第一条，或先在侧栏建一个文件夹。</div>';
+      return;
+    }
+    grid.innerHTML = notes.map((n) => {
+      const snippet = plainText(n).slice(0, 90);
+      return `<article class="home-card" data-nid="${n.id}">
+        <div class="home-card-title">${n.starred ? I.starFill.replace('<svg', '<svg class="ico"') : I.doc}<span>${escapeHtml(n.title || '无标题笔记')}</span></div>
+        <p class="home-card-snippet">${escapeHtml(snippet) || '空笔记'}</p>
+        <div class="home-card-foot">
+          <span class="home-card-path">${escapeHtml(catPath(n.categoryId)) || '未分类'}</span>
+          <span class="home-card-date">${fmtDate(n.updatedAt)}</span>
+        </div>
+      </article>`;
+    }).join('');
   }
 
   /* ---------------------------------------------------------- 标签 */
@@ -1329,7 +1518,25 @@
   }
 
   const tagManageBtn = $('#tagManageBtn');
-  if (tagManageBtn) tagManageBtn.addEventListener('click', openTagManager);
+  if (tagManageBtn) tagManageBtn.addEventListener('click', (e) => { e.stopPropagation(); openTagManager(); });
+  /* 标签区可折叠：目录树是主区、标签是辅助筛选。收起状态记本机，默认收起把高度让给目录。 */
+  const tagHead = $('#tagHead');
+  const tagSection = $('#tagSection');
+  if (tagHead && tagSection) {
+    const applyTagCollapsed = (collapsed) => {
+      tagSection.classList.toggle('collapsed', collapsed);
+      tagHead.setAttribute('aria-expanded', String(!collapsed));
+    };
+    applyTagCollapsed(localStorage.getItem('sj_tag_collapsed') !== '0');
+    tagHead.addEventListener('click', () => {
+      const next = !tagSection.classList.contains('collapsed');
+      applyTagCollapsed(next);
+      try { localStorage.setItem('sj_tag_collapsed', next ? '1' : '0'); } catch (_) {}
+    });
+    tagHead.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tagHead.click(); }
+    });
+  }
 
   /* ---------------------------------------------------------- 编辑器 */
   /* -70：空白新建草稿不在 state.notes 里，编辑期间由 currentNote 直接返回。 */
@@ -2300,7 +2507,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-11-73';
+  const APP_BUILD = '2026-11-12-75';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -3848,6 +4055,8 @@
     if (note) {
       if (lpSuppress) { lpSuppress = false; e.preventDefault(); e.stopPropagation(); return; }
       e.preventDefault();
+      /* 多选态下点行 = 勾选，不打开笔记（与列表卡片的多选行为一致） */
+      if (batchMode) { toggleBatch(note.dataset.nid); return; }
       saveNow();
       openNote(note.dataset.nid);
       if (NARROW()) closeDrawer();
@@ -3892,7 +4101,8 @@
     if (row.dataset.id) {
       const id = row.dataset.id;
       const cat = state.categories.find((c) => c.id === id);
-      if (cat) { cat.expanded = true; accordion(id); }
+      /* 单击分类：只展开这一层——露出它的子分类与本级笔记，子分类不自动展开 */
+      if (cat) openOnly(id, true);
       state.selCat = id;
       renderTree();
       renderList();
@@ -4182,6 +4392,50 @@
   });
 
   $('#newNoteBtn').addEventListener('click', () => createNote());
+
+  /* 最近笔记：标题行折叠开关 + 条目点击（事件委托，重绘后不必重绑） */
+  if ($('#recentHead')) {
+    $('#recentHead').addEventListener('click', toggleRecent);
+    $('#recentHead').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRecent(); }
+    });
+  }
+  if ($('#recentList')) {
+    $('#recentList').addEventListener('click', (e) => {
+      const it = e.target.closest('.recent-item');
+      if (!it) return;
+      saveNow();
+      openNote(it.dataset.nid);
+      if (NARROW()) closeDrawer();
+    });
+  }
+
+  /* 首页卡片网格：视图切换、卡片点击（笔记→打开，文件夹→进去）、两个新建按钮 */
+  if ($('#homeTabNotes')) $('#homeTabNotes').addEventListener('click', () => { homeTab = 'notes'; renderHome(); });
+  if ($('#homeTabFolders')) $('#homeTabFolders').addEventListener('click', () => { homeTab = 'folders'; renderHome(); });
+  if ($('#homeGrid')) {
+    $('#homeGrid').addEventListener('click', (e) => {
+      const card = e.target.closest('.home-card');
+      if (!card) return;
+      if (card.dataset.cid) {
+        const id = card.dataset.cid;
+        state.selCat = id;
+        state.search = '';
+        const si = $('#searchInput'); if (si) si.value = '';
+        openOnly(id, true);
+        renderTree(); renderList(); afterPickCategory();
+        return;
+      }
+      /* 多选态下点卡片 = 勾选，和树里的行为保持一致 */
+      if (card.dataset.nid) {
+        if (batchMode) { toggleBatch(card.dataset.nid); return; }
+        saveNow(); openNote(card.dataset.nid);
+      }
+    });
+  }
+  if ($('#homeNewNote')) $('#homeNewNote').addEventListener('click', () => createNote());
+  if ($('#homeNewFolder')) $('#homeNewFolder').addEventListener('click', () => askCreateCategory(null));
+  if ($('#editorBack')) $('#editorBack').addEventListener('click', () => closeEditor());
   $('#newNoteBtn2').addEventListener('click', () => createNote());
   $('#addRootCatBtn').addEventListener('click', () => askCreateCategory(null));
   $('#collapseAllBtn').addEventListener('click', async () => {
@@ -4656,6 +4910,7 @@
        以为又没同步进来。有新速记时强制回到「全部笔记」，让它置顶可见。 */
     if (cold && !quickAdded) restoreLastCat();
 
+    applyRecentState();
     $('#statText').textContent = `${state.notes.length} 篇 · ${state.categories.length} 个类别`;
     renderTree();
     renderList();

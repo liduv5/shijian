@@ -54,7 +54,7 @@
 
   然后（手机端）：
     4. 手机浏览器打开
-       https://2118888983953637376.app.workbuddy.host/?sharecode=3J7BKHTGFD
+       https://2120533470581252096.app.workbuddy.host/?sharecode=SSYXUMSNMI
        （链接带访问令牌，整站受保护）
     5. 用同一个 QQ 邮箱收验证码登录
     6. 笔记就出现了
@@ -233,7 +233,7 @@
   Q: 手机端打开后进度条卡住、按钮点了没反应
   A: 多半是访问链接不完整（聊天工具转发时把 ?sharecode= 后面
      截掉了）。请整条复制下面的完整链接，重新打开一次：
-     https://2118888983953637376.app.workbuddy.host/?sharecode=3J7BKHTGFD
+     https://2120533470581252096.app.workbuddy.host/?sharecode=SSYXUMSNMI
      新版已能自动补访问码；若仍卡住，等几秒会出现
      「重新打开拾笺」按钮，点它即可。看到「链接不完整」
      提示页，就说明链接确实丢了参数。

@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-11-73';
+  var SWV = '2026-11-12-75';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -209,23 +209,39 @@
       <kbd>⌘K</kbd>
     </div>
 
-    <div class="tree-head">
-      <span>目录</span>
-      <div class="tree-head-actions">
-        <button class="icon-btn sm" id="collapseAllBtn" title="全部收起">
-          <svg viewBox="0 0 24 24" class="ico"><path d="M4 9l8-6 8 6M4 15l8 6 8-6"/></svg>
-        </button>
-        <button class="icon-btn sm" id="addRootCatBtn" title="新建顶层类别">
-          <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
-        </button>
+    <div class="side-body">
+      <div class="side-scroll" id="sideScroll">
+        <!-- 最近笔记：最近 6 条平铺，默认收起 -->
+        <div class="recent-section collapsed" id="recentSection">
+          <div class="tree-head recent-head" id="recentHead" role="button" tabindex="0" aria-expanded="false" title="展开 / 收起最近笔记">
+            <span class="tag-head-left">
+              <svg viewBox="0 0 24 24" class="ico tag-caret"><path d="M9 6l6 6-6 6"/></svg><span>最近笔记</span>
+            </span>
+          </div>
+          <div class="recent-list" id="recentList"></div>
+        </div>
+
+        <div class="tree-head">
+          <span>目录</span>
+          <div class="tree-head-actions">
+            <button class="icon-btn sm" id="collapseAllBtn" title="全部收起">
+              <svg viewBox="0 0 24 24" class="ico"><path d="M4 9l8-6 8 6M4 15l8 6 8-6"/></svg>
+            </button>
+            <button class="icon-btn sm" id="addRootCatBtn" title="新建顶层类别">
+              <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <nav class="tree" id="tree"></nav>
       </div>
     </div>
 
-    <nav class="tree" id="tree"></nav>
-
     <div class="tag-section" id="tagSection">
-      <div class="tree-head">
-        <span>标签</span>
+      <div class="tree-head tag-head" id="tagHead" role="button" tabindex="0" aria-expanded="true" title="收起 / 展开标签">
+        <span class="tag-head-left">
+          <svg viewBox="0 0 24 24" class="ico tag-caret"><path d="M9 6l6 6-6 6"/></svg><span>标签</span>
+        </span>
         <span class="tag-head-right">
           <span class="tag-total" id="tagTotal"></span>
           <button class="tag-manage" id="tagManageBtn" title="管理标签">管理</button>

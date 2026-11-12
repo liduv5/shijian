@@ -29,6 +29,10 @@ html[data-theme="light"] {
   --text: #22201c;
   --text-2: #6c675d;
   --text-3: #9c968a;
+  /* 分类层级色卡：中性灰阶（不换色相，色弱与深色模式都成立）。只两档：
+     一级略深，二级及更深统一——层级主要靠缩进，颜色只做轻提示 */
+  --lv-0: #3a352d;   /* 10.9:1 一级 */
+  --lv-1: #4d483f;   /*  8.2:1 二级及更深 */
   --accent: #2f6f5e;
   --accent-hover: #255a4c;
   --accent-soft: rgba(47, 111, 94, .10);
@@ -52,6 +56,9 @@ html[data-theme="dark"] {
   --text: #e9e6e0;
   --text-2: #a3a7a3;
   --text-3: #767c78;
+  /* 深色主题同理：一级略亮，二级及更深统一 */
+  --lv-0: #d8d3ca;   /* 12.2:1 */
+  --lv-1: #beb9af;   /*  9.3:1 */
   --accent: #63b79d;
   --accent-hover: #7cc9b0;
   --accent-soft: rgba(99, 183, 157, .12);
@@ -176,8 +183,11 @@ body:not(.nav-sb-collapse):not(.nav-list-collapse) .nav-resume { display: none; 
 @media (min-width: 981px) {
   .list-pane { display: none !important; }
   .divider.div2 { display: none !important; }
-  .app { grid-template-columns: var(--sidebar-w) var(--div1) 0px 0px 1fr !important; }
-  body.nav-sb-collapse .app { grid-template-columns: 0px var(--div1) 0px 0px 1fr !important; }
+  /* 列表栏 + 它的分隔条一起隐藏后，.app 里只剩「侧栏 / div1 / 编辑区」3 个网格项。
+     列数必须同步降到 3 列：否则编辑区会落进原来给列表栏预留的 0px 轨道，
+     宽度被压到 0、内容按 min-content 溢出——空态看着偏左、笔记正文被挤成竖排。 */
+  .app { grid-template-columns: var(--sidebar-w) var(--div1) 1fr !important; }
+  body.nav-sb-collapse .app { grid-template-columns: 0px var(--div1) 1fr !important; }
 }
 
 /* 拖拽时禁用过渡，避免跟手迟滞 */
@@ -194,26 +204,26 @@ body:not(.nav-sb-collapse):not(.nav-list-collapse) .nav-resume { display: none; 
   background: var(--bg);
   border-right: 1px solid var(--border);
   min-height: 0;
-  padding: 14px 10px 10px;
+  padding: 12px 10px 8px;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 2px 6px 15px;
+  padding: 2px 6px 10px;
 }
 
 /* 朱砂小印：比原来的渐变色块更贴合「笺」的气质 */
 .logo {
-  width: 36px; height: 36px;
-  border-radius: 9px;
+  width: 32px; height: 32px;
+  border-radius: 8px;
   background: linear-gradient(150deg, #c25b41, #a8412c);
   color: #fff;
   display: grid;
   place-items: center;
   font-family: var(--font-brand);
-  font-size: 22px;
+  font-size: 20px;
   line-height: 1;
   padding-bottom: 2px;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .38),
@@ -284,9 +294,9 @@ html[data-theme="dark"] .ico-moon { display: none; }
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 34px;
+  height: 32px;
   padding: 0 9px;
-  margin: 0 2px 14px;
+  margin: 0 2px 10px;
   background: var(--surface-2);
   border: 1px solid transparent;
   border-radius: var(--r-sm);
@@ -314,7 +324,7 @@ html[data-theme="dark"] .ico-moon { display: none; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 4px 6px 10px;
+  padding: 0 4px 5px 10px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: .1em;
@@ -332,11 +342,95 @@ html[data-theme="dark"] .ico-moon { display: none; }
   margin: 0 -2px;
 }
 
+/* 侧栏中段：最近笔记 + 目录树共用**一个**滚动区。
+   这样新增的「最近笔记」不是又一块吃掉目录高度的固定块——两者一起滚，
+   目录的可视高度只由标签区与底部工具行决定（上一轮刚抢回来的那 55%）。 */
+.side-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.side-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+/* 滚动交给外层容器，树自己不再单独滚，否则会出现两条滚动条 */
+.side-scroll > .tree { flex: none; overflow: visible; }
+
+/* 目录头与最近笔记之间加一道细线，两段式结构才看得出来（recent-head 在
+   .recent-section 里，不是 side-scroll 的直接子节点，所以不会误伤） */
+.side-scroll > .tree-head { border-top: 1px solid var(--border); margin-top: 3px; padding-top: 6px; }
+
+/* 最近笔记：仿 LumiNote，每行「文档图标 + 标题 + 右侧日期」，默认收起 */
+.recent-head { cursor: pointer; }
+.recent-head .tag-caret { transition: transform .18s var(--ease); }
+.recent-section:not(.collapsed) .recent-head .tag-caret { transform: rotate(90deg); }
+.recent-section.collapsed .recent-head .tag-caret { transform: rotate(0deg); }
+.recent-section.collapsed .recent-list { display: none; }
+.recent-list { padding: 2px 0 6px; }
+.recent-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 8px 0 6px;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  user-select: none;
+  transition: background .13s, color .13s;
+}
+.recent-item:hover { background: var(--surface-2); color: var(--text); }
+.recent-item.active { background: var(--accent-soft); color: var(--accent); }
+.recent-ico { width: 13px; height: 13px; flex: none; color: var(--text-3); }
+.recent-item.active .recent-ico { color: var(--accent); }
+.recent-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-date {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 树底悬停信息条：日期 / 标签贴在侧栏中段底部一行，绝对定位不占布局高度；
+   上方一层渐变把「最后一行被切一半」的断口糊掉，看起来像内容还在继续。 */
+.tree-meta {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 5px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-3);
+  background: linear-gradient(to bottom, transparent, var(--bg) 58%);
+  opacity: 0;
+  transition: opacity .12s;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.tree-meta.on { opacity: 1; }
+.tree-meta-date { flex: none; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.tree-meta-tags { overflow: hidden; text-overflow: ellipsis; }
+
 .tree-row {
   display: flex;
   align-items: center;
   gap: 5px;
-  height: 31px;
+  height: 34px;
   padding-right: 4px;
   border-radius: var(--r-sm);
   cursor: pointer;
@@ -345,6 +439,8 @@ html[data-theme="dark"] .ico-moon { display: none; }
   user-select: none;
   transition: background .13s, color .13s;
 }
+/* 一级目录组之间拉开一档，形成「大类 > 子目录 > 笔记」的宏观分区 */
+#tree > .tree-row[data-depth="0"] ~ .tree-row[data-depth="0"] { margin-top: 6px; }
 .tree-row:hover { background: var(--surface-2); color: var(--text); }
 .tree-row.active {
   background: var(--accent-soft);
@@ -371,14 +467,34 @@ html[data-theme="dark"] .ico-moon { display: none; }
 .tree-row.collapsed .caret { transform: rotate(-90deg); }
 .caret.leaf { visibility: hidden; }
 
+/* 树里的层级表达：极简。缩进是主力（JS 行内每层 18px），颜色只做轻提示。
+   分类只分两档——一级略深，二级及更深统一一档；不加粗、不描边、不逐层变色，
+   字号统一 13.5px。这样整栏干净，层级靠缩进一眼可读。 */
 .tree-label {
   flex: 1;
   min-width: 0;
   font-size: 13.5px;
+  font-weight: 500;
+  color: var(--lv-1);
+  letter-spacing: .01em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 主入口（全部笔记/收藏/未分类）是导航里唯一大一档的标题 */
+.tree-row[data-pseudo] > .tree-label { font-size: 14px; font-weight: 650; color: var(--text); letter-spacing: .012em; }
+/* 分类行的文件夹图标：和笔记行的圆点形成最直接的一眼区分（照 LumiNote） */
+.tree-label > .tree-folder {
+  width: 13px; height: 13px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  color: #d8a340;
+}
+/* 一级分类比二级深一点点，仅此一档差异 */
+.tree-row[data-depth="0"] > .tree-label { font-weight: 600; color: var(--lv-0); }
+/* 选中态：压过上面的层级色卡（特异性同档，靠位置在后生效） */
+.tree-row.active[data-id] > .tree-label,
+.tree-row.active[data-pseudo] > .tree-label { color: var(--accent); }
 
 .tree-count {
   font-size: 10.5px;
@@ -422,12 +538,32 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
   cursor: pointer;
   color: var(--text-2);
   user-select: none;
+  position: relative;
   transition: background .13s, color .13s;
 }
 .tree-note:hover { background: var(--surface-2); color: var(--text); }
 .tree-note.active { background: var(--accent-soft); color: var(--accent); }
 .tree-note.active .tree-note-name { color: var(--accent); font-weight: 600; }
 .tree-note.pressed { background: var(--surface-3); }
+/* 多选整理：勾选框常驻 DOM，只在 .tree.batch-mode 时显形。绝对定位落在
+   缩进留出的左侧圆点栏里，因此不改变任何一行的缩进与行高。 */
+.tree-note-check {
+  display: none;
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.tree.batch-mode .tree-note-check { display: block; }
+/* 多选态下勾选框替掉了行首圆点，避免「方框 + 圆点」两个标记挤在一起 */
+.tree.batch-mode .tree-note-dot { display: none; }
+.tree-note.selected { background: var(--accent-soft); }
+.tree-note.selected .tree-note-name { color: var(--accent); }
 .tree-note-dot {
   width: 5px; height: 5px; border-radius: 50%;
   background: var(--text-3); flex: none; opacity: .8;
@@ -439,7 +575,9 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
 }
 .tree-note-title svg { width: 12px; height: 12px; color: var(--accent); flex: none; }
 .tree-note-name {
-  font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13px;
+  font-weight: 400;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tree-note-meta {
   display: flex; align-items: center; gap: 7px; flex: none;
@@ -467,7 +605,7 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
-  padding-top: 10px;
+  padding-top: 8px;
   border-top: 1px solid var(--border);
   margin-top: 2px;
 }
@@ -484,13 +622,13 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 2px;
   min-width: 0;
-  height: 50px;
+  height: 40px;
   border-radius: 9px;
   background: var(--surface-2);
   color: var(--text-2);
-  font-size: 10.5px;
+  font-size: 10px;
   line-height: 1;
   letter-spacing: .04em;
   transition: background .16s var(--ease), color .16s var(--ease), transform .1s;
@@ -526,6 +664,104 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
 .btn.soft:hover { background: var(--surface-3); color: var(--text); }
 .btn.danger { background: var(--danger); color: #fff; }
 .btn.danger:hover { filter: brightness(1.08); }
+.btn.sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+
+/* ============================================================ 首页卡片网格 */
+/* 没打开笔记时占据主区：上面是「笔记 / 文件夹」两个视图，下面是卡片网格。
+   数据全从 state 现算，和侧栏树、列表共用同一份 filter，不额外存状态。 */
+.home {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.home-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px 10px;
+  flex: none;
+}
+.home-tabs {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.home-tab {
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  transition: background .14s, color .14s;
+}
+.home-tab:hover { color: var(--text); }
+.home-tab.on { background: var(--surface); color: var(--text); font-weight: 600; }
+.home-acts { margin-left: auto; display: flex; gap: 8px; }
+.home-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(238px, 1fr));
+  align-content: start;
+  padding: 2px 22px 26px;
+}
+.home-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 116px;
+  padding: 13px 14px 11px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color .14s, box-shadow .14s, background .14s, transform .1s;
+}
+.home-card:hover { border-color: var(--accent-line); background: var(--surface); box-shadow: 0 6px 18px rgba(0, 0, 0, .06); }
+.home-card:active { transform: translateY(1px); }
+.home-card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 0;
+}
+.home-card-title svg { width: 14px; height: 14px; flex: none; color: var(--text-3); }
+.home-card-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-card.folder .home-card-title svg { color: #d8a340; }
+.home-card-snippet {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-3);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.home-card-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.home-card-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-card-date { flex: none; font-variant-numeric: tabular-nums; }
+.home-empty { padding: 44px 6px; font-size: 12.5px; line-height: 1.8; color: var(--text-3); }
+/* 编辑区左上返回：回到首页网格（窄屏本来就靠抽屉返回，这里也一并显示） */
+.editor-back { margin-left: -6px; color: var(--text-3); }
+.editor-back:hover { color: var(--text); }
 
 /* ============================================================ 列表 */
 .list-pane {
@@ -1376,8 +1612,16 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   min-height: 0;
   border-top: 1px solid var(--border);
   margin-top: 5px;
-  padding: 8px 0 10px;
+  padding: 6px 0 8px;
 }
+/* 标签区可折叠：点标题行收起，高度整块让给目录树（目录是主区，标签是辅助筛选） */
+.tag-head { cursor: pointer; user-select: none; padding-left: 6px; }
+.tag-head:hover { color: var(--text-2); }
+.tag-head-left { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.tag-caret { width: 12px; height: 12px; flex: none; transform: rotate(90deg); transition: transform .16s var(--ease); }
+.tag-section.collapsed { padding: 8px 0 3px; }
+.tag-section.collapsed .tag-caret { transform: rotate(0deg); }
+.tag-section.collapsed .tag-cloud { display: none; }
 .tag-total { font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .tag-cloud {
   display: flex;
@@ -2118,6 +2362,22 @@ img.sj-img-picked {
 .sj-batch-bar #sjBatchCount { margin-right: 4px; font-weight: 600; color: var(--accent); }
 .sj-batch-bar .btn { padding: 3px 8px; font-size: 11.5px; }
 .sj-batch-bar .btn.danger { background: transparent; color: var(--danger); border-color: var(--danger); }
+/* 宽屏批量条：桌面端列表栏整栏隐藏，改浮在编辑区底部居中。
+   只在多选模式下出现，退出即消失，不动任何既有布局。 */
+.sj-batch-bar.float {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 7px 10px 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .16);
+  flex-wrap: nowrap;
+  z-index: 40;
+}
 .sj-batch-form { padding: 14px 18px 4px; }
 .sj-batch-form .modal-actions { margin-top: 14px; }
 

@@ -94,7 +94,7 @@
   const SC = 'SSYXUMSNMI';
   /* 必须写到主程序的正式入口：相对路径会留在随手记自己的存储分区里。
      换分享链接域名时，这里和 SC 一起改。 */
-  const MAIN = 'https://2118888983953637376.app.workbuddy.host/?sharecode=' + SC + '&fs=pwa';
+  const MAIN = 'https://2120533470581252096.app.workbuddy.host/?sharecode=' + SC + '&fs=pwa';
   /* 桌面快捷方式专用地址：必须带 from=desk，普通网页快捷方式与主程序
      同一套数据，独立安装的窗口则靠 window.open 跳回浏览器主窗口。 */
   const DESK_URL = location.origin + '/quick.html?sharecode=' + SC + '&from=desk';
@@ -367,7 +367,7 @@
    安装，每次打开主程序都触发 controllerchange → 整页自动刷新。 */
 (function () {
   if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
-  var SWV = '2026-11-11-73';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
+  var SWV = '2026-11-12-75';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
   var sc = new URLSearchParams(location.search).get('sharecode') || 'SSYXUMSNMI';
   var url = '/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SWV;
   navigator.serviceWorker.getRegistration().then(function (reg) {
