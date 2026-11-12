@@ -12,7 +12,8 @@
   --r-sm: 7px;
   --r-md: 10px;
   --r-lg: 14px;
-  --sidebar-w: 268px;
+  /* 320 = 原来 268 的内容区 + 52 的图标栏，内容区宽度与加栏前一致 */
+  --sidebar-w: 320px;
   --list-w: 312px;
   --div1: 0px;   /* 侧栏 | 列表 可拖拽分隔条（默认 0，无间隙；hover 跨缝抓取区） */
   --div2: 0px;   /* 列表 | 编辑 可拖拽分隔条 */
@@ -198,14 +199,113 @@ body:not(.nav-sb-collapse):not(.nav-list-collapse) .nav-resume { display: none; 
 .brand:hover .nav-collapse-sb, .list-head:hover .nav-collapse-list { display: inline-flex; }
 
 /* ============================================================ 侧边栏 */
+/* 侧栏现在是「图标栏 + 内容区」两列：左边 52px 竖排图标，右边原来的
+   brand / 搜索 / 最近笔记 / 目录 / 标签。padding 从 .sidebar 挪到 .sb-main，
+   否则图标栏会被 padding 顶离边缘、竖线画不直。 */
 .sidebar {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   background: var(--bg);
   border-right: 1px solid var(--border);
   min-height: 0;
+  padding: 0;
+}
+.sb-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   padding: 12px 10px 8px;
 }
+
+/* 图标栏：新建在最上（唯一带底色的主按钮），工具组次之，主题沉底。
+   原来这五个按钮在侧栏底部占两行 91px，竖排后全部还给了目录树。 */
+.sb-rail {
+  flex: none;
+  width: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 0 10px;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+}
+.rail-btn {
+  position: relative;
+  width: 32px; height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--text-2);
+  transition: background .16s var(--ease), color .16s var(--ease), transform .1s;
+}
+.rail-btn svg.ico { width: 17px; height: 17px; stroke-width: 1.6; }
+/* 悬停底色走半透明，不用 --surface-2 的实色块：实色在浅底上像一块补丁，
+   尤其叠在图标栏的纯底上边缘很明显。 */
+.rail-btn:hover { background: rgba(60, 52, 40, .07); color: var(--text); }
+html[data-theme="dark"] .rail-btn:hover { background: rgba(255, 255, 255, .09); }
+.rail-btn:active { transform: translateY(1px); }
+
+/* 悬停提示：自绘。原来靠原生 title，那是系统画的带边框白框，改不了样式；
+   这里换成 data-tip + 伪元素，圆角、无边框、半透明，还能控制出现节奏。 */
+.rail-btn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 9px);
+  top: 50%;
+  z-index: 60;
+  width: max-content;
+  max-width: 190px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  border: 0;
+  background: rgba(28, 25, 21, .72);
+  color: #fff;
+  font-size: 11.5px;
+  line-height: 1.35;
+  letter-spacing: .02em;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-3px, -50%);
+  transition: opacity .14s var(--ease), transform .14s var(--ease);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, .5);
+}
+.rail-btn[data-tip]:hover::after,
+.rail-btn[data-tip]:focus-visible::after {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+/* 深色底上用浅色半透明，反着来是为了对比度；一样无边框 */
+html[data-theme="dark"] .rail-btn[data-tip]::after {
+  background: rgba(243, 240, 235, .88);
+  color: #1c1a17;
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, .8);
+}
+/* 新建：整条栏里唯一的实心色块，位置固定在最上，不跟工具混在一起 */
+.rail-new {
+  width: 34px; height: 34px;
+  border-radius: 11px;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 12px -4px rgba(176, 73, 50, .55);
+}
+.rail-new:hover { background: var(--accent); color: #fff; filter: brightness(1.06); }
+.rail-new svg.ico { width: 19px; height: 19px; stroke-width: 2; }
+.rail-sep {
+  width: 20px;
+  height: 1px;
+  flex: none;
+  margin: 2px 0;
+  background: var(--border);
+}
+.rail-grow { flex: 1; }
+.rail-label { display: none; }
 
 .brand {
   display: flex;
@@ -599,43 +699,8 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   color: var(--text-3);
 }
 
-/* 底部：主按钮独占一行，四个工具格等宽排第二行。
-   v1.7 加入「更多工具」后，一行挤五个按钮会把「新建笔记」压成两行，故改网格。 */
-.sidebar-foot {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-  margin-top: 2px;
-}
-.sidebar-foot > .btn.block {
-  grid-column: 1 / -1;
-  width: 100%;
-  height: 36px;
-  font-size: 13px;
-  letter-spacing: .06em;
-  white-space: nowrap;
-}
-.foot-tool {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  min-width: 0;
-  height: 40px;
-  border-radius: 9px;
-  background: var(--surface-2);
-  color: var(--text-2);
-  font-size: 10px;
-  line-height: 1;
-  letter-spacing: .04em;
-  transition: background .16s var(--ease), color .16s var(--ease), transform .1s;
-}
-.foot-tool svg.ico { width: 17px; height: 17px; stroke-width: 1.6; }
-.foot-tool:hover { background: var(--accent-soft); color: var(--accent); }
-.foot-tool:active { transform: translateY(1px); }
+/* 底部那两行按钮已并入 .sb-rail（新建/导入/导出/同步/主题），这块不再使用。
+   留着会误导后来人以为还要往里加按钮，直接删。 */
 
 .btn {
   display: inline-flex;
@@ -1857,7 +1922,7 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
 
 /* ============================================================ 响应式 */
 @media (max-width: 1180px) {
-  :root { --sidebar-w: 238px; --list-w: 268px; }
+  :root { --sidebar-w: 290px; --list-w: 268px; }
   .editor-head { padding-left: 24px; padding-right: 16px; }
   .meta-row, .toolbar { padding-left: 24px; padding-right: 16px; }
   #mdInput { padding-left: 24px; padding-right: 20px; }
@@ -1917,6 +1982,34 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   .list-pane { width: min(92vw, 380px); }
   body.m-tree .sidebar,
   body.m-list .list-pane { transform: translateX(0); }
+
+  /* 抽屉里横不开一条竖栏：图标栏翻到底部变成一横条，新建按钮带文字并加宽，
+     其余四个图标等分。手机端因此仍保有一个大点击区的「新建」。 */
+  .sidebar { flex-direction: column; }
+  .sb-main { order: 1; }
+  .sb-rail {
+    order: 2;
+    width: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    border-right: 0;
+    border-top: 1px solid var(--border);
+  }
+  .rail-sep, .rail-grow { display: none; }
+  .rail-btn { flex: 1; width: auto; height: 40px; }
+  .rail-btn[data-tip]::after { display: none; }
+  .rail-new {
+    flex: 1.7;
+    width: auto; height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: 10px;
+  }
+  .rail-new .rail-label { display: inline; font-size: 12.5px; letter-spacing: .04em; }
 
   .m-mask {
     display: block;

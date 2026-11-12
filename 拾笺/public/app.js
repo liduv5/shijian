@@ -3769,15 +3769,24 @@
   ============================================================ */
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
   const NAV_K = 'sj_nav', W_SB_K = 'sj_sidebar_w', W_LIST_K = 'sj_list_w';
-  const SB_MIN = 180, SB_MAX = 460, LIST_MIN = 220, LIST_MAX = 560;
+  /* 侧栏最小 232 = 图标栏 52 + 原来 180 的内容区，保证目录别被压到没法看 */
+  const SB_MIN = 232, SB_MAX = 460, LIST_MIN = 220, LIST_MAX = 560;
 
   function navLoad() {
     let c = { sb: false, list: false };
     try { c = Object.assign(c, JSON.parse(localStorage.getItem(NAV_K) || '{}')); } catch (_) {}
     const app = document.querySelector('.app');
-    const sb = clamp(parseInt(localStorage.getItem(W_SB_K)) || 268, SB_MIN, SB_MAX);
+    let sbW = clamp(parseInt(localStorage.getItem(W_SB_K)) || 320, SB_MIN, SB_MAX);
+    /* 侧栏加图标栏后，旧存档里的宽度（多半是 268 这个老默认）会让内容区凭空
+       窄掉 52px。只迁移一次：把窄于 320 的旧值抬到 320，之后尊重用户自己拖的值。 */
+    try {
+      if (!localStorage.getItem('sj_rail_v1')) {
+        localStorage.setItem('sj_rail_v1', '1');
+        if (sbW < 320) sbW = 320;
+      }
+    } catch (_) {}
     const lw = clamp(parseInt(localStorage.getItem(W_LIST_K)) || 312, LIST_MIN, LIST_MAX);
-    app.style.setProperty('--sidebar-w', sb + 'px');
+    app.style.setProperty('--sidebar-w', sbW + 'px');
     app.style.setProperty('--list-w', lw + 'px');
     document.body.classList.toggle('nav-sb-collapse', !!c.sb);
     document.body.classList.toggle('nav-list-collapse', !!c.list);
@@ -3807,7 +3816,7 @@
       const [min, max] = navBounds(which);
       const startX = e.clientX;
       const startW = clamp(
-        parseInt(getComputedStyle(app).getPropertyValue(varn)) || (which === 'sb' ? 268 : 312),
+        parseInt(getComputedStyle(app).getPropertyValue(varn)) || (which === 'sb' ? 320 : 312),
         min, max
       );
       app.classList.add('nav-dragging');
@@ -3819,7 +3828,7 @@
         document.removeEventListener('pointermove', move);
         document.removeEventListener('pointerup', up);
         app.classList.remove('nav-dragging');
-        const w = parseInt(getComputedStyle(app).getPropertyValue(varn)) || (which === 'sb' ? 268 : 312);
+        const w = parseInt(getComputedStyle(app).getPropertyValue(varn)) || (which === 'sb' ? 320 : 312);
         try { localStorage.setItem(wkey, String(w)); } catch (_) {}
       };
       document.addEventListener('pointermove', move);

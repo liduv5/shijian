@@ -96,7 +96,7 @@
       '<div class="sjplus-menu">' +
       '<button data-act="trash"><b>回收站</b><span>删除的笔记保留 30 天' + (count ? ' · ' + count + ' 篇' : '') + '</span></button>' +
       '<button data-act="review"><b>翻一条旧笔记</b><span>随机重看一篇以前写的</span></button>' +
-      '<button data-act="md"><b>导出整本 Markdown</b><span>每篇一个 .md，图片放 files/，打包 zip</span></button>' +
+      '<button data-act="md"><b>导出 Markdown 包</b><span>每篇一个 .md，图片放 files/，打包 zip，不能导入回来</span></button>' +
       '</div>' +
       '<div class="modal-actions"><button class="btn ghost" data-act="close">关闭</button></div>',
       (act, el, ctx) => {
@@ -412,17 +412,31 @@
   };
 
   /* ---------------------------------------------------------- 入口 */
+  /* 侧栏底部工具行已并入 .sb-rail（竖排图标栏），「更多工具」跟着改成 rail 图标，
+     排在主题按钮之前——正好是参考图底部「魔法棒 + 设置」那两位。老结构仍兼容。 */
   function mount() {
+    const rail = document.querySelector('.sb-rail');
     const foot = document.querySelector('.sidebar-foot');
-    if (!foot || $('#sjPlusToolsBtn')) return;
+    if ((!rail && !foot) || $('#sjPlusToolsBtn')) return;
     const btn = document.createElement('button');
-    btn.className = 'foot-tool';
     btn.id = 'sjPlusToolsBtn';
-    btn.title = '更多工具：回收站 / 翻旧笔记 / 导出 Markdown';
-    btn.setAttribute('aria-label', btn.title);
-    btn.innerHTML = '<svg viewBox="0 0 24 24" class="ico"><circle cx="8.5" cy="8.5" r="1.6"/><circle cx="15.5" cy="8.5" r="1.6"/><circle cx="8.5" cy="15.5" r="1.6"/><circle cx="15.5" cy="15.5" r="1.6"/></svg><span>更多</span>';
+    /* 提示走自绘 data-tip，不用原生 title —— 原生 tooltip 是带边框的白框，
+       改不了样式，与图标栏的圆角半透明提示不搭。 */
+    const tipLong = '更多工具：回收站 / 翻旧笔记 / 导出 Markdown';
+    btn.setAttribute('aria-label', tipLong);
+    const ico = '<svg viewBox="0 0 24 24" class="ico"><circle cx="8.5" cy="8.5" r="1.6"/><circle cx="15.5" cy="8.5" r="1.6"/><circle cx="8.5" cy="15.5" r="1.6"/><circle cx="15.5" cy="15.5" r="1.6"/></svg>';
+    if (rail) {
+      btn.className = 'rail-btn';
+      btn.dataset.tip = '更多工具';
+      btn.innerHTML = ico;
+      rail.insertBefore(btn, rail.querySelector('#themeBtn') || null);
+    } else {
+      btn.className = 'foot-tool';
+      btn.title = tipLong;
+      btn.innerHTML = ico + '<span>更多</span>';
+      foot.insertBefore(btn, foot.querySelector('#importInput') || null);
+    }
     btn.onclick = openMenu;
-    foot.insertBefore(btn, foot.querySelector('#importInput') || null);
     bindHighlight();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);

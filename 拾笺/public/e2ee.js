@@ -4,7 +4,8 @@
    因此落地为「口令保护的加密备份（.vault）」：整库导出为一个
    必须输入口令才能解开的加密文件，可安全放到网盘 / 邮件。
    导入时本地用口令解密后还原为普通备份再汇入。不触碰任何实时数据，零风险。
-   用法：点侧栏品牌行右侧的 🔒 按钮打开面板。
+   用法：点侧栏左侧图标栏的 🔒 按钮（导入 / 导出 / 同步下方）打开面板；
+   笔记右上角导出菜单里也有同一入口。
    ============================================================ */
 (function () {
   'use strict';
@@ -128,17 +129,32 @@
     });
   }
 
+  /* 加密备份入口：优先挂进左侧图标栏，排在「同步」后面——
+     导入 / 导出 / 加密备份 / 同步 本来就是同一组备份动作。
+     图标栏不存在时才回落到品牌行右侧，老结构也能用。 */
   function mountButton() {
-    var brand = document.querySelector('.brand');
+    if (document.getElementById('e2eeBtn')) return;
+    var rail = document.querySelector('.sb-rail');
     var theme = document.getElementById('themeBtn');
-    if (!brand || document.getElementById('e2eeBtn')) return;
     var b = document.createElement('button');
-    b.className = 'icon-btn';
     b.id = 'e2eeBtn';
-    b.title = '加密备份（端到端加密）';
-    b.innerHTML = '<svg viewBox="0 0 24 24" class="ico"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
-    if (theme && theme.parentNode === brand) brand.insertBefore(b, theme);
-    else brand.appendChild(b);
+    b.innerHTML = '<svg viewBox="0 0 24 24" class="ico"><rect x="4.6" y="10.8" width="14.8" height="9.4" rx="2.5"/><path d="M7.9 10.8V7.9a4.1 4.1 0 0 1 8.2 0v2.9"/></svg>';
+    if (rail) {
+      b.className = 'rail-btn';
+      /* 图标栏的提示统一走 data-tip（原生 title 是带边框白框，改不了样式） */
+      b.dataset.tip = '加密备份';
+      b.setAttribute('aria-label', '加密备份（端到端加密）');
+      var sync = rail.querySelector('#syncBtn');
+      if (sync) rail.insertBefore(b, sync.nextSibling);
+      else rail.insertBefore(b, theme || null);
+    } else {
+      var brand = document.querySelector('.brand');
+      if (!brand) return;
+      b.className = 'icon-btn';
+      b.title = '加密备份（端到端加密）';
+      if (theme && theme.parentNode === brand) brand.insertBefore(b, theme);
+      else brand.appendChild(b);
+    }
     b.addEventListener('click', openPanel);
   }
 
