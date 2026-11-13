@@ -165,13 +165,17 @@
     var text;
     try { text = await file.text(); } catch (_) { return toast && toast('无法读取文件'); }
     var m = window.openModal(
-      '<div class="hist-head"><div><h3>导入加密备份</h3><p>' + escapeHtml(file.name) + '</p></div>' +
+      '<div class="hist-head"><div><h3>导入加密备份</h3><p id="ivFileName"></p></div>' +
       '<button class="icon-btn" data-act="close" title="关闭">✕</button></div>' +
       '<div class="e2ee-body">' +
       '<div class="e2ee-row"><input type="password" id="ivPass" class="tag-input" placeholder="输入加密口令" style="width:100%"></div>' +
       '<div class="e2ee-row"><button class="btn primary block" id="ivGo">解密并汇入</button></div>' +
       '<div id="ivMsg" class="e2ee-msg"></div></div>');
     m.classList.add('wide');
+    /* 文件名走 textContent：本模块是独立 IIFE，没有 escapeHtml（其余 12 个模块各自定义
+       的是局部函数），直接拼接会抛 ReferenceError 让弹窗打不开；用 textContent 既修掉
+       崩溃，也从根上免疫转义遗漏，不再新增第 13 份重复实现。 */
+    m.querySelector('#ivFileName').textContent = file.name;
     m.querySelector('[data-act="close"]').addEventListener('click', window.closeModal);
     var msg = function (t, ok) { var e = m.querySelector('#ivMsg'); e.textContent = t; e.style.color = ok ? '#2f6f5e' : '#c0392b'; };
     m.querySelector('#ivGo').addEventListener('click', async function () {

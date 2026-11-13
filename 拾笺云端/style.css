@@ -633,6 +633,7 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   border-radius: var(--r-sm);
   font-size: 13px;
   font-weight: 550;
+  white-space: nowrap;          /* 按钮文字一律不折行（「恢复此版本」曾被挤成两行） */
   transition: background .16s, color .16s, box-shadow .16s, transform .1s;
 }
 .btn svg.ico { width: 15px; height: 15px; }
@@ -1224,6 +1225,40 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
 .att-act.del:hover { color: var(--danger); background: rgba(192,68,47,.08); }
 .att-act svg { width: 13px; height: 13px; }
 
+/* 全局悬停提示：与图标栏的 .rail-btn[data-tip] 同一套视觉（深色半透明、圆角、
+   无边框），只是做成挂在 body 上的浮层——附件面板 overflow-y:auto，伪元素会
+   被面板边缘裁掉。原生 title 的带黑框白底方块一律不用。 */
+.sj-tip {
+  position: fixed;
+  left: 0; top: 0;
+  z-index: 700;
+  width: max-content;
+  max-width: 260px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  border: 0;
+  background: rgba(28, 25, 21, .72);
+  color: #fff;
+  font-size: 11.5px;
+  line-height: 1.35;
+  letter-spacing: .02em;
+  white-space: normal;
+  word-break: break-all;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity .14s var(--ease), transform .14s var(--ease);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, .5);
+}
+.sj-tip.on { opacity: 1; transform: translateY(0); }
+html[data-theme="dark"] .sj-tip {
+  background: rgba(243, 240, 235, .88);
+  color: #1c1a17;
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, .8);
+}
+
 /* 触屏没有 hover：附件操作按钮必须常显且不能靠半透明渐变盖住文件名，
    否则手机上根本看不到「下载」入口（点了也以为没反应）。 */
 @media (hover: none) {
@@ -1253,8 +1288,13 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   z-index: 9100;
   background: rgba(10, 12, 11, .95);
   display: grid;
+  /* 轨道必须显式成 minmax(0,1fr)：place-items 只在确定尺寸的轨道里成立，
+     否则 img 的 max-width:100% 遇到 auto 轨道会循环依赖失效，大图按原尺寸溢出视口。 */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   place-items: center;
-  padding: 14px;
+  overflow: hidden;
+  padding: 14px 14px 92px;   /* 下方留给「下载原图」和提示，别压在亮图上 */
   animation: fade .14s;
 }
 .att-view img {
@@ -1272,21 +1312,18 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   font-size: 12px;
   pointer-events: none;
 }
-/* 触屏设备上提示是唯一的操作指引，做得更醒目一点，别让人找不到怎么存 */
+/* 触屏上这里只留一行小字「点空白关闭」。
+   曾经做成半透明胶囊写「长按图片保存 · 点空白关闭」，但上方已经有一个可点的
+   「下载原图」按钮，两个都在教怎么存文件 —— 语义重复，而且胶囊贴近底部、
+   与按钮在 40~52px 区间直接压在一起（用户 18:41 反馈「重复且相互遮挡」）。
+   「长按图片保存」这条保底路径没有丢：它挪到了下载发起失败时的 toast 里
+   （见 app.js 的「没出现下载就长按图片保存」），只在真的需要时才出现。 */
 @media (hover: none) {
   .att-view-tip {
-    font-size: 13px;
+    font-size: 12.5px;
     padding: 0 18px;
-    color: rgba(255, 255, 255, .92);
-  }
-  .att-view-tip span {
-    display: inline-block;
-    padding: 8px 14px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, .14);
-    border: 1px solid rgba(255, 255, 255, .2);
-    backdrop-filter: blur(6px);
-    line-height: 1.5;
+    color: rgba(255, 255, 255, .72);
+    text-wrap: balance;
   }
   /* -17 曾在这里隐藏下载按钮，前提是「触屏＝下载没法用」。现在按钮跳的是
      SW 的同源下载通道（浏览器认这个形态），触屏一样能落盘，所以不再隐藏。
@@ -1301,7 +1338,10 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
 /* 大图里的「下载原图」：给支持原生下载的环境用；手机上长按图片那条路更稳。 */
 .att-view-dl {
   position: absolute;
-  left: 50%; bottom: 40px;
+  /* 54px：按钮高约 33px，占 54~87；提示在 16~34。两者之间留 20px 空隙。
+     原来是 40px，按钮占 40~73、提示占 16~52 —— 正好在 40~52 压在一起
+     （用户 18:41 反馈「两个提示框相互遮挡」）。 */
+  left: 50%; bottom: 54px;
   transform: translateX(-50%);
   padding: 7px 16px;
   border-radius: 999px;
@@ -1656,6 +1696,7 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   flex: none;
 }
 .hist-foot span { font-size: 11.5px; color: var(--text-3); }
+.hist-foot .btn { flex: none; }          /* 固定按钮宽度，不被左侧说明文字挤窄 */
 .hist-foot .btn:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ============================================================ 打印 */
@@ -1796,48 +1837,36 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   .m-bar .icon-btn.m-quick .ico { width: 18px; height: 18px; }
   .m-quick-label { font-size: 11.5px; font-weight: 600; white-space: nowrap; }
   @media (max-width: 360px) { .m-quick-label { display: none; } }
-  /* 顶栏品牌区：与宽屏 .brand 同款（朱砂方块 + 书法体拾笺 + 朱点），
-     尺寸按 52px 顶栏等比缩小。位置信息不再放这里，见 app.js syncBarTitle。 */
+  /* 顶栏中间放「当前位置」，与桌面端 style.css 的 .m-bar-title 同款。
+     不用品牌字体：书法体在 18px 下笔画糊，而且长标题要靠系统字体的省略号表现。 */
   .m-bar-title {
-    flex: 1; min-width: 0;
-    display: flex; align-items: center; justify-content: center; gap: 7px;
-    color: var(--text);
-    white-space: nowrap; overflow: hidden;
-    -webkit-user-select: none; user-select: none;
+    flex: 1; min-width: 0; text-align: center;
+    font-family: "Microsoft YaHei", "微软雅黑", "PingFang SC", "HarmonyOS Sans SC",
+                 "Noto Sans CJK SC", "Source Han Sans SC", "Heiti SC", Arial, sans-serif;
+    font-size: 18px; font-weight: 600;
+    letter-spacing: .04em; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .m-bar-title .m-logo {
-    width: 26px; height: 26px; border-radius: 7px;
-    background: linear-gradient(150deg, #c25b41, #a8412c);
-    color: #fff;
-    display: grid; place-items: center;
-    font-family: var(--font-brand);
-    font-size: 17px; line-height: 1; padding-bottom: 1px;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .38),
-                0 2px 6px -3px rgba(168, 65, 44, .7);
-    flex: none;
-  }
-  html[data-theme="dark"] .m-bar-title .m-logo {
-    background: linear-gradient(150deg, #cd6a50, #ad4630);
-  }
-  .m-bar-title .m-wordmark {
-    display: inline-flex; align-items: flex-start; gap: 5px;
-    font-family: var(--font-brand);
-    font-size: 20px; font-weight: 600; line-height: 1.2;
-    letter-spacing: .14em; color: var(--text);
-  }
-  .m-bar-title .m-seal {
-    display: block; width: 5px; height: 5px; margin-top: 7px;
-    border-radius: 1px; background: #b04932;
-    transform: rotate(-10deg); opacity: .9; flex: none;
-  }
-  html[data-theme="dark"] .m-bar-title .m-seal { background: #cf6549; }
 
   /* ---- 主区改成单列，给顶栏让位 ---- */
+  /* 高度不能用 vh / dvh 定死：100dvh 在部分安卓内核里等于「地址栏收起后的大视口」，
+     比当前可视区多出约一条地址栏（≈56px）。页面本身不滚动，于是贴在 .app 底部的
+     附件面板下半截落到屏幕外 —— 用户只看到「附件 1」和卡片的上边缘（19:47 截图）。
+     fixed 的包含块永远是当前可视区，地址栏收放、系统导航条变化都会自动跟上。
+     桌面端不要这么写：那里没有顶栏位移，100vh 反而更稳。 */
   .app {
     grid-template-columns: 1fr;
-    height: calc(100dvh - var(--m-bar-total));
-    margin-top: var(--m-bar-total);
+    position: fixed;
+    left: 0; right: 0;
+    top: var(--m-bar-total);
+    bottom: 0;
+    height: auto;
+    margin-top: 0;
   }
+
+  /* 底部安全区：全面屏的手势条/导航条会压住附件面板最后一行卡片，
+     所以面板自己把安全区加进 padding，而不是靠父容器留白。 */
+  .attach-panel { padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
 
   /* ---- 侧栏 / 列表改抽屉 ---- */
   .sidebar, .list-pane {
@@ -1873,16 +1902,26 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   .rail-sep, .rail-grow { display: none; }
   .rail-btn { flex: 1; width: auto; height: 40px; }
   .rail-btn[data-tip]::after { display: none; }
+  /* 底部横条是「一排同规格图标」，不是「一个主按钮 + 若干附属图标」。
+     原来这里给新建 flex:1.7 + 实心深绿 + 白字「新建」，在那排 24px 线性图标里
+     等于贴了一块色卡，横条的节奏被它截断（用户 18:39 反馈「显得突兀」）。
+     改成同样 flex:1、同样只放图标，用主色浅底 + 主色图标保留主次关系：
+     高度、宽度、图标视觉重量都与邻居一致，只有底色做区分。 */
   .rail-new {
-    flex: 1.7;
+    flex: 1;
     width: auto; height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
     border-radius: 10px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    box-shadow: none;
   }
-  .rail-new .rail-label { display: inline; font-size: 12.5px; letter-spacing: .04em; }
+  /* 触屏上 :hover 会粘住，必须显式拉回浅底，否则点过一次就一直是实心绿块 */
+  .rail-new:hover { background: var(--accent-soft); color: var(--accent); }
+  .rail-new:active { background: var(--accent); color: #fff; }
+  .rail-new .rail-label { display: none; }
 
   .m-mask {
     display: block;
@@ -2685,6 +2724,12 @@ body.m-list .pwa-tip {
   border: 1px solid var(--border); border-radius: var(--r-sm);
   background: var(--surface); color: var(--text-2);
   font: 11.5px var(--font-ui);
+}
+/* 窄屏把排序下拉收起来：它一个就占掉列表头三分之一宽度，把「全部笔记 12 篇」
+   挤到只剩标题，视觉上比旧版重很多。默认就是按更新时间，符合直觉；
+   真要按标题/创建时间排，再给它做个正经入口（图标 + 当前档位），别硬塞在这一行。 */
+@media (max-width: 980px) {
+  .list-head .sj-sort-sel { display: none; }
 }
 #sjBatchBtn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
 .sj-batch-bar {

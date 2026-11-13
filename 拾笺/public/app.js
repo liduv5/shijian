@@ -139,6 +139,7 @@
           }
         }
         renderList();
+        renderTree();
         return d.id;
       } catch (e) {
         /* 落库失败不能丢内容：保留草稿并标脏，下次离开再试。 */
@@ -476,9 +477,17 @@
         if (c.parentId === pid && !desc.has(c.id)) { desc.add(c.id); walk(c.id); }
       });
     })(targetId);
+    /* 若正打开某篇笔记，保持其所在分类链始终展开，避免点击别的分类时把高亮项折起来看不见。 */
+    const noteOpen = state.selNote && state.selNote !== DRAFT_ID;
+    const tacChain = new Set();
+    if (noteOpen) {
+      let cur = state.categories.find((c) => c.id === treeActiveCat());
+      while (cur) { tacChain.add(cur.id); cur = cur.parentId ? state.categories.find((c) => c.id === cur.parentId) : null; }
+    }
     const patch = [];
     state.categories.forEach((c) => {
-      const want = desc.has(c.id) ? false : (c.id === targetId ? !!open : chain.has(c.id));
+      let want = desc.has(c.id) ? false : (c.id === targetId ? !!open : chain.has(c.id));
+      if (tacChain.has(c.id)) want = true;
       if (!!c.expanded !== want) { c.expanded = want; patch.push(c.id); }
     });
     patch.forEach((cid) => {
@@ -490,19 +499,49 @@
   /* 点伪节点（全部笔记 / 收藏 / 未分类）时收起所有分类，保持「一次只亮一个」。 */
   function accordion(except) {
     ['all', 'starred', 'uncat'].forEach((k) => { if (k !== except) setOpen(k, false); });
-    state.categories.filter((c) => c.expanded)
+    /* 正打开笔记时保留其分类不收起，否则高亮项会被折起来看不见。 */
+    const noteOpen = state.selNote && state.selNote !== DRAFT_ID;
+    const keep = noteOpen ? treeActiveCat() : null;
+    state.categories.filter((c) => c.expanded && c.id !== keep)
       .forEach((c) => {
         c.expanded = false;
         api(`/api/categories/${c.id}`, { method: 'PATCH', body: { expanded: false } }).catch(() => {});
       });
   }
 
+  /* 树的高亮归属：有笔记打开时跟随该笔记的分类；否则跟随当前筛选分类。
+     这样「右侧打开哪篇，左侧就高亮并展开哪篇的分类」，而不是停在之前选的筛选分类。 */
+  function treeActiveCat() {
+    if (state.selNote && state.selNote !== DRAFT_ID) {
+      const n = noteById(state.selNote);
+      if (n) return n.categoryId || 'uncat';
+    }
+    return state.selCat;
+  }
+  /* 只保证目标分类及其祖先链展开，不收起其它已展开分类（与 openOnly 的「只亮一个」不同）。
+     用于打开笔记时把左侧树定位到该笔记所在分类。 */
+  function expandChain(catId) {
+    let cur = state.categories.find((c) => c.id === catId);
+    while (cur) {
+      if (!cur.expanded) {
+        cur.expanded = true;
+        api(`/api/categories/${cur.id}`, { method: 'PATCH', body: { expanded: true } }).catch(() => {});
+      }
+      cur = cur.parentId ? state.categories.find((c) => c.id === cur.parentId) : null;
+    }
+  }
+
   /* depth = 所属分类的层级；笔记在分类标签下方再缩进一级，且只显示标题（不带标签/日期）。
      行内 padding-left 直接算出来，不依赖嵌套 .tree-children 累积缩进。 */
-  function noteRow(n, depth) {
+  /* scope = 该笔记被渲染时所处容器的键：'all' / 'starred' / 'uncat' 或分类 id。
+     只有渲染在「自己的归属容器」里时才算 active，这样打开一篇笔记时它只会在
+     其真实分类下高亮，而不会在「全部笔记」等伪节点下也跟着高亮。 */
+  function noteRow(n, depth, scope) {
     const d = depth || 0;
+    const home = n.categoryId || 'uncat';
+    const active = state.selNote === n.id && scope === home;
     const row = document.createElement('div');
-    row.className = 'tree-note' + (state.selNote === n.id ? ' active' : '') + (batchSel.has(n.id) ? ' selected' : '');
+    row.className = 'tree-note' + (active ? ' active' : '') + (batchSel.has(n.id) ? ' selected' : '');
     row.dataset.nid = n.id;
     row.draggable = true;
     row.style.paddingLeft = 28 + d * 18 + 'px';
@@ -555,7 +594,7 @@
       box.appendChild(tip);
     } else {
       list.forEach((n) => {
-        const r = noteRow(n);
+        const r = noteRow(n, 0, n.categoryId || 'uncat');
         highlightTitle(r, q.trim().split(/\s+/).filter(Boolean)[0]);
         box.appendChild(r);
       });
@@ -566,7 +605,7 @@
   function pseudoRow(key, label, icon, count) {
     const open = isOpen(key);
     const row = document.createElement('div');
-    row.className = 'tree-row' + (state.selCat === key ? ' active' : '') + (open ? '' : ' collapsed');
+    row.className = 'tree-row' + (treeActiveCat() === key ? ' active' : '') + (open ? '' : ' collapsed');
     row.dataset.pseudo = key;
     row.innerHTML = `
       <span class="caret" data-act="toggle">${I.chevron}</span>
@@ -596,7 +635,7 @@
       if (isOpen(node.key)) {
         const box = document.createElement('div');
         box.className = 'tree-children';
-        node.list.forEach((n) => box.appendChild(noteRow(n)));
+        node.list.forEach((n) => box.appendChild(noteRow(n, 0, node.key)));
         wrap.appendChild(box);
       }
       tree.appendChild(wrap);
@@ -626,7 +665,7 @@
     const open = !collapsed;
 
     const row = document.createElement('div');
-    row.className = 'tree-row' + (state.selCat === cat.id ? ' active' : '') + (open ? '' : ' collapsed');
+    row.className = 'tree-row' + (treeActiveCat() === cat.id ? ' active' : '') + (open ? '' : ' collapsed');
     row.dataset.id = cat.id;
     row.dataset.depth = depth;
     row.style.paddingLeft = 4 + depth * 18 + 'px';
@@ -644,7 +683,7 @@
       const box = document.createElement('div');
       box.className = 'tree-children';
       kids.forEach((k) => box.appendChild(catNode(k, depth + 1)));
-      notesUnder(cat.id).forEach((n) => box.appendChild(noteRow(n, depth)));
+      notesUnder(cat.id).forEach((n) => box.appendChild(noteRow(n, depth, cat.id)));
       frag.appendChild(box);
     }
     return frag;
@@ -839,12 +878,22 @@
       let ok = 0;
       /* 只发 categoryId，绝不整篇覆盖（与标签 PATCH 同一条约束）。 */
       for (const id of ids) {
-        try { await api(`/api/notes/${id}`, { method: 'PATCH', body: { categoryId: cat } }); ok++; } catch (_) {}
+        try {
+          await api(`/api/notes/${id}`, { method: 'PATCH', body: { categoryId: cat } });
+          /* 服务端改完，内存里那份也要改：树和列表都拿 state.notes 渲染，
+             不改就会「界面仍在原分类、刷新后才跳过去」（本地没有实时推送）。
+             顺手修的是同一类「改完不刷新」的毛病，不是新功能。 */
+          const n = noteById(id);
+          if (n) { n.categoryId = cat; n.updatedAt = Date.now(); }
+          ok++;
+        } catch (_) {}
       }
       window.closeModal();
       exitBatch();
       toast(`已移动 ${ok} 篇到${cat ? '所选类别' : '未分类'}`);
       if (window.SJRefresh) window.SJRefresh();
+      /* 当前打开的那篇若在被移动之列，编辑区那句分类名也要跟着变。 */
+      refreshMetaFor(noteById(state.selNote));
     });
   }
   function batchPin() {
@@ -914,7 +963,10 @@
         const ids = window.SJFts.rank(state.search, state.notes);
         const map = new Map(state.notes.map((n) => [n.id, n]));
         const ranked = ids.map((id) => map.get(id)).filter(Boolean);
-        return ranked.length ? ranked : state.notes.slice();
+        /* 无命中就返回空，不再回退显示全库：与云端 notesInScope、以及目录树
+           renderSearchResults 的「没有找到相关笔记」保持一致（原来只有这个分支会
+           在搜不到时把全部笔记摊出来，且绕过了 sortNotes）。 */
+        return ranked;
       }
       const terms = state.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
       list = list.filter((n) => {
@@ -1063,6 +1115,22 @@
     }
     return parts.join(' / ');
   }
+  /* 编辑区第二行那句「分类名 ▾ · 创建于 …」。带 ▾ 是提示「这里可以点」，
+     点开就是分类选择弹层。抽成函数是因为改完分类要就地重写这一行。 */
+  function metaInfoText(note) {
+    const cat = catMap().get(note.categoryId);
+    return `${cat ? cat.name : '未分类'} ▾ · 创建于 ${fmtDate(note.createdAt)}`;
+  }
+  /* 改完分类后，把编辑区第二行这句就地重写。
+     编辑区显示的永远是「当前打开的那篇」，所以别的笔记改了分类不该动这一行。
+     在 -73 之前只有分类弹层那条路径会刷新它，拖拽（用户 22:0x 反馈）与批量
+     移动都没刷 → 右下角这篇明明已经换类了，上面还写着原分类名字。
+     两个场景都调这一个函数，以后再加第二条改分类的路径也不会再漏。 */
+  function refreshMetaFor(note) {
+    if (!note || state.selNote !== note.id) return;
+    const el = $('#metaInfo');
+    if (el) el.textContent = metaInfoText(note);
+  }
   function scopeName(scope) {
     if (state.search.trim()) return '搜索结果';
     if (scope === 'starred') return '收藏';
@@ -1079,6 +1147,9 @@
     if (!grid) return;                       // 没有首页网格的端（云端旧空态）直接跳过
     const scope = state.selCat || 'all';
     const notes = notesInScope();
+    /* 多选态：网格卡也要能看出「勾了哪几篇」。跟列表卡一致，靠 class 表达，
+       每次 renderList 都会重跑本函数，勾选后自然重绘，不需要额外钩子。 */
+    grid.classList.toggle('batch-mode', batchMode);
     const tn = $('#homeTabNotes'), tf = $('#homeTabFolders');
     if (tn) {
       tn.textContent = `${scopeName(scope)} ${notes.length}`;
@@ -1120,7 +1191,8 @@
     }
     grid.innerHTML = notes.map((n) => {
       const snippet = plainText(n).slice(0, 90);
-      return `<article class="home-card" data-nid="${n.id}">
+      return `<article class="home-card${batchSel.has(n.id) ? ' selected' : ''}" data-nid="${n.id}">
+        <span class="home-card-sel" aria-hidden="true"></span>
         <div class="home-card-title">${n.starred ? I.starFill.replace('<svg', '<svg class="ico"') : I.doc}<span>${escapeHtml(n.title || '无标题笔记')}</span></div>
         <p class="home-card-snippet">${escapeHtml(snippet) || '空笔记'}</p>
         <div class="home-card-foot">
@@ -1680,9 +1752,22 @@
       api(`/api/notes/${note.id}`, { method: 'PATCH', body: { format: 'rich' } }).catch(() => {});
     }
     state.selNote = id;
+    /* 打开笔记时让左侧分类树定位到该笔记所在分类：展开其分类与祖先链，
+       高亮由 renderTree 内的 treeActiveCat() 统一驱动（笔记只在自己的分类下高亮，
+       而不在「全部笔记」伪节点下）。未分类笔记则展开「未分类」容器。 */
+    if (id !== DRAFT_ID) {
+      if (note.categoryId) expandChain(note.categoryId);
+      else setOpen('uncat', true);
+    }
     state.dirty = false;
     savedSnapshot = snapshot(note);
     viewFormat = note.format === 'rich' ? 'rich' : 'md';
+
+    /* 打开已有笔记默认进 Markdown 阅读态；新建草稿保持编辑态以便输入。
+       富文本笔记本来就是渲染态，无需切换。 */
+    if (viewFormat === 'md') {
+      state.viewMode = id === DRAFT_ID ? 'edit' : 'preview';
+    }
 
     $('#emptyState').classList.add('hidden');
     $('#editorWrap').classList.remove('hidden');
@@ -1695,8 +1780,7 @@
     $('#richPane').classList.toggle('hidden', viewFormat !== 'rich');
     $('#mdPane').classList.toggle('hidden', viewFormat !== 'md');
 
-    const cat = catMap().get(note.categoryId);
-    $('#metaInfo').textContent = `${cat ? cat.name : '未分类'} · 创建于 ${fmtDate(note.createdAt)}`;
+    $('#metaInfo').textContent = metaInfoText(note);
     setSaveState('', `已保存 ${new Date(note.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`);
 
     applyFormat(viewFormat);
@@ -1705,6 +1789,7 @@
     renderAttachments();
     renderNoteTags();
     renderList();
+    renderTree();
     if (window.SJBacklinks) window.SJBacklinks.refresh(note);
     updateAttachBadge();
     wordCount();
@@ -1725,7 +1810,7 @@
     $('#mdPane').classList.toggle('hidden', !isMd);
     $('#richPane').classList.toggle('hidden', isMd);
     $('#editorBody').classList.toggle('is-rich', !isMd);
-    // 窄屏放不下分屏，自动按「仅编辑」处理（用户手动切到预览仍然有效）
+    // 打开时默认进预览态（见 openNote），但打开后仍可手动切到 编辑/分屏
     const mode = NARROW() && state.viewMode === 'split' ? 'edit' : state.viewMode;
     $('#editorBody').classList.toggle('mode-edit', isMd && mode === 'edit');
     $('#editorBody').classList.toggle('mode-preview', isMd && mode === 'preview');
@@ -1881,7 +1966,7 @@
     };
 
     if (viewFormat === 'md') {
-      // 视图切换（窄屏不提供分屏，两栏放不下）
+      // 视图切换（窄屏不提供分屏，两栏放不下）；打开时默认预览，但可手动切到编辑
       const narrow = NARROW();
       const cur = narrow && state.viewMode === 'split' ? 'edit' : state.viewMode;
       const views = [
@@ -2406,6 +2491,73 @@
     onRichInput();
   });
 
+  /* ---------------------------------------------------------- 悬停提示
+     原生 title 是系统画的带黑框白底方块：样式一处都改不了，出现在附件卡片上
+     还会把旁边的卡片整个盖住。这里换成一个自绘浮层，视觉与图标栏的 data-tip
+     一致（深色半透明、圆角、无边框）。
+     为什么用挂在 body 上的浮层、而不是 data-tip + 伪元素：附件面板是
+     overflow-y:auto 的，伪元素一旦超出面板就被裁掉，而卡片恰恰贴着面板底边。 */
+  let sjTipEl = null;
+  let sjTipTimer = 0;
+
+  function ensureSjTip() {
+    if (!sjTipEl) {
+      sjTipEl = document.createElement('div');
+      sjTipEl.className = 'sj-tip';
+      document.body.appendChild(sjTipEl);
+    }
+    return sjTipEl;
+  }
+
+  function hideSjTip() {
+    clearTimeout(sjTipTimer);
+    sjTipTimer = 0;
+    if (sjTipEl) sjTipEl.classList.remove('on');
+  }
+
+  function showSjTip(target) {
+    const text = target.getAttribute('data-tip');
+    if (!text) return;
+    /* 文件名平时被省略号截断才有必要提示；完整显示时再弹一遍等于重复正文 */
+    if (target.classList.contains('att-name') && target.scrollWidth <= target.clientWidth + 1) return;
+    clearTimeout(sjTipTimer);
+    sjTipTimer = setTimeout(() => {
+      sjTipTimer = 0;
+      if (!target.isConnected) return;
+      const el = ensureSjTip();
+      el.textContent = text;                 // 文件名可能带 < >，只用 textContent
+      const r = target.getBoundingClientRect();
+      const W = el.offsetWidth, H = el.offsetHeight, pad = 8, gap = 7;
+      let left = r.left + r.width / 2 - W / 2;
+      left = Math.min(Math.max(pad, left), Math.max(pad, window.innerWidth - W - pad));
+      let top = r.bottom + gap;
+      if (top + H > window.innerHeight - pad) top = r.top - gap - H;   // 下方放不下就翻到上方
+      el.style.left = Math.round(left) + 'px';
+      el.style.top = Math.round(Math.max(pad, top)) + 'px';
+      el.classList.add('on');
+    }, 260);
+  }
+
+  /* 触屏没有 hover，装上了反而会卡在屏幕上（与图片悬停预览同一条判断）。
+     图标栏的 .rail-btn 仍由 CSS 伪元素负责，这里跳过，别弹两份。 */
+  if (window.matchMedia && window.matchMedia('(hover: hover)').matches) {
+    document.addEventListener('pointerover', (e) => {
+      const t = e.target && e.target.closest ? e.target.closest('[data-tip]') : null;
+      if (!t || t.classList.contains('rail-btn')) return;
+      showSjTip(t);
+    });
+    document.addEventListener('pointerout', (e) => {
+      const t = e.target && e.target.closest ? e.target.closest('[data-tip]') : null;
+      if (!t) return;
+      /* 在同一个元素内部换子元素也会冒 pointerout，不判断 relatedTarget 会把
+         刚亮起的提示立刻打灭 */
+      if (e.relatedTarget && t.contains(e.relatedTarget)) return;
+      hideSjTip();
+    });
+    document.addEventListener('pointerdown', hideSjTip, true);
+    window.addEventListener('scroll', hideSjTip, true);
+  }
+
   /* ---------------------------------------------------------- 附件 */
   function updateAttachBadge() {
     const note = currentNote();
@@ -2443,12 +2595,19 @@
       box.appendChild(img);
       document.body.appendChild(box);
       const r = thumb.getBoundingClientRect();
-      const W = 300, H = 220, gap = 10;
+      const W = 300, H = 220, gap = 12, pad = 8;
+      /* 右侧优先、垂直居中于缩略图。原先是 top = r.top - 8，缩略图贴着屏幕底时
+         会被 clamp 顶到视口下缘，浮窗看上去"跳"到缩略图远上方；
+         改成以缩略图中心对齐后，只有真的放不下才会移动，且移动量最小。 */
       let left = r.right + gap;
-      if (left + W > window.innerWidth - 8) left = Math.max(8, r.left - gap - W);
-      const top = Math.min(Math.max(8, r.top - 8), Math.max(8, window.innerHeight - H - 8));
-      box.style.left = left + 'px';
-      box.style.top = top + 'px';
+      if (left + W > window.innerWidth - pad) {
+        const alt = r.left - gap - W;                 // 右侧放不下改左侧
+        left = alt >= pad ? alt : Math.max(pad, Math.min(r.right + gap, window.innerWidth - W - pad));
+      }
+      let top = r.top + r.height / 2 - H / 2;
+      top = Math.min(Math.max(pad, top), Math.max(pad, window.innerHeight - H - pad));
+      box.style.left = Math.round(left) + 'px';
+      box.style.top = Math.round(top) + 'px';
       attHoverEl = box;
     }, 180);
   }
@@ -2479,9 +2638,64 @@
     dl.addEventListener('click', (e) => e.stopPropagation());   // 别冒泡关掉大图
     const tip = document.createElement('div');
     tip.className = 'att-lightbox-tip';
-    tip.textContent = '点空白处或按 ESC 关闭';
+    tip.textContent = '滚轮缩放 · 双击复位 · 点空白处或按 ESC 关闭';
     box.append(img, dl, tip);
-    box.addEventListener('click', closeAttLightbox);
+
+    /* 大图缩放：fit 状态下 s=1 就是 CSS contain 的结果，不再额外算尺寸。
+       滚轮以光标为中心缩放（放大时光标下的那一点不动），双击在 fit 与 2x 之间切换，
+       放大后可拖拽平移。所有平移都走 transform，不改布局，所以不会把大图撑出视口。 */
+    let s = 1, tx = 0, ty = 0;
+    const MIN_S = 1, MAX_S = 6;
+    const apply = (animate) => {
+      img.style.transition = animate ? '' : 'none';
+      img.style.transform = 'translate(' + tx + 'px, ' + ty + 'px) scale(' + s + ')';
+      img.classList.toggle('zoomed', s > 1.001);
+    };
+    const zoomAt = (next, cx, cy) => {
+      next = Math.min(MAX_S, Math.max(MIN_S, next));
+      if (Math.abs(next - s) < 1e-4) return;
+      const rect = box.getBoundingClientRect();
+      const ox = cx - (rect.left + rect.width / 2);
+      const oy = cy - (rect.top + rect.height / 2);
+      const k = next / s;
+      tx = ox - (ox - tx) * k;
+      ty = oy - (oy - ty) * k;
+      s = next;
+      if (s <= 1.001) { tx = 0; ty = 0; }      // 回到 fit 就归位，不留残余偏移
+      apply(false);
+    };
+
+    box.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      zoomAt(s * (e.deltaY < 0 ? 1.18 : 1 / 1.18), e.clientX, e.clientY);
+    }, { passive: false });
+
+    let drag = null;
+    img.addEventListener('pointerdown', (e) => {
+      if (s <= 1.001) return;                   // 未放大时拖拽无意义，也避免误吞点击
+      drag = { x: e.clientX, y: e.clientY, tx, ty };
+      img.classList.add('dragging');
+      try { img.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+    });
+    img.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      tx = drag.tx + (e.clientX - drag.x);
+      ty = drag.ty + (e.clientY - drag.y);
+      apply(false);
+    });
+    const endDrag = () => { drag = null; img.classList.remove('dragging'); };
+    img.addEventListener('pointerup', endDrag);
+    img.addEventListener('pointercancel', endDrag);
+
+    img.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      if (s > 1.001) { s = 1; tx = 0; ty = 0; apply(true); }
+      else zoomAt(2, e.clientX, e.clientY);
+    });
+
+    /* 只有点背景才关：点图在放大态是拖拽，误关会很烦；下载按钮自己 stopPropagation */
+    box.addEventListener('click', (e) => { if (e.target === box) closeAttLightbox(); });
     document.body.appendChild(box);
   }
 
@@ -2529,13 +2743,13 @@
           ? `<img class="att-thumb" src="${attDisplaySrc(a)}" alt="">`
           : `<div class="att-ext">${escapeHtml(ext)}</div>`}
         <div class="att-meta">
-          <div class="att-name" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</div>
+          <div class="att-name" data-tip="${escapeHtml(a.name)}">${escapeHtml(a.name)}</div>
           <div class="att-size">${size}</div>
         </div>
         <div class="att-acts">
-          <button class="att-act" data-act="insert" title="插入到正文">${I.plus}</button>
-          <a class="att-act" href="${attDisplaySrc(a)}" download="${escapeHtml(a.name)}" title="下载">${I.download}</a>
-          <button class="att-act del" data-act="del" title="删除附件">${I.x}</button>
+          <button class="att-act" data-act="insert" data-tip="插入到正文">${I.plus}</button>
+          <a class="att-act" href="${attDisplaySrc(a)}" download="${escapeHtml(a.name)}" data-tip="下载">${I.download}</a>
+          <button class="att-act del" data-act="del" data-tip="删除附件">${I.x}</button>
         </div>`;
       el.querySelector('[data-act="insert"]').addEventListener('click', () => insertAttachment(a));
       el.querySelector('[data-act="del"]').addEventListener('click', () => deleteAttachment(a));
@@ -2544,7 +2758,7 @@
         const thumb = el.querySelector('.att-thumb');
         if (thumb) {
           thumb.classList.add('clickable');
-          thumb.title = '点击查看原图';
+          thumb.dataset.tip = '点击查看原图';
           thumb.addEventListener('click', () => openAttLightbox(a));
           thumb.addEventListener('mouseenter', () => showAttHover(thumb, a));
           thumb.addEventListener('mouseleave', hideAttHover);
@@ -2790,6 +3004,44 @@
         toast('类别已删除');
       } catch (e) { toast(e.message); }
     };
+  }
+
+  /* 移动笔记到分类。云端是手机端没有拖拽才加的；桌面端虽然能拖树里的笔记行，
+     但那个入口藏在侧栏、要先把笔记展开出来才拖得到，实际几乎没人发现。
+     用户反馈「笔记页面没有调整分类的选项」，所以两端统一：点编辑区那行分类名即可换。 */
+  function openCategoryPicker(note) {
+    if (!note) return;
+    const opts = [{ id: '', name: '未分类', depth: -1 }];
+    function walk(list, depth) {
+      list.forEach((c) => {
+        opts.push({ id: c.id, name: c.name, depth });
+        walk(state.categories.filter((x) => x.parentId === c.id), depth + 1);
+      });
+    }
+    walk(state.categories.filter((c) => !c.parentId), 0);
+
+    const items = opts.map((o) => {
+      const pad = o.depth < 0 ? 10 : 10 + o.depth * 16;
+      const tick = (note.categoryId || '') === o.id ? '<span class="picker-tick">✓</span>' : '';
+      return `<button class="picker-opt" data-id="${o.id}" style="padding-left:${pad}px">${tick}${escapeHtml(o.name)}</button>`;
+    }).join('');
+
+    const m = openModal(`<h3>移动到分类</h3><div class="picker-list">${items}</div>`);
+    m.querySelectorAll('.picker-opt').forEach((b) => {
+      b.addEventListener('click', () => {
+        const id = b.dataset.id || null;
+        closeModal();
+        note.categoryId = id;
+        note.updatedAt = Date.now();
+        markDirty();
+        renderTree();
+        renderList();
+        const cat = catMap().get(id);
+        const el = $('#metaInfo');
+        if (el) el.textContent = metaInfoText(note);
+        toast('已移动到「' + (cat ? cat.name : '未分类') + '」');
+      });
+    });
   }
 
   /* 笔记操作 */
@@ -3191,20 +3443,77 @@
     }
   });
 
+  /* -------- 拖动到「有子分类的收起行」上，停留一下自动展开 --------
+     用户 21:54 反馈：把笔记拖到另一个分类时，如果目标在它的子分类下，就得先松手、
+     再点开箭头、再拖一次 —— 拖动过程中子分类根本不出现。
+
+     关键约束：**不能在这里调 renderTree()**。整棵树重渲染会把 dragstart 的源行
+     （正在被拖的那一行）从 DOM 里删掉，Chrome 会因此直接取消这次拖拽 ——
+     表现成「展开一下就拖不动了」。所以这里只往该行后面插入它自己的子树，
+     其余 DOM 一动不动；state 里同步设 expanded=true，后续任何一次正常重渲染
+     都不会出现「DOM 展开了、数据没展开」的错位。 */
+  let dragExpandTimer = 0;
+  let dragExpandRow = null;
+  function clearDragExpand() {
+    if (dragExpandTimer) { clearTimeout(dragExpandTimer); dragExpandTimer = 0; }
+    dragExpandRow = null;
+  }
+  function expandRowForDrag(row) {
+    const id = row.dataset.id;
+    const cat = state.categories.find((c) => c.id === id);
+    if (!cat || cat.expanded) return false;
+    const kids = state.categories.filter((c) => c.parentId === id).sort(byOrder);
+    if (!kids.length) return false;
+    cat.expanded = true;
+    const depth = Number(row.dataset.depth) || 0;
+    const box = document.createElement('div');
+    box.className = 'tree-children';
+    /* 与 catNode() 完全同构：先子分类（各自可能还带自己的子树），再本级笔记 */
+    kids.forEach((k) => box.appendChild(catNode(k, depth + 1)));
+    notesUnder(id).forEach((n) => box.appendChild(noteRow(n, depth)));
+    row.classList.remove('collapsed');
+    row.after(box);
+    return true;
+  }
+  function scheduleDragExpand(row) {
+    if (!row || dragExpandRow === row) return;   // 同一行持续 dragover，别重置计时
+    clearDragExpand();
+    dragExpandRow = row;
+    const cat = state.categories.find((c) => c.id === row.dataset.id);
+    if (!cat || cat.expanded) return;
+    if (!state.categories.some((c) => c.parentId === row.dataset.id)) return;
+    dragExpandTimer = setTimeout(() => {
+      dragExpandTimer = 0;
+      const again = state.categories.find((c) => c.id === row.dataset.id);
+      if (!again || again.expanded) return;
+      if (expandRowForDrag(row)) row.classList.add('dragover');
+    }, 550);
+  }
+
   $('#tree').addEventListener('dragover', (e) => {
     const row = e.target.closest('.tree-row[data-id]');
-    if (!row) return;
+    if (!row) { clearDragExpand(); return; }
     e.preventDefault();
     row.classList.add('dragover');
+    scheduleDragExpand(row);
   });
   $('#tree').addEventListener('dragleave', (e) => {
     const row = e.target.closest('.tree-row[data-id]');
-    if (row) row.classList.remove('dragover');
+    if (!row) return;
+    /* 在同一行内部的子元素之间移动也会冒 dragleave，那不是「离开这行」，
+       否则计时器被反复重置，停在行上也不会展开。 */
+    if (e.relatedTarget && row.contains(e.relatedTarget)) return;
+    row.classList.remove('dragover');
+    if (dragExpandRow === row) clearDragExpand();
   });
+  /* 拖拽在树以外结束（松手、按 Esc）时兜底清计时器 */
+  document.addEventListener('dragend', clearDragExpand);
+  document.addEventListener('drop', clearDragExpand);
   $('#tree').addEventListener('drop', async (e) => {
     const row = e.target.closest('.tree-row[data-id]');
     if (!row) return;
     e.preventDefault();
+    clearDragExpand();
     row.classList.remove('dragover');
     const noteId = e.dataTransfer.getData('text/note-id');
     if (!noteId) return;
@@ -3214,7 +3523,14 @@
     note.updatedAt = Date.now();
     renderTree();
     renderList();
-    markDirty();
+    /* 拖的这篇如果正好开着，编辑区上面那句「分类名」也要跟着变（22:0x 用户反馈）。 */
+    refreshMetaFor(note);
+    /* 拖拽是「一次明确的操作」，不是打字：必须立刻落盘。
+       只标脏是不够的 —— markDirty() 只对「当前打开的这篇」生效，而拖的往往
+       不是打开中的那篇，结果界面上移走了、刷新后又回到原分类（静默丢失）。 */
+    if (state.selNote === note.id) markDirty();
+    api(`/api/notes/${note.id}`, { method: 'PATCH', body: { categoryId: note.categoryId } })
+      .catch(() => toast('移动失败，请重试'));
     toast('已移动到该类别');
   });
 
@@ -3483,6 +3799,9 @@
     const note = currentNote();
     if (note) deleteNote(note);
   });
+
+  /* 编辑区那行「分类名 ▾」可点击 → 移动到这个分类（与云端同一入口） */
+  $('#metaInfo').addEventListener('click', () => openCategoryPicker(currentNote()));
 
   $('#historyBtn').addEventListener('click', openHistory);
   $('#exportBtn2').addEventListener('click', (e) => {

@@ -712,6 +712,7 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   border-radius: var(--r-sm);
   font-size: 13px;
   font-weight: 550;
+  white-space: nowrap;          /* 按钮文字一律不折行（「恢复此版本」曾被挤成两行） */
   transition: background .16s, color .16s, box-shadow .16s, transform .1s;
 }
 .btn svg.ico { width: 15px; height: 15px; }
@@ -792,6 +793,40 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
 }
 .home-card:hover { border-color: var(--accent-line); background: var(--surface); box-shadow: 0 6px 18px rgba(0, 0, 0, .06); }
 .home-card:active { transform: translateY(1px); }
+/* 多选整理：宽屏没有列表栏，多选条浮在编辑区底部，主区正好是这张网格。
+   之前只给列表卡（.note-card）加了选中态，网格卡没有 → 勾了看不出勾了哪几篇。
+   这里补三件事：占位圆点（说明「这张可以勾」）、选中后的实心勾 + 深色底与描边。 */
+.home-card { position: relative; }
+.home-card .home-card-sel {
+  display: none;
+  position: absolute; right: 9px; top: 9px;
+  width: 17px; height: 17px; border-radius: 50%;
+  box-sizing: border-box;
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface);
+}
+.home-grid.batch-mode .home-card { padding-right: 34px; }
+.home-grid.batch-mode .home-card .home-card-sel { display: block; }
+.home-card.selected {
+  background: var(--sel);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent), 0 2px 10px -4px var(--accent);
+}
+.home-card.selected .home-card-sel {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+/* 勾：两条边 + 旋转，颜色用 surface（浅色主题下白勾 / 深色主题下深勾），
+   两种主题都压在 accent 实心底上，不依赖图片 */
+.home-card.selected .home-card-sel::after {
+  content: "";
+  position: absolute; left: 5px; top: 2px;
+  width: 4px; height: 7px;
+  border: solid var(--surface);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.home-card.selected .home-card-title { color: var(--accent); }
 .home-card-title {
   display: flex;
   align-items: center;
@@ -1029,6 +1064,20 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   flex: none;
 }
 .meta-row .spacer { flex: 1; }
+/* 编辑区里的分类名可点击 → 弹层改分类（云端早就有，桌面端 -73 补齐） */
+.meta-row #metaInfo { cursor: pointer; user-select: none; }
+.meta-row #metaInfo:hover { color: var(--accent); }
+
+/* 分类选择弹层 */
+.picker-list { max-height: 56vh; overflow-y: auto; margin: -4px -6px 0; }
+.picker-opt {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; text-align: left;
+  padding: 10px 14px; border: 0; background: transparent;
+  font: inherit; color: var(--text); border-radius: var(--r-sm); cursor: pointer;
+}
+.picker-opt:hover { background: var(--surface-2); }
+.picker-tick { color: var(--accent); font-weight: 700; }
 .meta-dot { opacity: .5; }
 .save-state { display: inline-flex; align-items: center; gap: 5px; }
 .save-state::before {
@@ -1395,6 +1444,40 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
 .att-act.del:hover { color: var(--danger); background: rgba(192,68,47,.08); }
 .att-act svg { width: 13px; height: 13px; }
 
+/* 全局悬停提示：与图标栏的 .rail-btn[data-tip] 同一套视觉（深色半透明、圆角、
+   无边框），只是做成挂在 body 上的浮层——附件面板 overflow-y:auto，伪元素会
+   被面板边缘裁掉。原生 title 的带黑框白底方块一律不用。 */
+.sj-tip {
+  position: fixed;
+  left: 0; top: 0;
+  z-index: 700;
+  width: max-content;
+  max-width: 260px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  border: 0;
+  background: rgba(28, 25, 21, .72);
+  color: #fff;
+  font-size: 11.5px;
+  line-height: 1.35;
+  letter-spacing: .02em;
+  white-space: normal;
+  word-break: break-all;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity .14s var(--ease), transform .14s var(--ease);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, .5);
+}
+.sj-tip.on { opacity: 1; transform: translateY(0); }
+html[data-theme="dark"] .sj-tip {
+  background: rgba(243, 240, 235, .88);
+  color: #1c1a17;
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, .8);
+}
+
 /* 图片附件预览：悬停快看 + 点击全屏原图（桌面端专属）。
    触屏端云端另有一套 openAttView；这里只在有鼠标的设备上启用悬停。 */
 .att-thumb.clickable { cursor: zoom-in; }
@@ -1405,22 +1488,32 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   background: var(--surface);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-lg);
-  display: grid; place-items: center;
+  /* 轨道必须显式成 minmax(0,1fr)：place-items 只在确定尺寸的轨道里成立，
+     否则 img 的 max-width:100% 遇到 auto 轨道会循环依赖失效，图按原尺寸溢出白框。 */
+  display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+  place-items: center;
+  overflow: hidden;
   pointer-events: none;
   animation: fade .12s;
 }
-.att-hover img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+.att-hover img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; }
 .att-lightbox {
   position: fixed; inset: 0; z-index: 3000;
   background: rgba(10, 12, 11, .95);
-  display: grid; place-items: center; padding: 20px;
+  display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+  place-items: center; padding: 20px 20px 80px;   /* 下方留出「下载原图」+提示的位置，别压在亮图上 */
+  overflow: hidden;
   cursor: zoom-out;
   animation: fade .14s;
 }
 .att-lightbox img {
   max-width: 100%; max-height: 100%; object-fit: contain;
   -webkit-user-select: none; user-select: none;
+  transition: transform .12s ease-out;
+  will-change: transform;
 }
+.att-lightbox img.zoomed { cursor: grab; transition: none; }
+.att-lightbox img.dragging { cursor: grabbing; }
 .att-lightbox-tip {
   position: absolute; left: 0; right: 0; bottom: 16px;
   text-align: center; color: rgba(255, 255, 255, .82);
@@ -1826,6 +1919,7 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   flex: none;
 }
 .hist-foot span { font-size: 11.5px; color: var(--text-3); }
+.hist-foot .btn { flex: none; }          /* 固定按钮宽度，不被左侧说明文字挤窄 */
 .hist-foot .btn:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ============================================================ 打印 */
@@ -1960,11 +2054,24 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   }
 
   /* ---- 主区改成单列，给顶栏让位 ---- */
+  /* 高度不能用 vh / dvh 定死：100dvh 在部分安卓内核里等于「地址栏收起后的大视口」，
+     比当前可视区多出约一条地址栏（≈56px）。页面本身不滚动，于是贴在 .app 底部的
+     附件面板下半截落到屏幕外 —— 用户只看到「附件 1」和卡片的上边缘（19:47 截图）。
+     fixed 的包含块永远是当前可视区，地址栏收放、系统导航条变化都会自动跟上。
+     桌面端不要这么写：那里没有顶栏位移，100vh 反而更稳。 */
   .app {
     grid-template-columns: 1fr;
-    height: calc(100dvh - var(--m-bar-total));
-    margin-top: var(--m-bar-total);
+    position: fixed;
+    left: 0; right: 0;
+    top: var(--m-bar-total);
+    bottom: 0;
+    height: auto;
+    margin-top: 0;
   }
+
+  /* 底部安全区：全面屏的手势条/导航条会压住附件面板最后一行卡片，
+     所以面板自己把安全区加进 padding，而不是靠父容器留白。 */
+  .attach-panel { padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
 
   /* ---- 侧栏 / 列表改抽屉 ---- */
   .sidebar, .list-pane {
@@ -2000,16 +2107,26 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   .rail-sep, .rail-grow { display: none; }
   .rail-btn { flex: 1; width: auto; height: 40px; }
   .rail-btn[data-tip]::after { display: none; }
+  /* 底部横条是「一排同规格图标」，不是「一个主按钮 + 若干附属图标」。
+     原来这里给新建 flex:1.7 + 实心深绿 + 白字「新建」，在那排 24px 线性图标里
+     等于贴了一块色卡，横条的节奏被它截断（用户 18:39 反馈「显得突兀」）。
+     改成同样 flex:1、同样只放图标，用主色浅底 + 主色图标保留主次关系：
+     高度、宽度、图标视觉重量都与邻居一致，只有底色做区分。 */
   .rail-new {
-    flex: 1.7;
+    flex: 1;
     width: auto; height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
     border-radius: 10px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    box-shadow: none;
   }
-  .rail-new .rail-label { display: inline; font-size: 12.5px; letter-spacing: .04em; }
+  /* 触屏上 :hover 会粘住，必须显式拉回浅底，否则点过一次就一直是实心绿块 */
+  .rail-new:hover { background: var(--accent-soft); color: var(--accent); }
+  .rail-new:active { background: var(--accent); color: #fff; }
+  .rail-new .rail-label { display: none; }
 
   .m-mask {
     display: block;
@@ -2444,6 +2561,12 @@ img.sj-img-picked {
   border: 1px solid var(--border); border-radius: var(--r-sm);
   background: var(--surface); color: var(--text-2);
   font: 11.5px var(--font-ui);
+}
+/* 窄屏把排序下拉收起来：它一个占掉列表头三分之一宽度，把「全部笔记 12 篇」
+   挤到只剩标题。默认按更新时间已符合直觉，真要按标题/创建时间排再给正经入口。
+   与云端同一段规则，改一处要同步另一处。 */
+@media (max-width: 980px) {
+  .list-head .sj-sort-sel { display: none; }
 }
 #sjBatchBtn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
 .sj-batch-bar {
