@@ -2032,6 +2032,10 @@
       state.richLh = LH_STEPS[i];
       applyRichLh();
       try { localStorage.setItem('sj_rich_lh', String(state.richLh)); } catch (_) {}
+      const label = LH_LABELS[i];
+      const txt = lhBtn.querySelector('#lhBtnText');
+      if (txt) txt.textContent = '行距' + label;
+      lhBtn.title = '正文行距：' + label + '（点击切换）';
     });
     lhBtn.title = '正文行距：' + LH_LABELS[LH_STEPS.indexOf(state.richLh)] + '（点击切换）';
     const lhTxt = lhBtn.querySelector('#lhBtnText');
