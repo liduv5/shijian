@@ -1667,6 +1667,23 @@ html[data-theme="dark"] .sj-tip {
   justify-content: flex-end;
   gap: 8px;
 }
+/* 设置面板（settings.js）：本地服务的重启入口 */
+.settings-hint { margin: 0 0 14px; font-size: 12.8px; line-height: 1.75; color: var(--text-2); }
+.settings-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 12px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.settings-row-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.settings-row-text b { font-size: 13px; font-weight: 600; color: var(--text); }
+.settings-row-text small { font-size: 11.5px; color: var(--text-2); }
+.settings-confirm { display: flex; gap: 6px; flex: none; }
+.settings-status {
+  min-height: 17px; margin: 10px 1px 0; font-size: 11.8px; line-height: 1.5;
+  color: var(--text-2);
+}
+.settings-status.ok { color: var(--accent); }
+.settings-status.err { color: var(--danger); }
 .modal-choices { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 .choice {
   display: flex;

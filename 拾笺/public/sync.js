@@ -432,6 +432,98 @@
     } catch (e) { errs.push('PUT ' + ((e && e.message) || '网络错误')); }
     throw new Error(errs.join(' / '));
   }
+
+  /* ------------------------------------------------ 下载云端附件（拉取时补回本地）
+     桌面端 doPull 过去只导入笔记文本，从来不下载附件本体：换了电脑后
+     正文里的 /api/files/<id> 全部裂图。这里按云端行里的 path 取回二进制，
+     再交给本地 /api/cloud-att 落盘并挂回笔记（用原始 id，正文引用才对得上）。 */
+  /* p 可以是 Promise，也可以是「无参函数」——函数形式能把同步抛错一起兜住。
+     之前这里直接 Promise.race([函数, ...])，函数被当成已 resolve 的值立刻返回，
+     SDK download 分支根本没执行，附件下载全落到自建 GET，一旦那条路不通就全失败。 */
+  function withTimeout(p, ms, fallback) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve(fallback);
+      }, ms);
+      Promise.resolve()
+        .then(() => (typeof p === 'function' ? p() : p))
+        .then((v) => { if (!settled) { settled = true; clearTimeout(timer); resolve(v); } })
+        .catch(() => { if (!settled) { settled = true; clearTimeout(timer); resolve(fallback); } });
+    });
+  }
+  function blobToDataUrl(blob) {
+    return new Promise((resolve) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result || ''));
+      fr.onerror = () => resolve('');
+      fr.readAsDataURL(blob);
+    });
+  }
+  /* SDK download 在桌面端是跨域（127.0.0.1 → 云端域名），和上传当年一样可能
+     被 CORS 预检挡掉：先走 SDK，失败再自建同源网关 GET（带 token + pk）。 */
+  async function attDownloadRaw(path) {
+    try {
+      const r = await withTimeout(() => cloud.storage.download(path), 15000, null);
+      if (r && r.data && r.data.size) return r.data;
+    } catch (_) { /* 落到自建请求 */ }
+    const token = await accessToken();
+    if (!token) throw new Error('登录状态已失效，请退出后重新登录');
+    const url = CONFIG.endpoint + '/.cloud/storage/object/runtime/' + path;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: 'Bearer ' + token,
+        'x-wb-webapp-access-key': CONFIG.publishableKey,
+      },
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    if (!blob || !blob.size) throw new Error('空文件');
+    return blob;
+  }
+  async function restoreAttachments(notes) {
+    const jobs = [];
+    for (const n of notes) {
+      for (const a of (Array.isArray(n.attachments) ? n.attachments : [])) {
+        if (a && a.id && a.path) jobs.push({ noteId: n.id, att: a });
+      }
+    }
+    if (!jobs.length) return { ok: 0, fail: 0, total: 0 };
+
+    let ok = 0, fail = 0;
+    const fails = [];
+    const deadline = Date.now() + 150000; // 整体封顶，避免几百张图把面板永久锁住
+    for (let i = 0; i < jobs.length; i++) {
+      if (Date.now() > deadline) { fail += jobs.length - i; fails.push('整体超时'); break; }
+      const { noteId, att } = jobs[i];
+      syncMsg(`正在补回附件…（${i + 1}/${jobs.length}，已成功 ${ok} 个）`);
+      try {
+        const blob = await withTimeout(attDownloadRaw(att.path), 35000, null);
+        if (!blob) throw new Error('下载超时');
+        const data = await blobToDataUrl(blob);
+        if (!data) throw new Error('文件转码失败');
+        const r = await fetch('/api/cloud-att', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            noteId, id: att.id, name: att.name || 'file',
+            size: att.size || blob.size, type: att.type || blob.type || 'application/octet-stream',
+            createdAt: att.createdAt, data,
+          }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        if (j.skipped) { ok++; continue; }
+        ok++;
+      } catch (e) {
+        fail++;
+        if (fails.length < 3) fails.push((att.name || att.id) + ' → ' + ((e && e.message) || '未知错误'));
+      }
+    }
+    if (fails.length) console.warn('[同步] 附件补回失败：', fails.join('；'));
+    return { ok, fail, total: jobs.length, why: fails };
+  }
   async function uploadOneAtt(a, owner, cache) {
     if (cache[a.id]) return cache[a.id];
     const res = await fetch('/api/files/' + encodeURIComponent(a.id));
@@ -651,9 +743,25 @@
       if (!r.ok) throw new Error(j.error || '导入失败');
       localStorage.setItem('sj_last_sync', String(Date.now()));
       if (window.SJLocal && window.SJLocal.refresh) window.SJLocal.refresh();
-      syncMsg(`已拉取：新增 ${j.noteAdded} 篇、更新 ${j.updated || 0} 篇、跳过 ${j.skipped} 篇（按最后修改时间合并）`, 'ok');
-      toast('已从云端拉取笔记');
-      scheduleClose(2000);
+
+      /* 文本先落地，再补附件本体：云端行只有 path、没有本地 disk，导入时
+         附件元数据会被 server.js 过滤掉（丢失数量见 j.lostFiles）。这里按
+         path 把文件下载回本地 files/ 并挂回笔记，正文里的 /api/files/<id> 才不再裂图。
+         附件失败只影响图片，不回滚已导入的笔记。 */
+      const att = await restoreAttachments(notes);
+      let msg = `已拉取：新增 ${j.noteAdded} 篇、更新 ${j.updated || 0} 篇、跳过 ${j.skipped} 篇`;
+      if (att.total) {
+        msg += `；附件补回 ${att.ok}/${att.total} 个`;
+        if (att.fail) {
+          msg += `（失败 ${att.fail} 个`;
+          if (att.why && att.why.length) msg += `：${att.why.slice(0, 2).join('；')}`;
+          msg += '）';
+        }
+      }
+      else if (j.lostFiles) msg += `；云端 ${j.lostFiles} 个附件无下载路径，已跳过`;
+      syncMsg(msg, att.fail ? '' : 'ok');
+      toast(att.fail ? `笔记已拉取，${att.fail} 个附件未取回` : '笔记与附件已拉取');
+      scheduleClose(att.fail ? 5000 : 3000);
     } catch (e) {
       syncMsg('拉取失败：' + e.message);
       toast('拉取失败：' + e.message);

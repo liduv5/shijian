@@ -16,6 +16,11 @@ const FILES_DIR = path.join(DATA_DIR, 'files');
 const VERSIONS_DIR = path.join(DATA_DIR, 'versions');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
 const PORT = Number(process.env.PORT || 5173);
+/* 每次进程启动生成一次，写入 /api/state.meta.bootId。前端重启后轮询比对它，
+   只有 bootId 变了才算「新进程真的起来了」——否则可能轮询到还没死透的旧进程，
+   误报重启成功。 */
+const BOOT_ID = crypto.randomBytes(6).toString('hex');
+let restarting = false; // 防止连点重启按钮拉起多个进程
 const HOST = process.env.SHIJIAN_HOST || '127.0.0.1';
 // --lan / SHIJIAN_LAN=1：监听所有网卡，手机、平板可在同一 WiFi 下访问
 const LAN = process.argv.includes('--lan') || process.env.SHIJIAN_LAN === '1' || HOST === '0.0.0.0';
@@ -466,7 +471,7 @@ async function handleApi(req, res, pathname, query) {
     return sendJSON(res, 200, {
       categories: db.categories,
       notes: live,
-      meta: { version: 1, count: live.length },
+      meta: { version: 1, count: live.length, bootId: BOOT_ID },
     });
   }
 
@@ -887,6 +892,52 @@ async function importAll(req, res, query) {
   sendJSON(res, 200, { catAdded, noteAdded, updated, skipped, lostFiles, backup: backupName });
 }
 
+/* 从云端拉回附件文件本体（本地版专用，配合 sync.js 的 doPull）。
+   背景：云端行的 attachments 只有 {id,name,size,type,path}，没有本地 disk；
+   过去的 /api/import 只能把这些元数据过滤掉，导致换电脑后正文里的
+   /api/files/<id> 全部裂图。这里接收浏览器下载好的 base64，写进
+   data/files/ 并用「云端原始 id」挂回笔记 —— 正文引用的是 id 不是 disk，
+   所以 id 必须原样保留，disk 由服务端现生成（绝不接受客户端传 disk，防路径穿越）。 */
+async function importCloudAtt(req, res) {
+  const body = await readBody(req);
+  const noteId = String(body.noteId || '');
+  const attId = String(body.id || '');
+  if (!ID_RE.test(noteId)) return sendError(res, 400, '笔记 id 不合法');
+  if (!ID_RE.test(attId)) return sendError(res, 400, '附件 id 不合法');
+
+  const note = db.notes.find((x) => x.id === noteId);
+  if (!note) return sendError(res, 404, '笔记不存在，无法挂回附件');
+
+  if (!Array.isArray(note.attachments)) note.attachments = [];
+  /* 幂等：同一 id 已挂回过就跳过，避免重复拉取时堆积磁盘文件。 */
+  if (note.attachments.some((a) => a && a.id === attId)) {
+    return sendJSON(res, 200, { ok: true, skipped: true, id: attId });
+  }
+
+  const data = String(body.data || '');
+  const b64 = data.includes(',') ? data.split(',').pop() : data;
+  const buf = Buffer.from(b64, 'base64');
+  if (!buf.length) return sendError(res, 400, '空附件');
+
+  /* disk 名一律服务端生成，格式与 POST /api/notes/:id/attachments 一致，
+     保证通过 DISK_RE，serveFile 的 safeJoin 才放行。 */
+  const ext = path.extname(String(body.name || '')).slice(0, 10).replace(/[^\w.]/g, '') || '';
+  const diskName = `att_${uid()}${ext}`;
+  await fsp.writeFile(path.join(FILES_DIR, diskName), buf);
+
+  note.attachments.push({
+    id: attId,
+    name: String(body.name || 'file').slice(0, 200),
+    size: buf.length,
+    type: String(body.type || 'application/octet-stream').slice(0, 100),
+    disk: diskName,
+    createdAt: Number(body.createdAt) || now(),
+  });
+  /* 不顶 updatedAt：附件补回是同步落地，不是用户编辑，避免污染 LWW 与历史版本。 */
+  scheduleSave();
+  return sendJSON(res, 200, { ok: true, id: attId, size: buf.length, disk: diskName });
+}
+
 // ---------------------------------------------------------------- 局域网访问
 /**
  * 开启 --lan 后，非本机（非回环地址）的请求必须携带正确访问码。
@@ -1054,6 +1105,8 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/lan-login' && req.method === 'POST') return await handleLanLogin(req, res);
     if (pathname === '/api/export') return exportAll(res);
     if (pathname === '/api/import' && req.method === 'POST') return await importAll(req, res, url.searchParams);
+    if (pathname === '/api/cloud-att' && req.method === 'POST') return await importCloudAtt(req, res);
+    if (pathname === '/api/restart' && req.method === 'POST') return await restartService(req, res);
     if (pathname.startsWith('/api/files/')) return serveFile(req, res, pathname.split('/').pop());
     if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname, url.searchParams);
     return serveStatic(req, res, pathname);
@@ -1076,6 +1129,97 @@ function openBrowser(url) {
     else if (process.platform === 'win32') spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' }).unref();
     else spawn('xdg-open', [url], { detached: true, stdio: 'ignore' }).unref();
   } catch (e) { /* 打不开浏览器也不影响服务 */ }
+}
+
+/**
+ * 重启本地服务（设置面板的「重启服务」按钮调用）。
+ *
+ * 两种运行形态必须区别对待：
+ *  1) 独立进程（启动.bat / 启动.vbs，也是 Edge 应用用的方式）：
+ *     落盘 → 回包 → spawn 一个全新的 detached node server.js → 旧进程退出。
+ *     因为 server.js 用同一个端口，新进程要带 --restarted 标记，
+ *     启动时先等旧进程真正释放端口，否则会被 start() 的 ALREADY_RUNNING
+ *     保护误判成「重复启动」而自杀，结果两边都没了。
+ *  2) Electron 内嵌（desktop/main.js 直接 require 本文件，同进程）：
+ *     不能 process.exit —— 那会把整个应用窗口一起干掉。走 Electron 的
+ *     relaunch：退出应用后由 Electron 重新启动，服务随之重启。
+ *
+ * 只接受本机调用；LAN 模式还要访问码。整段不 await 外部 IO，回包后延时执行，
+ * 保证 HTTP 响应先到前端，前端才能进入「等待新进程」的轮询。
+ */
+async function restartService(req, res) {
+  if (!isLocalRequest(req)) return sendError(res, 403, '仅本机可以重启服务');
+  if (restarting) return sendJSON(res, 409, { error: '正在重启中，请稍候' });
+  restarting = true;
+
+  // 重启前的最后一道保险：把还在防抖窗口里的改动立即写盘。
+  try { persistNow(); } catch (e) { console.error('重启前保存失败', e); }
+  sendJSON(res, 200, { ok: true, bootId: BOOT_ID, mode: process.versions.electron ? 'electron' : 'process' });
+
+  setTimeout(() => {
+    const { spawn } = require('child_process');
+    if (process.versions.electron) {
+      try {
+        const electron = require('electron');
+        const app = (electron && electron.app) || null;
+        if (app && typeof app.relaunch === 'function') {
+          app.relaunch();
+          setTimeout(() => app.exit(0), 150);
+          return;
+        }
+      } catch (e) { console.error('Electron 重启失败，回退为退出', e); }
+      // 拿不到 Electron app 就只能退出，让用户手动重开（不会误杀别的进程）
+      setTimeout(() => process.exit(0), 150);
+      return;
+    }
+
+    // 独立进程：透传原始命令行参数（去掉 --open 避免又弹一个浏览器），
+    // 加 --restarted 让新进程进入「等端口释放」分支。cwd 必须保留，
+    // 否则 server.js 里所有相对 __dirname 的路径都会错。
+    const rawArgs = process.argv.slice(2).filter((a) => a !== '--open' && a !== '--restarted');
+    const args = [path.join(ROOT, 'server.js')].concat(rawArgs, ['--restarted']);
+    try {
+      const child = spawn(process.execPath, args, {
+        cwd: process.cwd(),
+        env: Object.assign({}, process.env, { SHIJIAN_OPEN: '0' }),
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: false,
+      });
+      child.unref();
+      console.log('  [重启] 新进程已拉起，PID ' + child.pid);
+    } catch (e) {
+      console.error('  [重启] 拉起新进程失败：', e);
+      restarting = false;
+      return;
+    }
+    // 先关监听再退出；新进程那边会等端口真正空闲。
+    try { server.close(); } catch (e) { /* ignore */ }
+    setTimeout(() => process.exit(0), 200);
+  }, 250);
+}
+
+/** 等待端口空闲（供 --restarted 新进程用），返回 Promise<boolean>：true=已空闲 */
+function waitPortFree(port, timeoutMs = 20000) {
+  const net = require('net');
+  return new Promise((resolve) => {
+    const deadline = Date.now() + timeoutMs;
+    const probe = () => {
+      const s = net.connect({ host: '127.0.0.1', port });
+      let done = false;
+      const finish = (free) => {
+        if (done) return;
+        done = true;
+        try { s.destroy(); } catch (_) {}
+        if (free || Date.now() >= deadline) return resolve(free);
+        setTimeout(probe, 250);
+      };
+      s.once('connect', () => finish(false)); // 还有人占着
+      s.once('error', () => finish(true));    // 连不上 = 空闲了
+      s.setTimeout(800, () => finish(false));
+    };
+    probe();
+  });
 }
 
 /**
@@ -1157,7 +1301,11 @@ function start(port = PORT, host = BIND_HOST, tries = 12) {
 
 if (require.main === module) {
   const wantOpen = process.argv.includes('--open') || process.env.SHIJIAN_OPEN === '1';
-  start(PORT)
+  const isRestart = process.argv.includes('--restarted');
+  /* 重启拉起的新进程：先等旧进程释放端口再监听。否则 start() 探测到端口上
+     还是旧的拾笺自己，会判成 ALREADY_RUNNING 直接退出，造成「重启后服务没了」。 */
+  const boot = isRestart ? waitPortFree(PORT).then(() => start(PORT)) : start(PORT);
+  boot
     .then((srv) => {
       if (wantOpen) openBrowser(`http://localhost:${srv.address().port}`);
     })
