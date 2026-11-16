@@ -39,6 +39,7 @@ const MIME = {
   '.gif': 'image/gif',
   '.webp': 'image/webp',
   '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json',
   '.woff2': 'font/woff2',
   '.pdf': 'application/pdf',
   '.md': 'text/markdown; charset=utf-8',
