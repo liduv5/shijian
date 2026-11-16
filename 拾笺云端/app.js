@@ -2753,7 +2753,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-16-92';
+  const APP_BUILD = '2026-11-16-93';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -2997,8 +2997,8 @@
   function currentShareCode() {
     try {
       return new URLSearchParams(location.search).get('sharecode')
-        || localStorage.getItem('sj_sharecode') || 'SSYXUMSNMI';
-    } catch (_) { return 'SSYXUMSNMI'; }
+        || localStorage.getItem('sj_sharecode') || 'X4WPKTHLIN';
+    } catch (_) { return 'X4WPKTHLIN'; }
   }
   /* 早期版本这里还有一个 buildIntentUrl()：直接把签名地址包成裸 intent 交给系统。
      它已被下面的 buildDlIntent() 完全取代 —— 后者先经同源 dl.html 中转页，能顺手把
@@ -4587,7 +4587,7 @@
         || localStorage.getItem('sj_sharecode') || '';
     } catch (_) {}
     const u = new URL('/quick.html', location.origin);
-    u.searchParams.set('sharecode', sc || 'SSYXUMSNMI');
+    u.searchParams.set('sharecode', sc || 'X4WPKTHLIN');
     u.searchParams.set('from', from || 'app');
     return u.toString();
   }

@@ -6,11 +6,11 @@
 <meta name="theme-color" content="#2f6f5e">
 <meta name="color-scheme" content="light">
 <title>随手记</title>
-<link rel="manifest" href="/quick.webmanifest?sharecode=SSYXUMSNMI">
+<link rel="manifest" href="/quick.webmanifest?sharecode=X4WPKTHLIN">
 <!-- 速记专用图标：绿色铅笔，和朱红「拾」字主图标区分开。
      这个站点裸静态路径一律 403，所有图标 / manifest 都必须自带访问码。 -->
-<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-quick-32.png?sharecode=SSYXUMSNMI">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon-quick.png?sharecode=SSYXUMSNMI">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-quick-32.png?sharecode=X4WPKTHLIN">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon-quick.png?sharecode=X4WPKTHLIN">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -91,10 +91,11 @@
      localStorage，往里面写笔记就永远进不了主程序。所以这里只把速记
      编进链接 / 共享队列，交给主程序落盘；旧版本遗留在本分区的笔记
      一并带回。队列由主程序确认导入后才清，本页绝不提前标记「已发送」。 */
-  const SC = 'SSYXUMSNMI';
+  const SC = 'X4WPKTHLIN';
   /* 必须写到主程序的正式入口：相对路径会留在随手记自己的存储分区里。
      换分享链接域名时，这里和 SC 一起改。 */
-  const MAIN = 'https://2120533470581252096.app.workbuddy.host/?sharecode=' + SC + '&fs=pwa';
+  /* 主程序入口随发布域名走：换链接/换访问码时这里自动跟随，不再写死旧域名。 */
+  const MAIN = location.origin + '/?sharecode=' + SC + '&fs=pwa';
   /* 桌面快捷方式专用地址：必须带 from=desk，普通网页快捷方式与主程序
      同一套数据，独立安装的窗口则靠 window.open 跳回浏览器主窗口。 */
   const DESK_URL = location.origin + '/quick.html?sharecode=' + SC + '&from=desk';
@@ -367,8 +368,8 @@
    安装，每次打开主程序都触发 controllerchange → 整页自动刷新。 */
 (function () {
   if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
-  var SWV = '2026-11-16-92';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
-  var sc = new URLSearchParams(location.search).get('sharecode') || 'SSYXUMSNMI';
+  var SWV = '2026-11-16-93';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
+  var sc = new URLSearchParams(location.search).get('sharecode') || 'X4WPKTHLIN';
   var url = '/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SWV;
   navigator.serviceWorker.getRegistration().then(function (reg) {
     if (reg && reg.active) return;      /* 已有 SW：直接复用，绝不重复注册 */

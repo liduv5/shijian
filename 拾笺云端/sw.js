@@ -11,7 +11,7 @@
            所有 js/css 全部 403 —— 表现为「界面在、进度条卡住、按钮点不动」。
            所以每个同源请求都由 SW 主动补上访问码，不依赖 cookie。
    ============================================================ */
-const VERSION = 'sj-2026-11-16-92';
+const VERSION = 'sj-2026-11-16-93';
 const CACHE = 'shijian-' + VERSION;
 
 const SC_KEY = 'sharecode';
@@ -20,7 +20,7 @@ const SC_KEY = 'sharecode';
    所以优先取注册时 sw.js URL 上带的码（pwa.js / index.html 注册时会拼上
    当前页面链接里的码），页面每次打开还会 postMessage 同步一次最新码，
    连已经装好的旧 SW 也能跟着换。常量只作最后兜底。 */
-let SC_VAL = 'SSYXUMSNMI';
+let SC_VAL = 'X4WPKTHLIN';
 try {
   if (typeof self !== 'undefined' && self.location) {
     const v = new URL(self.location.href).searchParams.get(SC_KEY);

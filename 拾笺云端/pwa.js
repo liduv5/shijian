@@ -38,7 +38,7 @@
       /* 访问码从当前链接取，并同步给已装好的 SW：重新发布换码后不会 403。 */
       let sc = new URLSearchParams(location.search).get('sharecode') || '';
       try { sc = sc || localStorage.getItem('sj_sharecode') || ''; } catch (_) {}
-      sc = sc || 'SSYXUMSNMI';
+      sc = sc || 'X4WPKTHLIN';
       const pushCode = (reg) => {
         const sw = reg && (reg.active || reg.waiting || reg.installing);
         try {
@@ -54,7 +54,7 @@
          发布清单五处同步改：index.html 的 SWV、sw.js 的 VERSION、
          mobilesync.js 的 BUILD、quick.html 末尾注册脚本的 SWV、这里的兜底值。
          优先读内联脚本给的 SWV，保证各处 register() 用同一个脚本 URL。 */
-      const SW_BUILD = window.__SJ_SWV__ || '2026-11-16-92';
+      const SW_BUILD = window.__SJ_SWV__ || '2026-11-16-93';
       navigator.serviceWorker.register('/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SW_BUILD, { scope: '/' })
         .then((reg) => {
           pushCode(reg);

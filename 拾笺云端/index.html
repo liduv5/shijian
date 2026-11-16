@@ -13,13 +13,13 @@
   var SC_LS = 'sj_sharecode';
   var u = new URL(location.href);
   var fromUrl = u.searchParams.get('sharecode') || '';
-  var SC = fromUrl || 'SSYXUMSNMI';
+  var SC = fromUrl || 'X4WPKTHLIN';
   /* 发布时五处同步改：这里 SWV、sw.js VERSION、pwa.js SW_BUILD 兜底、
      mobilesync.js BUILD、quick.html 末尾 SW 注册脚本里的 SWV。
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-16-92';
+  var SWV = '2026-11-16-93';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -133,19 +133,19 @@
 <meta name="theme-color" content="#faf7f2">
 <meta name="color-scheme" content="light dark">
 <title>拾笺 · 云端笔记库</title>
-<link rel="stylesheet" href="/style.css?sharecode=SSYXUMSNMI">
-<link rel="stylesheet" href="/sjplus.css?sharecode=SSYXUMSNMI">
-<link rel="stylesheet" href="/vendor/github-dark.min.css?sharecode=SSYXUMSNMI">
+<link rel="stylesheet" href="/style.css?sharecode=X4WPKTHLIN">
+<link rel="stylesheet" href="/sjplus.css?sharecode=X4WPKTHLIN">
+<link rel="stylesheet" href="/vendor/github-dark.min.css?sharecode=X4WPKTHLIN">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23b04932'/><rect x='9' y='9' width='82' height='82' rx='15' fill='none' stroke='%23ffffff' stroke-opacity='.6' stroke-width='2'/><text y='70' x='50' font-size='56' text-anchor='middle' fill='%23fff' font-family='KaiTi,STKaiti,serif'>拾</text></svg>">
-<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png?sharecode=SSYXUMSNMI">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png?sharecode=X4WPKTHLIN">
 
 <!-- ============ 添加到手机桌面（PWA） ============
      注意：这个站点的静态资源需要访问码才放行（裸路径一律 403），
      manifest / 图标 / apple-touch-icon 都必须自带 ?sharecode=，
      否则浏览器拿到的是一页 403 HTML，manifest 解析直接报语法错误、
      装到桌面时没有图标。换访问码时这几处要一起改。 -->
-<link rel="manifest" href="/manifest.webmanifest?sharecode=SSYXUMSNMI">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?sharecode=SSYXUMSNMI">
+<link rel="manifest" href="/manifest.webmanifest?sharecode=X4WPKTHLIN">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?sharecode=X4WPKTHLIN">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -416,25 +416,25 @@
 
 <div class="print-area" id="printArea"></div>
 
-<script src="/vendor/workbuddy-cloud-sdk.js?sharecode=SSYXUMSNMI"></script>
-<script src="/vendor/docx.umd.js?sharecode=SSYXUMSNMI"></script>
-<script src="/vendor/marked.min.js?sharecode=SSYXUMSNMI"></script>
-<script src="/vendor/purify.min.js?sharecode=SSYXUMSNMI"></script>
-<script src="/vendor/turndown.js?sharecode=SSYXUMSNMI"></script>
-<script src="/vendor/turndown-plugin-gfm.js?sharecode=SSYXUMSNMI"></script>
-<script src="/vendor/highlight.min.js?sharecode=SSYXUMSNMI"></script>
-<script src="/export.js?sharecode=SSYXUMSNMI"></script>
-<script src="/attstore.js?sharecode=SSYXUMSNMI"></script>
-<script src="/local.js?sharecode=SSYXUMSNMI"></script>
-<script src="/mobilesync.js?sharecode=SSYXUMSNMI"></script>
+<script src="/vendor/workbuddy-cloud-sdk.js?sharecode=X4WPKTHLIN"></script>
+<script src="/vendor/docx.umd.js?sharecode=X4WPKTHLIN"></script>
+<script src="/vendor/marked.min.js?sharecode=X4WPKTHLIN"></script>
+<script src="/vendor/purify.min.js?sharecode=X4WPKTHLIN"></script>
+<script src="/vendor/turndown.js?sharecode=X4WPKTHLIN"></script>
+<script src="/vendor/turndown-plugin-gfm.js?sharecode=X4WPKTHLIN"></script>
+<script src="/vendor/highlight.min.js?sharecode=X4WPKTHLIN"></script>
+<script src="/export.js?sharecode=X4WPKTHLIN"></script>
+<script src="/attstore.js?sharecode=X4WPKTHLIN"></script>
+<script src="/local.js?sharecode=X4WPKTHLIN"></script>
+<script src="/mobilesync.js?sharecode=X4WPKTHLIN"></script>
 <!-- ============ v1.8.0 增强模块（全文检索 / 反向链接 / 版本对比 / 冲突 / 加密） ============ -->
-<script src="/fts.js?sharecode=SSYXUMSNMI"></script>
-<script src="/backlinks.js?sharecode=SSYXUMSNMI"></script>
-<script src="/diffview.js?sharecode=SSYXUMSNMI"></script>
-<script src="/conflict.js?sharecode=SSYXUMSNMI"></script>
-<script src="/e2ee.js?sharecode=SSYXUMSNMI"></script>
-<script src="/app.js?sharecode=SSYXUMSNMI"></script>
-<script src="/sjplus.js?sharecode=SSYXUMSNMI"></script>
-<script src="/pwa.js?sharecode=SSYXUMSNMI"></script>
+<script src="/fts.js?sharecode=X4WPKTHLIN"></script>
+<script src="/backlinks.js?sharecode=X4WPKTHLIN"></script>
+<script src="/diffview.js?sharecode=X4WPKTHLIN"></script>
+<script src="/conflict.js?sharecode=X4WPKTHLIN"></script>
+<script src="/e2ee.js?sharecode=X4WPKTHLIN"></script>
+<script src="/app.js?sharecode=X4WPKTHLIN"></script>
+<script src="/sjplus.js?sharecode=X4WPKTHLIN"></script>
+<script src="/pwa.js?sharecode=X4WPKTHLIN"></script>
 </body>
 </html>
