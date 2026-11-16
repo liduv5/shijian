@@ -11,7 +11,7 @@
            所有 js/css 全部 403 —— 表现为「界面在、进度条卡住、按钮点不动」。
            所以每个同源请求都由 SW 主动补上访问码，不依赖 cookie。
    ============================================================ */
-const VERSION = 'sj-2026-11-16-89';
+const VERSION = 'sj-2026-11-16-92';
 const CACHE = 'shijian-' + VERSION;
 
 const SC_KEY = 'sharecode';
@@ -39,6 +39,10 @@ const RAW_SHELL = [
   /* 品牌字子集（只含「拾」「笺」两字）：手机没有系统楷体，
      不预缓存时离线会掉回宋体，与电脑版看不齐。 */
   '/sj-brand.woff2',
+  /* 正文字体（Noto Sans SC 子集，字重 400/700）：离线可用，不依赖 CDN。 */
+  '/SJText-400.woff2',
+  '/SJText-500.woff2',
+  '/SJText-700.woff2',
   '/sjplus.css',
   '/app.js',
   '/sjplus.js',

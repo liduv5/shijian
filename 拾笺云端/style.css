@@ -12,8 +12,38 @@
   font-display: swap;
   unicode-range: U+62FE, U+7B3A;
 }
+/* 本地嵌入无衬线正文字体（思源黑体 Source Han Sans SC，SIL OFL 1.1 可商用）。
+   仅含 GB2312 常用字；unicode-range 限定到子集范围，生僻字自动回退到
+   字体栈里的系统字体。字重 400/500/700 三个文件，离线可用、不依赖 CDN。 */
+@font-face {
+  font-family: "SJText";
+  src: url("SJText-400.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2000-206F, U+20A0-20CF,
+    U+2100-214F, U+2190-21FF, U+2200-22FF, U+3000-303F, U+4E00-9FA5, U+FF00-FFEF;
+}
+@font-face {
+  font-family: "SJText";
+  src: url("SJText-500.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2000-206F, U+20A0-20CF,
+    U+2100-214F, U+2190-21FF, U+2200-22FF, U+3000-303F, U+4E00-9FA5, U+FF00-FFEF;
+}
+@font-face {
+  font-family: "SJText";
+  src: url("SJText-700.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2000-206F, U+20A0-20CF,
+    U+2100-214F, U+2190-21FF, U+2200-22FF, U+3000-303F, U+4E00-9FA5, U+FF00-FFEF;
+}
 :root {
-  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+  --font-ui: "SJText", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", sans-serif;
   --font-read: "Georgia", "Songti SC", "Noto Serif SC", "Source Han Serif SC", serif;
   --font-brand: "SJBrand", "STXingkai", "华文行楷", "KaiTi", "楷体", "STKaiti", "Kaiti SC", "Songti SC", "SimSun", serif;
@@ -898,6 +928,20 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
 .tb-btn.active { background: var(--accent-soft); color: var(--accent); }
 .tb-sep { width: 1px; height: 15px; background: var(--border); margin: 0 5px; flex: none; }
 .tb-text { font-weight: 700; font-size: 12.5px; letter-spacing: -.02em; }
+.tb-select {
+  height: 27px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  flex: none;
+  cursor: pointer;
+  transition: background .14s, color .14s;
+}
+.tb-select:hover { background: var(--surface-2); color: var(--text); }
+.tb-select option { background: var(--surface); color: var(--text); }
 
 /* 编辑主体 */
 .editor-body {
@@ -954,7 +998,7 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   overflow-y: auto;
   padding: 22px 32px 120px;
   outline: none;
-  font-size: 15px;
+  font-size: 16px;
 }
 /* 行距变量须压过下方 .markdown-body 的 line-height（richPane 同时带两个类） */
 .rich-pane.markdown-body { line-height: var(--sj-rich-lh, 1.8); }
@@ -965,7 +1009,7 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
 
 /* ============================================================ Markdown 排版 */
 .markdown-body {
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.8;
   color: var(--text);
   word-wrap: break-word;
@@ -979,7 +1023,7 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
 .markdown-body h3,
 .markdown-body h4 {
   font-weight: 650;
-  line-height: 1.4;
+  line-height: 1.25; /* 标题行高收紧（正文仍 1.5+），建立清晰视觉层级 */
   margin: 1.6em 0 .6em;
   letter-spacing: -.01em;
 }

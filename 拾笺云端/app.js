@@ -1964,6 +1964,16 @@
       s.className = 'tb-sep';
       bar.appendChild(s);
     };
+    // 富文本字体/字号下拉：原生 select，选后即复位到占位文字
+    const sel = (title, opts, onChange) => {
+      const s = document.createElement('select');
+      s.className = 'tb-select';
+      s.title = title;
+      s.innerHTML = opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+      s.addEventListener('change', () => { const v = s.value; s.value = ''; if (v) onChange(v); });
+      bar.appendChild(s);
+      return s;
+    };
 
     if (viewFormat === 'md') {
       // 视图切换（窄屏不提供分屏，两栏放不下）；打开时默认预览，但可手动切到编辑
@@ -2008,6 +2018,28 @@
     btn(I.bold, '加粗', () => exec('bold'));
     btn(I.italic, '斜体', () => exec('italic'));
     btn(I.strike, '删除线', () => exec('strikeThrough'));
+    sep();
+    sel('字体', [
+      ['', '字体'],
+      ['SimSun', '宋体'],
+      ['SimHei', '黑体'],
+      ['Microsoft YaHei', '微软雅黑'],
+      ['KaiTi', '楷体'],
+      ['Arial', 'Arial'],
+      ['Georgia', 'Georgia'],
+      ['Courier New', '等宽'],
+    ], (v) => execFont('fontName', v));
+    sel('字号', [
+      ['', '字号'],
+      ['12', '12'],
+      ['14', '14'],
+      ['16', '16'],
+      ['18', '18'],
+      ['20', '20'],
+      ['24', '24'],
+      ['28', '28'],
+      ['32', '32'],
+    ], (v) => execFontSize(v));
     sep();
     btn('<span class="tb-text">H1</span>', '一级标题', () => exec('formatBlock', '<h1>'));
     btn('<span class="tb-text">H2</span>', '二级标题', () => exec('formatBlock', '<h2>'));
@@ -2143,6 +2175,54 @@
     restoreRange();
     try { document.execCommand('styleWithCSS', false, false); } catch (_) {}
     document.execCommand(cmd, false, value);
+    onRichInput();
+  }
+
+  // 字体：styleWithCSS=true 让 fontName 生成 <span style="font-family:…">，
+  // 而不是会被 DOMPurify 清掉 face 属性的旧 <font> 标签。
+  function execFont(cmd, value) {
+    const pane = $('#richPane');
+    pane.focus();
+    restoreRange();
+    try { document.execCommand('styleWithCSS', false, true); } catch (_) {}
+    document.execCommand(cmd, false, value);
+    onRichInput();
+  }
+
+  // 字号：execCommand('fontSize') 只认 1~7 档，直接用会落 <font size>，
+  // 其 size 属性会被净化丢弃。做法是先用第 7 档打出可定位的 <font>，
+  // 再把本次产生的那些 <font> 换成带精确 px 的 <span style="font-size">。
+  function execFontSize(px) {
+    const pane = $('#richPane');
+    pane.focus();
+    restoreRange();
+    try { document.execCommand('styleWithCSS', false, false); } catch (_) {}
+    // 记录执行前已有的 font 节点，避免误改正文里别处的内容
+    const before = new Set(Array.from(pane.querySelectorAll('font')));
+    document.execCommand('fontSize', false, '7');
+    const made = Array.from(pane.querySelectorAll('font')).filter((f) => !before.has(f));
+    if (!made.length) { onRichInput(); return; }
+    const newSpans = [];
+    made.forEach((f) => {
+      const span = document.createElement('span');
+      span.style.fontSize = px + 'px';
+      while (f.firstChild) span.appendChild(f.firstChild);
+      f.replaceWith(span);
+      newSpans.push(span);
+    });
+    // 用替换后的新 span 重建选区，保证字号变更后选中内容仍被选中
+    const sel = window.getSelection();
+    if (sel && newSpans.length) {
+      const first = newSpans[0], last = newSpans[newSpans.length - 1];
+      try {
+        const r = document.createRange();
+        r.setStartBefore(first);
+        r.setEndAfter(last);
+        sel.removeAllRanges();
+        sel.addRange(r);
+        savedRange = r.cloneRange();
+      } catch (_) {}
+    }
     onRichInput();
   }
 
@@ -2673,7 +2753,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-16-89';
+  const APP_BUILD = '2026-11-16-92';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
