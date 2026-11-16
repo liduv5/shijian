@@ -54,6 +54,7 @@
     tree: {},
     viewMode: localStorage.getItem('sj_view') || 'split',
     theme: localStorage.getItem('sj_theme') || 'light',
+    richLh: (function () { const v = parseFloat(localStorage.getItem('sj_rich_lh')); return [1.8, 1.5, 1.3].includes(v) ? v : 1.8; })(),
     dirty: false,
   };
 
@@ -2024,6 +2025,18 @@
       if (url) exec('createLink', url);
     });
     btn(I.hr, '分隔线', () => exec('insertHorizontalRule'));
+    sep();
+    const LH_STEPS = [1.8, 1.5, 1.3];
+    const LH_LABELS = ['标准', '适中', '紧凑'];
+    const lhBtn = btn('<span class="tb-text" id="lhBtnText">行距</span>', '切换正文行距', () => {
+      const i = (LH_STEPS.indexOf(state.richLh) + 1) % LH_STEPS.length;
+      state.richLh = LH_STEPS[i];
+      applyRichLh();
+      try { localStorage.setItem('sj_rich_lh', String(state.richLh)); } catch (_) {}
+    });
+    lhBtn.title = '正文行距：' + LH_LABELS[LH_STEPS.indexOf(state.richLh)] + '（点击切换）';
+    const lhTxt = lhBtn.querySelector('#lhBtnText');
+    if (lhTxt) lhTxt.textContent = '行距' + LH_LABELS[LH_STEPS.indexOf(state.richLh)];
     const clearBtn = btn('<span class="tb-text" style="font-weight:600">Tx</span>', '清除格式', () => exec('removeFormat'), '');
     clearBtn.style.marginLeft = 'auto';
   }
@@ -3938,6 +3951,11 @@
     });
   });
 
+  /* 富文本正文行距（显示偏好，存本机） */
+  function applyRichLh() {
+    document.documentElement.style.setProperty('--sj-rich-lh', String(state.richLh));
+  }
+
   /* 主题 */
   function applyTheme(t) {
     state.theme = t;
@@ -4011,6 +4029,7 @@
 
   async function boot() {
     applyTheme(state.theme);
+    applyRichLh();
     try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (_) {}
     try {
       const data = await api('/api/state');
