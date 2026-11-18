@@ -381,11 +381,16 @@
      手机端拉取后自然只剩「图片暂未下载」。这里补上真正的文件上传：
      附件是不可变的（id 换一个就是新文件），所以上传路径可以缓存，第二次同步直接复用。 */
   const ATT_UP_KEY = 'sj_att_up_v1';
-  function attUpCache() {
-    try { return JSON.parse(localStorage.getItem(ATT_UP_KEY) || '{}') || {}; } catch (_) { return {}; }
+  /* 缓存必须按 owner 隔离：云端存储路径形如 users/<owner>/notes/…，
+     换账号或换云环境后旧路径指向的是别人/别处的对象。若沿用旧缓存，
+     会把失效路径写进新库，附件全部裂图。 */
+  function attUpCache(owner) {
+    const k = ATT_UP_KEY + (owner ? '.' + owner : '');
+    try { return JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch (_) { return {}; }
   }
-  function saveAttUpCache(m) {
-    try { localStorage.setItem(ATT_UP_KEY, JSON.stringify(m)); } catch (_) { /* 存不下就算了，下次重传 */ }
+  function saveAttUpCache(m, owner) {
+    const k = ATT_UP_KEY + (owner ? '.' + owner : '');
+    try { localStorage.setItem(k, JSON.stringify(m)); } catch (_) { /* 存不下就算了，下次重传 */ }
   }
   /* 平台存储网关的 CORS 白名单里没有 x-upsert，而 SDK 的 storage.upload() 会无条件带上
      这个头（upsert 传 false 也带），浏览器预检直接把它挡掉，fetch 抛 TypeError: Failed to
@@ -572,7 +577,7 @@
       }
       const cats = (data.categories || []).map((c) => Object.assign(catToRow(c), { owner_id: owner }));
 
-      const cache = attUpCache();
+      const cache = attUpCache(owner);
       const notes = [];
       const attErrs = [];
       let attOk = 0, attFail = 0;
@@ -601,7 +606,7 @@
         notes.push(row);
         if (notes.length % 5 === 0) syncMsg(`正在上传附件…（已上传 ${attOk} 个）`);
       }
-      saveAttUpCache(cache);
+      saveAttUpCache(cache, owner);
 
       if (cats.length) {
         const r = await cloud.database.from('sj_categories').upsert(cats);
