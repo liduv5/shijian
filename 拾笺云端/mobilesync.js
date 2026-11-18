@@ -11,16 +11,16 @@
 
   if (!window.WorkBuddyCloud) { console.warn('[同步] 云服务组件未加载'); return; }
   const cloud = window.WorkBuddyCloud.createWorkBuddyCloud({
-    endpoint: 'https://shijian-notes-46125.app.workbuddy.host',
+    endpoint: 'https://wbapp-qlmdiie5vedhwtjpkrwebn.app.workbuddy.host',
     oauthRelayBaseUrl: 'https://www.workbuddy.cn/v2/as/genie-baas/oauth',
-    publishableKey: 'wbpk_dI8FNrfPPUj38F8big7tnc_ppkTgPWXNyg4hg2VzRPCDCwMgQT2Qft7',
+    publishableKey: 'wbpk_qLmDIIe5VEdhWTjpKrwEbn_w4E3BrZpFx2RJRpvOSSjns6irFvlsjxB',
   });
 
   const $ = (s, r) => (r || document).querySelector(s);
   const LS_EMAIL = 'sj_cloud_session_email';
   const LS_LAST = 'sj_last_sync';
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对。 */
-  const BUILD = '2026-11-16-93';
+  const BUILD = '2026-11-18-104';
   let session = null;
   let pendingOtp = null;
   let cooldownTimer = null;
@@ -105,7 +105,7 @@
      老浏览器退回 AbortController；直连失败才回退 SDK。
      走页面同源可省掉跨域预检，重新发布换域名也不用改代码。 */
   const REST_BASE = (typeof location !== 'undefined' && location.origin) ? location.origin : '';
-  const REST_PK = 'wbpk_dI8FNrfPPUj38F8big7tnc_ppkTgPWXNyg4hg2VzRPCDCwMgQT2Qft7';
+  const REST_PK = 'wbpk_qLmDIIe5VEdhWTjpKrwEbn_w4E3BrZpFx2RJRpvOSSjns6irFvlsjxB';
   async function restRead(table, owner) {
     const token = await withTimeout(() => gcToken(), 4000, '');
     let signal, kill = null;
@@ -362,7 +362,7 @@
          PWA/object/... → 404 text/html（静态兜底）；补前缀
          PWA/.cloud/storage/object/sign/runtime/... → 200 application/pdf。
          且保持同源（PWA 主机）：/.cloud/storage/ 在 sw.js 放行名单内可直连；
-         跨源 shijian-notes-46125 对无 header 的 GET 会 403，故不换 host。 */
+         跨源云后端对无 header 的 GET 会 403，故不换 host。 */
       const abs = /^https?:/i.test(rel) ? rel
         : location.origin + '/.cloud/storage/' + rel.replace(/^\/+/, '');
       return { url: abs, via: 'B' };

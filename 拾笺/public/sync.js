@@ -10,9 +10,9 @@
 
   // 来自 workbuddy_cloud_service 的 publicConfig（可公开的客户端标识）
   const CONFIG = {
-    endpoint: 'https://shijian-notes-46125.app.workbuddy.host',
+    endpoint: 'https://wbapp-qlmdiie5vedhwtjpkrwebn.app.workbuddy.host',
     oauthRelayBaseUrl: 'https://www.workbuddy.cn/v2/as/genie-baas/oauth',
-    publishableKey: 'wbpk_dI8FNrfPPUj38F8big7tnc_ppkTgPWXNyg4hg2VzRPCDCwMgQT2Qft7',
+    publishableKey: 'wbpk_qLmDIIe5VEdhWTjpKrwEbn_w4E3BrZpFx2RJRpvOSSjns6irFvlsjxB',
   };
   if (!window.WorkBuddyCloud) { console.warn('[同步] 云服务组件未加载'); return; }
   const cloud = window.WorkBuddyCloud.createWorkBuddyCloud(CONFIG);
