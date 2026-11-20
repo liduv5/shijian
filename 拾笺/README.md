@@ -80,9 +80,17 @@ node server.js
 
 ```bash
 cd note-app
-npm install          # 首次会下载 Electron，约 100MB
+npm install          # 首次会下载 Electron，约 110MB
 npm run desktop      # 启动桌面客户端
 ```
+
+`node_modules/` 不入库，每台电脑各自装一次。国内网络若卡在 Electron 下载，用镜像：
+
+```bash
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install
+```
+
+只用 `启动.bat` / `启动.vbs` 的浏览器版不需要 Electron，系统有 Node 18+ 即可。
 
 打包成安装包（产物在 `release/`）：
 
