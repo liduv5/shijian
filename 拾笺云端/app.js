@@ -2755,7 +2755,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-20-118';
+  const APP_BUILD = '2026-11-20-119';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -5277,9 +5277,10 @@
        随手记 = 走现有 openQuick()，带 q 参数导入，绝不裸跳。 */
     $('#sjTabNotes').addEventListener('click', () => {
       if (currentNote()) closeEditor();
+      hideCatSheet();
       closeDrawer();
     });
-    $('#sjTabQuick').addEventListener('click', () => openQuick());
+    $('#sjTabQuick').addEventListener('click', () => { hideCatSheet(); openQuick(); });
 
     /* ---- 分类面板 ---- */
     function folderCount(id) {
@@ -5294,8 +5295,17 @@
       return state.notes.filter((n) => ids.has(n.categoryId)).length;
     }
     function catRow(key, label, icon, count, indent) {
-      return `<button type="button" class="sj-cat-row${String(state.selCat) === String(key) ? ' on' : ''}${indent ? ' sj-cat-indent' : ''}" data-cat="${escapeHtml(key)}">`
+      return `<button type="button" class="sj-cat-row${String(state.selCat) === String(key) ? ' on' : ''}${indent ? ' sj-cat-indent' : ''}" data-cat="${escapeHtml(key)}" style="--dl:52px">`
         + `${icon}<span class="sj-cat-name">${escapeHtml(label)}</span><span class="sj-cat-n">${count}</span></button>`;
+    }
+    /* 华为风展开态的页头：大标题（点一下收起）+ 条数。放在面板内部，
+       这样面板用不透明浅灰铺满时，标题不会被遮罩压暗、也不受列表层级影响。 */
+    function catHero() {
+      return '<div class="sj-cat-hero">'
+        + '<button type="button" class="sj-home-title" data-act="cat-close">'
+        + '<span>全部笔记</span><span class="sj-caret">▲</span></button>'
+        + `<div class="sj-home-count">${state.notes.length} 条笔记</div>`
+        + '</div>';
     }
     const ICON_ALL = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 5h16M4 12h16M4 19h16"/></svg>';
     const ICON_STAR = '<svg viewBox="0 0 24 24" class="ico"><path d="M12 3.6l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.8l5.9-.8z"/></svg>';
@@ -5331,7 +5341,8 @@
         : `<span class="sj-cat-n">${folderCount(cat.id)}</span>`;
       /* 截图里子分类比根节点明显右移：根节点 12px，一级 44px，每深一层再 +20px。 */
       const pad = isRoot ? 12 : 24 + depth * 20;
-      return `<div class="sj-cat-row sj-cat-folder${isRoot ? ' sj-cat-root' : ''}${active ? ' on' : ''}" data-cat="${id}" style="padding-left:${pad}px">`
+      const dl = isRoot ? 52 : pad + 26;
+      return `<div class="sj-cat-row sj-cat-folder${isRoot ? ' sj-cat-root' : ''}${active ? ' on' : ''}" data-cat="${id}" style="padding-left:${pad}px;--dl:${dl}px">`
         + `${lead}<span class="sj-cat-name">${escapeHtml(cat.name)}</span>${tail}</div>`;
     }
     function renderCatSheet() {
@@ -5339,7 +5350,7 @@
       const all = state.notes.length;
       const star = state.notes.filter((n) => n.starred).length;
       const uncat = state.notes.filter((n) => !n.categoryId).length;
-      let html = '<div class="sj-cat-card">'
+      let html = catHero() + '<div class="sj-cat-card">'
         + catRow('all', '全部笔记', ICON_ALL, all, false)
         + catRow('uncat', '未分类', ICON_BOX, uncat, false)
         + catRow('starred', '我的收藏', ICON_STAR, star, false)
@@ -5361,19 +5372,21 @@
           };
           walk(root.id, 1);
         }
-        html += `<button type="button" class="sj-cat-new" data-act="sheet-add-sub" data-parent="${escapeHtml(root.id)}">新建</button>`;
+        html += `<button type="button" class="sj-cat-new" data-act="sheet-add-sub" data-parent="${escapeHtml(root.id)}" style="--dl:52px">新建</button>`;
         html += '</div>';
       }
       SHEET.innerHTML = html;
     }
     function hideCatSheet() {
       if (SHEET) SHEET.classList.add('hidden');
+      document.body.classList.remove('sj-cat-open');
       if (MMENU) MMENU.classList.add('hidden');
       if (catMask) { catMask.remove(); catMask = null; }
     }
     function showCatSheet() {
       if (!SHEET) return;
       renderCatSheet();
+      document.body.classList.add('sj-cat-open');
       if (!catMask) {
         catMask = document.createElement('div');
         catMask.className = 'sj-cat-mask';
@@ -5790,6 +5803,7 @@
       const act = e.target.closest('[data-act]');
       if (act) {
         const a = act.dataset.act;
+        if (a === 'cat-close') { hideCatSheet(); return; }
         if (a === 'manage') {
           /* 参考华为备忘录：先弹「新建文件夹 / 编辑」，不立刻关掉分类面板。 */
           const r = act.getBoundingClientRect();

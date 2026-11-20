@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-118 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-119 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-20-118';
+const BUILD = '2026-11-20-119';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -315,7 +315,7 @@ ok('新建按钮只对文字有效：inline-block 且左对齐到子分类名称
   styleSrc.indexOf('.sj-mgr-new-card .sj-mgr-new { margin-left: 0; }') >= 0 &&
   !/\.sj-mgr-new \{\s*display: block; width: 100%/.test(styleSrc));
 
-/* ---- 合并同名分类（2026-11-20-118）---- */
+/* ---- 合并同名分类（2026-11-20-119）---- */
 ok('按「同一父级 + 同名」分组识别重复分类（不误并不同父级同名）',
   appSrc.indexOf('function dupGroups(cats)') >= 0 &&
   appSrc.indexOf('c.parentId || null, String(c.name || \'\').trim().toLocaleLowerCase()') >= 0 &&
@@ -353,6 +353,26 @@ ok('详情页抬高主区给固定底栏让位，附件面板不再被遮挡',
   /body\.sj-note-open \.app \{[\s\S]{0,140}bottom: calc\(56px \+ env\(safe-area-inset-bottom, 0px\)\);/.test(styleSrc) &&
   styleSrc.indexOf('.attach-panel {') >= 0 &&
   styleSrc.indexOf('position: fixed; z-index: 61;') >= 0);
+
+ok('分类面板按华为截图做整页展开：页头带▲、浅灰底不压暗、tab 浮在面板上',
+  appSrc.indexOf('function catHero()') >= 0 &&
+  appSrc.indexOf('class="sj-caret">▲') >= 0 &&
+  appSrc.indexOf("document.body.classList.add('sj-cat-open')") >= 0 &&
+  appSrc.indexOf("document.body.classList.remove('sj-cat-open')") >= 0 &&
+  /body\.sj-cat-open \.sj-cat-mask \{[\s\S]{0,80}background: var\(--bg\)/.test(styleSrc) &&
+  /body\.sj-cat-open \.sj-tabbar \{ z-index: 70; \}/.test(styleSrc) &&
+  styleSrc.indexOf('body.sj-cat-open .sj-more-btn,') >= 0);
+
+ok('分类面板字号/行高/图标/系统字体按截图放大，分隔线从各行文字(--dl)起',
+  /\.sj-cat-hero \.sj-home-title \{[\s\S]{0,220}font-size: 30px; font-weight: 700/.test(styleSrc) &&
+  /\.sj-cat-row \{[\s\S]{0,320}min-height: 62px; padding: 0 2px;/.test(styleSrc) &&
+  /\.sj-cat-row \{[\s\S]{0,320}font-family: var\(--mgr-font, var\(--font-ui\)\); font-size: 17px/.test(styleSrc) &&
+  /\.sj-cat-row \.ico \{ width: 23px; height: 23px/.test(styleSrc) &&
+  styleSrc.indexOf('.sj-cat-sheet {\n    position: fixed; z-index: 68;') >= 0 &&
+  styleSrc.indexOf('--mgr-font: -apple-system, BlinkMacSystemFont, "HarmonyOS Sans SC"') >= 0 &&
+  styleSrc.indexOf('left: var(--dl, 52px); right: 18px; top: 0;') >= 0 &&
+  appSrc.indexOf('--dl:${dl}px') >= 0 &&
+  appSrc.indexOf("data-act=\"cat-close\"") >= 0);
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
