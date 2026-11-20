@@ -2755,7 +2755,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-20-110';
+  const APP_BUILD = '2026-11-20-111';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -5243,6 +5243,7 @@
     if (!bar) return;                       // 老页面结构兜底
     const FAB = $('#sjFab'), DETAIL = $('#sjDetailBar');
     const SHEET = $('#sjCatSheet'), TITLE = $('#sjCatTitle'), SEARCH = $('#sjHomeSearch');
+    const MMENU = $('#sjManageMenu');
     let catMask = null;
 
     /* 首页 / 详情切换：只同步 UI class，不动 selNote / dirty / saveNow。 */
@@ -5344,6 +5345,7 @@
     }
     function hideCatSheet() {
       if (SHEET) SHEET.classList.add('hidden');
+      if (MMENU) MMENU.classList.add('hidden');
       if (catMask) { catMask.remove(); catMask = null; }
     }
     function showCatSheet() {
@@ -5466,6 +5468,21 @@
       ]);
     }
     if (MGR_BACK) MGR_BACK.addEventListener('click', () => closeCatManager(true));
+    if (MMENU) {
+      MMENU.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-act]');
+        if (!b) return;
+        hideManageMenu();
+        hideCatSheet();
+        if (b.dataset.act === 'new-root') askCreateCategory(null);
+        else if (b.dataset.act === 'edit') openCatManager();
+      });
+    }
+    document.addEventListener('pointerdown', (e) => {
+      if (!MMENU || MMENU.classList.contains('hidden')) return;
+      if (e.target.closest('#sjManageMenu') || e.target.closest('[data-act="manage"]')) return;
+      hideManageMenu();
+    }, true);
     if (MGR_BODY) {
       MGR_BODY.addEventListener('click', (e) => {
         const act = e.target.closest('[data-act]');
@@ -5533,17 +5550,31 @@
       if (MGR && !MGR.classList.contains('hidden')) renderCatManager();
     });
 
+    function hideManageMenu() {
+      if (MMENU) MMENU.classList.add('hidden');
+    }
+    function showManageMenu(x, y) {
+      if (!MMENU) return;
+      MMENU.classList.remove('hidden');
+      const r = MMENU.getBoundingClientRect();
+      MMENU.style.left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8)) + 'px';
+      MMENU.style.top = Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) + 'px';
+    }
     if (TITLE) TITLE.addEventListener('click', () => {
       if (SHEET && SHEET.classList.contains('hidden')) showCatSheet(); else hideCatSheet();
     });
     if (SHEET) SHEET.addEventListener('click', (e) => {
       const act = e.target.closest('[data-act]');
       if (act) {
+        if (act.dataset.act === 'manage') {
+          /* 参考华为备忘录：先弹「新建文件夹 / 编辑」，不立刻关掉分类面板。 */
+          const r = act.getBoundingClientRect();
+          showManageMenu(r.right - 180, r.bottom + 6);
+          return;
+        }
         hideCatSheet();
         if (act.dataset.act === 'trash') {
           const b = $('#sjPlusToolsBtn'); if (b) b.click();
-        } else if (act.dataset.act === 'manage') {
-          openCatManager();
         }
         return;
       }

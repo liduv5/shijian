@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-20-110';
+  var SWV = '2026-11-20-111';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -445,6 +445,12 @@
      .list-pane 内部又有 z-index:66，面板放进去会被动态遮罩（z-index:67，根层）盖住，
      只剩一层灰蒙蒙的遮罩（2026-11-20 反馈）。放根层后 68 > 67，面板正常浮在遮罩上。 -->
 <div class="sj-cat-sheet hidden" id="sjCatSheet"></div>
+
+<!-- 华为备忘录风：点分类面板里的「管理」先弹出这两项，再决定新建或进入编辑页。 -->
+<div class="sj-manage-menu hidden" id="sjManageMenu" role="menu" aria-label="管理文件夹">
+  <button type="button" data-act="new-root" role="menuitem">新建文件夹</button>
+  <button type="button" data-act="edit" role="menuitem">编辑</button>
+</div>
 
 <!-- 分类管理页：分类面板里点「管理」进入，仿华为备忘录「编辑」页。
      全屏覆盖、body 直属，和普通 modal 共用同一套分类接口；返回时回到分类面板。 -->

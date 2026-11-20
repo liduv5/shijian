@@ -2837,7 +2837,7 @@ body.m-list .pwa-tip {
    ============================================================ */
 /* 桌面端默认隐藏：下面的 @media 里才按首页/详情页分别放开 */
 .sj-home-head, .sj-fab, .sj-tabbar, .sj-detail-bar,
-.sj-cat-mgr, .sj-more-btn, .sj-more-menu { display: none; }
+.sj-cat-mgr, .sj-manage-menu, .sj-more-btn, .sj-more-menu { display: none; }
 
 @media (max-width: 980px) {
   /* ---- 首页头部：大标题 + 条数 + 胶囊搜索 ---- */
@@ -3033,6 +3033,27 @@ body.m-list .pwa-tip {
     position: fixed; z-index: 67; inset: 0;
     background: rgba(18, 16, 14, .32);
   }
+
+  /* ---- 分类面板「管理」两步菜单：截图里的「新建文件夹 / 编辑」 ---- */
+  .sj-manage-menu {
+    display: block; position: fixed; z-index: 76;
+    min-width: 180px; padding: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow-lg);
+    animation: pop .13s var(--ease);
+  }
+  .sj-manage-menu.hidden { display: none; }
+  .sj-manage-menu button {
+    display: flex; align-items: center;
+    width: 100%; min-height: 48px; padding: 0 14px;
+    border: 0; background: transparent; color: var(--text);
+    font-family: var(--font-ui); font-size: 15px; text-align: left;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .sj-manage-menu button + button { border-top: 1px solid var(--border); }
+  .sj-manage-menu button:active { background: var(--surface-2); }
 
   /* 文件夹色卡：同级第 1~4 个固定循环，不入库、不随设备变色。 */
   .sj-cat-chip, .sj-mgr-chip {

@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-110 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-111 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-20-110';
+const BUILD = '2026-11-20-111';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -177,7 +177,7 @@ ok('分类面板复用现有伪节点 all/uncat/starred',
 ok('首页搜索与侧栏搜索共享 state.search',
   appSrc.indexOf('state.search = e.target.value;') >= 0);
 ok('桌面端默认隐藏新增 UI（只在 ≤980px 放开）',
-  /\.sj-home-head, \.sj-fab, \.sj-tabbar, \.sj-detail-bar,[\s\S]{0,40}\.sj-more-btn, \.sj-more-menu \{ display: none; \}/.test(styleSrc) &&
+  /\.sj-home-head, \.sj-fab, \.sj-tabbar, \.sj-detail-bar,[\s\S]{0,100}\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu \{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('@media (max-width: 980px)') >= 0);
 ok('手机端顶栏收起、--m-bar-total 归零（顶端无菜单）',
   /@media \(max-width: 980px\)[\s\S]{0,400}\.m-bar \{ display: none !important; \}/.test(styleSrc) &&
@@ -217,7 +217,7 @@ ok('管理页支持拖动排序并回写 category.order',
   appSrc.indexOf('body: { order: i }') >= 0 &&
   appSrc.indexOf('pointermove') >= 0);
 ok('分类管理页样式仅窄屏放开，桌面默认隐藏',
-  /\.sj-cat-mgr, \.sj-more-btn, \.sj-more-menu \{ display: none; \}/.test(styleSrc) &&
+  /\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu \{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('.sj-cat-mgr {') >= 0 &&
   styleSrc.indexOf('.sj-mgr-card') >= 0 &&
   styleSrc.indexOf('body.sj-cat-mgr-open .pwd-tip') >= 0);
@@ -225,6 +225,17 @@ ok('分类面板文件夹按截图使用文件夹图标、色卡与层级箭头'
   appSrc.indexOf('ICON_FOLDER') >= 0 &&
   appSrc.indexOf('sj-cat-chip') >= 0 &&
   appSrc.indexOf('sj-cat-caret') >= 0);
+ok('分类管理页 DOM 节点存在：#sjManageMenu', indexSrc.indexOf('id="sjManageMenu"') >= 0);
+ok('点「管理」先弹「新建文件夹 / 编辑」两步菜单（不直接进编辑页）',
+  appSrc.indexOf('showManageMenu(r.right - 180, r.bottom + 6)') >= 0 &&
+  indexSrc.indexOf('data-act="new-root"') >= 0 &&
+  indexSrc.indexOf('data-act="edit"') >= 0 &&
+  !/act\.dataset\.act === 'manage'[\s\S]{0,160}openCatManager\(\)/.test(appSrc));
+ok('两步菜单样式按截图：白卡圆角、两行、点按反馈',
+  styleSrc.indexOf('.sj-manage-menu {') >= 0 &&
+  styleSrc.indexOf('.sj-manage-menu.hidden') >= 0 &&
+  styleSrc.indexOf('min-height: 48px') >= 0 &&
+  styleSrc.indexOf('.sj-manage-menu button + button') >= 0);
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
