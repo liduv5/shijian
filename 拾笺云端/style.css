@@ -2995,39 +2995,65 @@ body.m-list .pwa-tip {
     position: fixed; z-index: 68;
     left: 12px; right: 12px;
     top: calc(var(--m-bar-total) + 66px);
-    max-height: min(62vh, 480px); overflow-y: auto;
-    padding: 6px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    box-shadow: var(--shadow-lg);
+    max-height: min(72vh, 560px); overflow-y: auto;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
     overscroll-behavior: contain;
   }
   .sj-cat-sheet.hidden { display: none; }
+  /* 每个顶层文件夹是一张独立白卡，和截图一样卡间留缝 */
+  .sj-cat-card {
+    margin-bottom: 12px; padding: 4px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: var(--shadow-lg);
+  }
+  .sj-cat-card:last-child { margin-bottom: 0; }
+  .sj-cat-card .sj-cat-row + .sj-cat-row,
+  .sj-cat-card .sj-cat-row + .sj-cat-new,
+  .sj-cat-card .sj-cat-new { border-top: 1px solid var(--border); }
+  .sj-cat-card .sj-cat-row:last-of-type { border-bottom: 0; }
+  .sj-cat-empty { padding: 18px 14px; font-size: 13px; color: var(--text-3); }
   .sj-cat-row {
     display: flex; align-items: center; gap: 10px;
-    width: 100%; min-height: 46px; padding: 0 12px;
-    border: 0; border-radius: var(--r-md);
+    width: 100%; min-height: 52px; padding: 0 12px;
+    border: 0; border-radius: 8px;
     background: transparent; color: var(--text);
     font-family: var(--font-ui); font-size: 14px; text-align: left;
-    touch-action: manipulation;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
   .sj-cat-row .ico { width: 18px; height: 18px; color: var(--text-3); flex: none; }
   .sj-cat-row .sj-cat-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sj-cat-row .sj-cat-n { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
-  .sj-cat-row.on { background: var(--accent-soft); color: var(--accent); }
+  .sj-cat-row.on { color: var(--accent); background: transparent; }
   .sj-cat-row.on .ico { color: var(--accent); }
+  .sj-cat-toggle {
+    width: 28px; flex: none; border: 0; background: transparent;
+    color: var(--text-3); font-size: 16px; line-height: 1;
+    transition: transform .15s var(--ease);
+    touch-action: manipulation;
+  }
+  .sj-cat-toggle.closed { transform: rotate(-90deg); }
   .sj-cat-sep {
-    margin: 6px 12px 4px; padding-top: 8px;
-    border-top: 1px solid var(--border);
-    font-size: 11px; color: var(--text-3);
+    margin: 2px 10px 10px; padding: 0;
+    font-size: 12px; color: var(--text-3);
     display: flex; align-items: center; justify-content: space-between;
   }
   .sj-cat-sep button {
     border: 0; background: transparent; color: var(--accent);
-    font-family: var(--font-ui); font-size: 12px; cursor: pointer;
+    font-family: var(--font-ui); font-size: 13px; cursor: pointer;
   }
-  .sj-cat-indent { padding-left: 30px; }
+  .sj-cat-indent { padding-left: 44px; }
+  .sj-cat-new {
+    display: block; width: 100%; min-height: 52px;
+    border: 0; background: transparent; color: var(--accent);
+    font-family: var(--font-ui); font-size: 14px;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .sj-cat-new:active { background: var(--surface-2); }
   /* 分类面板展开时给屏幕压一层遮罩，点空白关闭 */
   .sj-cat-mask {
     position: fixed; z-index: 67; inset: 0;

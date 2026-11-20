@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-111 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-112 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-20-111';
+const BUILD = '2026-11-20-112';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -203,10 +203,10 @@ ok('分类面板在 .app 外（body 直属），不被动态遮罩盖住',
 for (const id of ['sjCatMgr', 'sjCatMgrBack', 'sjCatMgrBody']) {
   ok('分类管理页 DOM 节点存在：#' + id, indexSrc.indexOf('id="' + id + '"') >= 0);
 }
-ok('分类面板「管理」进入全屏编辑页（不再打开桌面目录抽屉）',
-  appSrc.indexOf("act.dataset.act === 'manage'") >= 0 &&
+ok('分类面板「管理」最终进入全屏编辑页（不再打开桌面目录抽屉）',
+  appSrc.indexOf("a === 'manage'") >= 0 &&
   appSrc.indexOf('openCatManager();') >= 0 &&
-  !/act\.dataset\.act === 'manage'[\s\S]{0,100}openDrawer\('tree'\)/.test(appSrc));
+  !/a === 'manage'[\s\S]{0,200}openDrawer\('tree'\)/.test(appSrc));
 ok('管理页复用分类新建/改名/删除与变更事件',
   appSrc.indexOf('askCreateCategory(') >= 0 &&
   appSrc.indexOf('renameCategory(cat)') >= 0 &&
@@ -221,10 +221,12 @@ ok('分类管理页样式仅窄屏放开，桌面默认隐藏',
   styleSrc.indexOf('.sj-cat-mgr {') >= 0 &&
   styleSrc.indexOf('.sj-mgr-card') >= 0 &&
   styleSrc.indexOf('body.sj-cat-mgr-open .pwd-tip') >= 0);
-ok('分类面板文件夹按截图使用文件夹图标、色卡与层级箭头',
+ok('分类面板按截图分卡排列、子分类缩进、带展开箭头',
   appSrc.indexOf('ICON_FOLDER') >= 0 &&
   appSrc.indexOf('sj-cat-chip') >= 0 &&
-  appSrc.indexOf('sj-cat-caret') >= 0);
+  appSrc.indexOf('sj-cat-card') >= 0 &&
+  appSrc.indexOf('sj-cat-toggle') >= 0 &&
+  appSrc.indexOf('24 + depth * 20') >= 0);
 ok('分类管理页 DOM 节点存在：#sjManageMenu', indexSrc.indexOf('id="sjManageMenu"') >= 0);
 ok('点「管理」先弹「新建文件夹 / 编辑」两步菜单（不直接进编辑页）',
   appSrc.indexOf('showManageMenu(r.right - 180, r.bottom + 6)') >= 0 &&

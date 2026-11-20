@@ -2755,7 +2755,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-20-111';
+  const APP_BUILD = '2026-11-20-112';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -5312,35 +5312,51 @@
       return Math.max(0, i) % 4;
     }
     function folderRow(cat, depth) {
+      const isRoot = !cat.parentId;
       const kids = state.categories.filter((c) => c.parentId === cat.id);
-      const lead = depth === 0
+      const active = String(state.selCat) === String(cat.id);
+      const id = escapeHtml(cat.id);
+      const lead = isRoot
         ? ICON_FOLDER
         : `<span class="sj-cat-chip c${chipIndex(cat)}"></span>`;
-      const tail = depth === 0 && kids.length
-        ? '<span class="sj-cat-caret">⌄</span>'
+      const tail = isRoot && kids.length
+        ? `<button type="button" class="sj-cat-toggle${sheetCollapsed.has(cat.id) ? ' closed' : ''}" data-act="cat-toggle" data-id="${id}" aria-label="展开或收起">⌄</button>`
         : `<span class="sj-cat-n">${folderCount(cat.id)}</span>`;
-      return `<button type="button" class="sj-cat-row${String(state.selCat) === String(cat.id) ? ' on' : ''}${depth ? ' sj-cat-indent' : ''}" data-cat="${escapeHtml(cat.id)}">`
-        + `${lead}<span class="sj-cat-name">${escapeHtml(cat.name)}</span>${tail}</button>`;
+      /* 截图里子分类比根节点明显右移：根节点 12px，一级 44px，每深一层再 +20px。 */
+      const pad = isRoot ? 12 : 24 + depth * 20;
+      return `<div class="sj-cat-row sj-cat-folder${isRoot ? ' sj-cat-root' : ''}${active ? ' on' : ''}" data-cat="${id}" style="padding-left:${pad}px">`
+        + `${lead}<span class="sj-cat-name">${escapeHtml(cat.name)}</span>${tail}</div>`;
     }
     function renderCatSheet() {
       if (!SHEET) return;
       const all = state.notes.length;
       const star = state.notes.filter((n) => n.starred).length;
       const uncat = state.notes.filter((n) => !n.categoryId).length;
-      let html = catRow('all', '全部笔记', ICON_ALL, all, false)
+      let html = '<div class="sj-cat-card">'
+        + catRow('all', '全部笔记', ICON_ALL, all, false)
         + catRow('uncat', '未分类', ICON_BOX, uncat, false)
         + catRow('starred', '我的收藏', ICON_STAR, star, false)
         + `<button type="button" class="sj-cat-row" data-act="trash">${ICON_TRASH}<span class="sj-cat-name">最近删除</span><span class="sj-cat-n"></span></button>`
+        + '</div>'
         + '<div class="sj-cat-sep"><span>文件夹</span><button type="button" data-act="manage">管理</button></div>';
       const roots = state.categories.filter((c) => !c.parentId).sort(byOrder);
-      function walk(parent, depth) {
-        for (const c of state.categories.filter((x) => (x.parentId || null) === parent).sort(byOrder)) {
-          html += folderRow(c, depth);
-          walk(c.id, depth + 1);
+      if (!roots.length) html += '<div class="sj-cat-card sj-cat-empty">还没有文件夹</div>';
+      /* 每个顶层文件夹单独一张卡：根行 + 缩进子分类 + 卡内「新建」，与截图一致。 */
+      for (const root of roots) {
+        html += '<div class="sj-cat-card sj-cat-folder-card">';
+        html += folderRow(root, 0);
+        if (!sheetCollapsed.has(root.id)) {
+          const walk = (parentId, depth) => {
+            for (const c of state.categories.filter((x) => (x.parentId || null) === parentId).sort(byOrder)) {
+              html += folderRow(c, depth);
+              if (!sheetCollapsed.has(c.id)) walk(c.id, depth + 1);
+            }
+          };
+          walk(root.id, 1);
         }
+        html += `<button type="button" class="sj-cat-new" data-act="sheet-add-sub" data-parent="${escapeHtml(root.id)}">新建</button>`;
+        html += '</div>';
       }
-      walk(null, 0);
-      if (!roots.length) html += '<div class="sj-cat-row" style="color:var(--text-3)">还没有文件夹</div>';
       SHEET.innerHTML = html;
     }
     function hideCatSheet() {
@@ -5365,6 +5381,7 @@
        deleteCategory；排序走后端已有的 PATCH order，不新建数据格式。 */
     const MGR = $('#sjCatMgr'), MGR_BODY = $('#sjCatMgrBody'), MGR_BACK = $('#sjCatMgrBack');
     const mgrCollapsed = new Set();
+    const sheetCollapsed = new Set();
     let catDrag = null;
 
     function mgrChildren(parent) {
@@ -5375,7 +5392,7 @@
     function mgrRow(cat, depth, isRoot) {
       const id = escapeHtml(cat.id);
       const parent = escapeHtml(cat.parentId || '');
-      const pad = isRoot ? 4 : 12 + depth * 18;
+      const pad = isRoot ? 4 : 24 + depth * 20;
       let lead = '';
       let tail = '';
       if (isRoot) {
@@ -5546,6 +5563,7 @@
     }
     window.addEventListener('sj-categories-changed', () => {
       mgrCollapsed.clear();
+      sheetCollapsed.clear();
       renderCatSheet();
       if (MGR && !MGR.classList.contains('hidden')) renderCatManager();
     });
@@ -5566,14 +5584,26 @@
     if (SHEET) SHEET.addEventListener('click', (e) => {
       const act = e.target.closest('[data-act]');
       if (act) {
-        if (act.dataset.act === 'manage') {
+        const a = act.dataset.act;
+        if (a === 'manage') {
           /* 参考华为备忘录：先弹「新建文件夹 / 编辑」，不立刻关掉分类面板。 */
           const r = act.getBoundingClientRect();
           showManageMenu(r.right - 180, r.bottom + 6);
           return;
         }
+        if (a === 'cat-toggle') {
+          const id = act.dataset.id;
+          if (sheetCollapsed.has(id)) sheetCollapsed.delete(id); else sheetCollapsed.add(id);
+          renderCatSheet();
+          return;
+        }
+        if (a === 'sheet-add-sub') {
+          hideCatSheet();
+          askCreateCategory(act.dataset.parent || null);
+          return;
+        }
         hideCatSheet();
-        if (act.dataset.act === 'trash') {
+        if (a === 'trash') {
           const b = $('#sjPlusToolsBtn'); if (b) b.click();
         }
         return;
