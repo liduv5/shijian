@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-105 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-106 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-20-105';
+const BUILD = '2026-11-20-106';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -156,9 +156,11 @@ ok('随手记/拾笺无自动弹回标记（防双 PWA 串页）',
   quickSrc.indexOf("setItem('sj_quick_return'") < 0 &&
   appSrc.indexOf("getItem('sj_quick_return'") < 0 &&
   appSrc.indexOf("location.replace(quickUrl('desk'))") < 0);
-ok('两个 PWA 互开独立窗口（随手记不被主程序接管）',
-  quickSrc.indexOf("window.open(url, 'sj_main'") >= 0 &&
-  appSrc.indexOf("window.open(url, 'sj_quick'") >= 0);
+ok('华为桌面兼容：随手记打开拾笺走同窗口导航（无 window.open 新窗口）',
+  quickSrc.indexOf('location.assign(url)') >= 0 &&
+  appSrc.indexOf("location.href = quickUrl('app')") >= 0 &&
+  quickSrc.indexOf("window.open(url, 'sj_main'") < 0 &&
+  appSrc.indexOf("window.open(url, 'sj_quick'") < 0);
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

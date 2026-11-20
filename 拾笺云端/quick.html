@@ -216,15 +216,11 @@
        以后从主程序点「随手记」就不再重复显示安装引导。 */
     const url = MAIN + (q ? '&q=' + q : '') + (FROM_DESK ? '&deskInstalled=1' : '');
     const left = Math.max(0, list.length - picked.length);
-    /* 2026-11-20：两个 PWA 各自保留窗口身份。
-       随手记点「打开拾笺」一律新开/复用主程序窗口，随手记窗口继续停在速记页；
-       速记随 q 参数带过去，不依赖两边是否共享 localStorage。这样：
-       ① 点随手记图标 → 始终是随手记页；
-       ② 点拾笺图标 → 始终是拾笺主程序；
-       ③ 随手记写完点「打开拾笺」→ 主程序打开并导入笔记；
-       ④ 再点拾笺图标 → 仍是主程序，不会被弹回随手记。 */
-    const w = window.open(url, 'sj_main', 'noopener');
-    if (!w) location.href = url;
+    /* 2026-11-20：华为桌面把两个图标当成同一任务，window.open 不会真正
+       新开独立窗口，反而让点拾笺图标时又切回随手记。改回同窗口跳转：
+       「打开拾笺」把当前窗口导航到主程序并随 q 参数导入速记；
+       不再用 sj_quick_return 自动弹回，主程序窗口保持主程序页。 */
+    location.assign(url);
     return left;
   }
   function bindGo(id) {
@@ -356,7 +352,7 @@
    安装，每次打开主程序都触发 controllerchange → 整页自动刷新。 */
 (function () {
   if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
-  var SWV = '2026-11-20-105';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
+  var SWV = '2026-11-20-106';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
   var sc = new URLSearchParams(location.search).get('sharecode') || 'X4WPKTHLIN';
   var url = '/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SWV;
   navigator.serviceWorker.getRegistration().then(function (reg) {

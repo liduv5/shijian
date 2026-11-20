@@ -2753,7 +2753,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-20-105';
+  const APP_BUILD = '2026-11-20-106';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -4593,11 +4593,9 @@
   }
   function openQuick() {
     void saveNow();                    // 离开编辑页前把脏数据落盘
-    /* 2026-11-20：两个 PWA 各自保留窗口身份。主程序里点「随手记」开新窗口，
-       不把拾笺窗口本身变成速记页；速记页再点「打开拾笺」也开新窗口。 */
-    const url = quickUrl('app');
-    const w = window.open(url, 'sj_quick', 'noopener');
-    if (!w) location.href = url;
+    /* 2026-11-20：华为桌面把两个图标当成同一任务，window.open 不生效，
+       必须同窗口跳转。速记随 q 参数带过去，不依赖共享 localStorage。 */
+    location.href = quickUrl('app');
   }
   /* 2026-11-20：移除原来的 armQuickReturn()「切回前台自动弹回随手记」逻辑。
      Chrome 同时安装「拾笺」和「随手记」两个 PWA 时，那段逻辑会把刚从随手记
