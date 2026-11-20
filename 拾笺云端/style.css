@@ -3135,55 +3135,67 @@ body.m-list .pwa-tip {
 
   /* ---- 分类管理页（分类面板「管理」入口）---- */
   .sj-cat-mgr {
+    --mgr-font: -apple-system, BlinkMacSystemFont, "HarmonyOS Sans SC", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
     display: flex; flex-direction: column;
     position: fixed; z-index: 80; inset: 0;
     background: var(--bg);
   }
   .sj-cat-mgr.hidden { display: none; }
   .sj-mgr-head {
-    display: flex; align-items: center; gap: 14px; flex: none;
-    padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 12px;
+    display: flex; align-items: center; gap: 18px; flex: none;
+    padding: calc(env(safe-area-inset-top, 0px) + 18px) 20px 16px;
     background: var(--bg);
+    font-family: var(--mgr-font);
   }
-  .sj-mgr-head h2 { margin: 0; font-size: 19px; font-weight: 650; color: var(--text); }
+  .sj-mgr-head h2 { margin: 0; font-family: var(--mgr-font); font-size: 22px; font-weight: 700; letter-spacing: .2px; color: var(--text); }
   .sj-mgr-back {
     display: flex; align-items: center; justify-content: center;
     width: 34px; height: 34px; margin-left: -6px;
     border: 0; border-radius: 50%; background: transparent; color: var(--text);
     touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
-  .sj-mgr-back .ico { width: 24px; height: 24px; stroke-width: 2; }
+  .sj-mgr-back .ico { width: 26px; height: 26px; stroke-width: 2.2; }
   .sj-mgr-body {
     flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
     padding: 4px 16px calc(28px + env(safe-area-inset-bottom, 0px));
+    font-family: var(--mgr-font);
   }
   .sj-mgr-card {
-    margin-bottom: 14px; padding: 2px 14px;
+    margin-bottom: 16px; padding: 4px 16px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 18px;
+    border-radius: 20px;
     box-shadow: var(--shadow-sm);
   }
   .sj-mgr-empty {
-    padding: 20px 16px; font-size: 13px; line-height: 1.6; color: var(--text-3);
+    padding: 20px 16px; font-size: 14px; line-height: 1.6; color: var(--text-3);
+    font-family: var(--mgr-font);
   }
   .sj-mgr-row {
+    position: relative;
     display: flex; align-items: center; gap: 10px;
-    min-height: 58px; border-bottom: 1px solid var(--border);
+    min-height: 62px; border-bottom: 0;
   }
-  .sj-mgr-row:last-of-type { border-bottom: 0; }
+  /* 图一：分隔线从「名称」处起、不到卡片最左，而不是整行拉通。 */
+  .sj-mgr-row::after {
+    content: ''; position: absolute; left: calc(var(--row-pad, 4px) + 28px);
+    right: 0; bottom: 0; height: 1px; background: var(--border);
+  }
+  .sj-mgr-row:last-of-type::after { display: none; }
   .sj-mgr-row.sj-mgr-dragging {
     background: var(--accent-soft); border-radius: 10px; opacity: .7;
   }
   .sj-mgr-main {
-    display: flex; align-items: center; gap: 12px;
-    flex: 1; min-width: 0; cursor: pointer;
+    display: flex; align-items: center; gap: 10px;
+    flex: 1; min-width: 0;
   }
   .sj-mgr-name {
     flex: 1; min-width: 0;
-    font-family: var(--font-ui); font-size: 15px; color: var(--text);
+    font-family: var(--mgr-font); font-size: 17px; color: var(--text);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  .sj-mgr-root .sj-mgr-name { font-size: 18px; font-weight: 500; }
+  .sj-mgr-root .sj-mgr-main .ico { width: 20px; height: 20px; }
   .sj-mgr-caret {
     width: 28px; flex: none; border: 0; background: transparent;
     color: var(--text-3); font-size: 18px; line-height: 1;
@@ -3191,21 +3203,24 @@ body.m-list .pwa-tip {
     touch-action: manipulation;
   }
   .sj-mgr-caret.closed { transform: rotate(-90deg); }
-  .sj-mgr-grip, .sj-mgr-grip-space { width: 34px; height: 34px; flex: none; }
+  .sj-mgr-grip, .sj-mgr-grip-space { width: 36px; height: 36px; flex: none; }
   .sj-mgr-grip {
     display: flex; align-items: center; justify-content: center;
-    border: 0; border-radius: 8px; background: transparent; color: var(--text-3);
-    touch-action: none; -webkit-tap-highlight-color: transparent;
+    border: 0; border-radius: 8px; background: transparent; color: var(--text);
+    touch-action: none; user-select: none; -webkit-tap-highlight-color: transparent;
   }
-  .sj-mgr-grip .ico { width: 20px; height: 20px; stroke-width: 2.2; }
+  .sj-mgr-grip .ico { width: 22px; height: 22px; stroke-width: 2.4; }
   .sj-mgr-grip:active { background: var(--surface-2); }
+  /* 图一：只有「新建」两字本身可点，不再整行都是热区；左对齐到子分类名称。 */
   .sj-mgr-new {
-    display: block; width: 100%; min-height: 52px;
+    display: inline-block; width: auto; min-height: 52px;
+    margin-left: 72px; padding: 0;
     border: 0; background: transparent; color: var(--accent);
-    font-family: var(--font-ui); font-size: 14px;
+    font-family: var(--mgr-font); font-size: 16px; font-weight: 500; text-align: left;
     touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
-  .sj-mgr-new-card { padding: 0 14px; }
+  .sj-mgr-new-card { padding: 4px 16px; }
+  .sj-mgr-new-card .sj-mgr-new { margin-left: 0; }
   body.sj-cat-mgr-open .pwd-tip { display: none; }
 
   /* ---- 编辑笔记本底部弹窗：点子分类双横杠弹出 ---- */

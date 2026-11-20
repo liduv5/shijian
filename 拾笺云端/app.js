@@ -2755,7 +2755,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-20-115';
+  const APP_BUILD = '2026-11-20-116';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -5389,7 +5389,7 @@
     const MGR = $('#sjCatMgr'), MGR_BODY = $('#sjCatMgrBody'), MGR_BACK = $('#sjCatMgrBack');
     const mgrCollapsed = new Set();
     const sheetCollapsed = new Set();
-    let catDrag = null;
+    let catDrag = null, catDragJustMoved = false;
 
     function mgrChildren(parent) {
       return state.categories
@@ -5399,24 +5399,17 @@
     function mgrRow(cat, depth, isRoot) {
       const id = escapeHtml(cat.id);
       const parent = escapeHtml(cat.parentId || '');
-      const pad = isRoot ? 4 : 24 + depth * 20;
-      let lead = '';
-      let tail = '';
-      if (isRoot) {
-        const hasKids = state.categories.some((c) => c.parentId === cat.id);
-        lead = ICON_FOLDER;
-        tail = hasKids
-          ? `<button type="button" class="sj-mgr-caret${mgrCollapsed.has(cat.id) ? ' closed' : ''}" data-act="mgr-toggle" data-id="${id}" aria-label="展开或收起">⌄</button>`
-          : '';
-      } else {
-        lead = `<span class="sj-mgr-chip c${chipIndex(cat)}"></span>`;
-      }
+      const pad = isRoot ? 4 : 28 + depth * 20;
+      const lead = isRoot
+        ? ICON_FOLDER
+        : `<span class="sj-mgr-chip c${chipIndex(cat)}"></span>`;
       const grip = isRoot
         ? '<span class="sj-mgr-grip-space" aria-hidden="true"></span>'
         : `<button type="button" class="sj-mgr-grip" data-act="mgr-grip" data-id="${id}" aria-label="点击编辑类别，拖动排序">${ICON_GRIP}</button>`;
-      return `<div class="sj-mgr-row" data-cat-id="${id}" data-parent="${parent}" data-depth="${depth}" style="padding-left:${pad}px">`
+      /* 图一（华为备忘录）文件夹行没有折叠箭头，子分类一律平铺，故不再输出 caret。 */
+      return `<div class="sj-mgr-row${isRoot ? ' sj-mgr-root' : ''}" data-cat-id="${id}" data-parent="${parent}" data-depth="${depth}" style="--row-pad:${pad}px; padding-left:${pad}px">`
         + `<span class="sj-mgr-main">${lead}<span class="sj-mgr-name">${escapeHtml(cat.name)}</span></span>`
-        + tail + grip + '</div>';
+        + grip + '</div>';
     }
     function renderCatManager() {
       if (!MGR_BODY) return;
@@ -5575,7 +5568,7 @@
         const act = e.target.closest('[data-act]');
         if (!act) return;
         const a = act.dataset.act;
-        if (a === 'mgr-grip') return;               // 手势由 pointer 事件处理
+        if (a === 'mgr-grip') { openCatEditor(act.dataset.id); return; }  // 点击直接进编辑弹窗
         if (a === 'mgr-toggle') {
           const id = act.dataset.id;
           if (mgrCollapsed.has(id)) mgrCollapsed.delete(id); else mgrCollapsed.add(id);
@@ -5591,8 +5584,6 @@
         if (!grip) return;
         const row = grip.closest('.sj-mgr-row[data-cat-id]');
         if (!row) return;
-        e.preventDefault();
-        try { grip.setPointerCapture(e.pointerId); } catch (_) {}
         catDrag = {
           grip, row,
           parent: row.dataset.parent || '',
@@ -5601,10 +5592,11 @@
       });
       MGR_BODY.addEventListener('pointermove', (e) => {
         if (!catDrag) return;
-        if (!catDrag.moved && Math.hypot(e.clientX - catDrag.x, e.clientY - catDrag.y) < 8) return;
+        if (!catDrag.moved && Math.hypot(e.clientX - catDrag.x, e.clientY - catDrag.y) < 10) return;
         if (!catDrag.moved) {
           catDrag.moved = true;
           catDrag.row.classList.add('sj-mgr-dragging');
+          try { catDrag.grip.setPointerCapture(e.pointerId); } catch (_) {}
         }
         const under = document.elementFromPoint(e.clientX, e.clientY);
         const target = under && under.closest('.sj-mgr-row[data-cat-id]');
@@ -5618,7 +5610,8 @@
         catDrag = null;
         try { d.grip.releasePointerCapture(e.pointerId); } catch (_) {}
         d.row.classList.remove('sj-mgr-dragging');
-        if (!d.moved) { openCatActions(d.row.dataset.catId, d.grip); return; }
+        if (!d.moved) return;                 // 纯点击：由 click 事件打开编辑弹窗
+        catDragJustMoved = true;              // 拖拽后抑制紧随的 click，避免误弹编辑框
         await saveCatOrder(d.parent);
       };
       MGR_BODY.addEventListener('pointerup', finishDrag);

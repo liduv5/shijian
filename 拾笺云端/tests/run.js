@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-115 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-116 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-20-115';
+const BUILD = '2026-11-20-116';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -292,6 +292,28 @@ ok('编辑弹窗字体与布局按华为图二：标题 22px 粗、输入 17px�
   /\.sj-editor-field input \{[\s\S]{0,180}font-size: 17px;/.test(styleSrc) &&
   /\.sj-editor-actions button \+ button \{\s*border-left: 1px solid var\(--border\);/.test(styleSrc) &&
   /\.sj-editor-actions button \{\s*flex: 1;/.test(styleSrc));
+ok('横杠点击直达编辑弹窗：由 click 处理、拖拽不再吞点击',
+  appSrc.indexOf("if (a === 'mgr-grip') { openCatEditor(act.dataset.id); return; }") >= 0 &&
+  appSrc.indexOf('catDragJustMoved = true;') >= 0 &&
+  !/if \(!d\.moved\) \{ openCatActions\(/.test(appSrc) &&
+  !/if \(a === 'mgr-grip'\) return;/.test(appSrc));
+ok('横杠拖拽改为超阈值后再接管指针，轻微滑动不会误判',
+  /Math\.hypot\(e\.clientX - catDrag\.x, e\.clientY - catDrag\.y\) < 10/.test(appSrc) &&
+  /catDrag\.grip\.setPointerCapture\(e\.pointerId\)/.test(appSrc) &&
+  !/e\.preventDefault\(\);\s*try \{ grip\.setPointerCapture/.test(appSrc));
+ok('管理页完全按图一：系统字体、标题22px、名称17/18px、行高62、圆角20、无折叠箭头',
+  styleSrc.indexOf('--mgr-font: -apple-system') >= 0 &&
+  /\.sj-mgr-head h2 \{[\s\S]{0,140}font-size: 22px; font-weight: 700;/.test(styleSrc) &&
+  styleSrc.indexOf('.sj-mgr-root .sj-mgr-name { font-size: 18px; font-weight: 500; }') >= 0 &&
+  /\.sj-mgr-name \{[\s\S]{0,160}font-size: 17px;/.test(styleSrc) &&
+  /\.sj-mgr-row \{[\s\S]{0,140}min-height: 62px/.test(styleSrc) &&
+  /\.sj-mgr-card \{[\s\S]{0,140}border-radius: 20px/.test(styleSrc) &&
+  appSrc.indexOf("class=\"sj-mgr-caret") < 0);
+ok('新建按钮只对文字有效：inline-block 且左对齐到子分类名称，不再整行热区',
+  /\.sj-mgr-new \{\s*display: inline-block; width: auto;/.test(styleSrc) &&
+  /\.sj-mgr-new \{[\s\S]{0,220}margin-left: 72px/.test(styleSrc) &&
+  styleSrc.indexOf('.sj-mgr-new-card .sj-mgr-new { margin-left: 0; }') >= 0 &&
+  !/\.sj-mgr-new \{\s*display: block; width: 100%/.test(styleSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
