@@ -3440,6 +3440,7 @@ body.m-list .pwa-tip {
   /* 编辑态：真正的标题输入框被搬进这一行，和返回/撤销/完成同一行 */
   body.sj-note-edit .sj-nh-acts { display: flex; }
   body.sj-note-edit .sj-note-head .title-input {
+    order: 0;              /* 覆盖手机端旧规则里的 order:-1，否则会把返回键挤到右边 */
     flex: 1 1 auto; min-width: 0; width: auto; height: 40px; padding: 0 2px;
     font-family: var(--font-ui); font-size: 17px; font-weight: 600;
     letter-spacing: 0; line-height: 40px; color: var(--text);
@@ -3476,7 +3477,14 @@ body.m-list .pwa-tip {
   body.sj-note-open:not(.sj-note-edit) .toolbar { display: none; }
   body.sj-note-open:not(.sj-note-edit) .rich-pane,
   body.sj-note-open:not(.sj-note-edit) .preview-pane {
-    font-size: 19px; line-height: 1.95; padding: 4px 20px calc(180px + env(safe-area-inset-bottom, 0px));
+    font-size: 19px; line-height: 1.78; padding: 4px 20px calc(180px + env(safe-area-inset-bottom, 0px));
+  }
+  /* 阅读态按截图收紧段间距：正文是连续的诗行/短段，段落之间不该空出一行 */
+  body.sj-note-open:not(.sj-note-edit) .rich-pane p,
+  body.sj-note-open:not(.sj-note-edit) .rich-pane div,
+  body.sj-note-open:not(.sj-note-edit) .preview-pane p,
+  body.sj-note-open:not(.sj-note-edit) .preview-pane div {
+    margin: 0 0 2px;
   }
   /* 阅读态顶栏已有返回箭头，底栏不再重复一个「返回」 */
   body.sj-note-open:not(.sj-note-edit) .sj-detail-bar button[data-act="back"] { display: none; }
@@ -3495,8 +3503,12 @@ body.m-list .pwa-tip {
   body.sj-note-edit.sj-note-fmt .toolbar { display: flex; }
   body.sj-note-edit .rich-pane,
   body.sj-note-edit .preview-pane {
-    font-size: 19px; line-height: 1.9; padding: 2px 20px calc(180px + env(safe-area-inset-bottom, 0px));
+    font-size: 19px; line-height: 1.86; padding: 2px 20px calc(180px + env(safe-area-inset-bottom, 0px));
   }
+  body.sj-note-edit .rich-pane p,
+  body.sj-note-edit .rich-pane div,
+  body.sj-note-edit .preview-pane p,
+  body.sj-note-edit .preview-pane div { margin: 0 0 2px; }
   body.sj-note-edit .sj-detail-bar { display: none !important; }
 
   /* 编辑态底部工具条：格式 / 图片 / 附件 / 收藏 / 更多 */
