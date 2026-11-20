@@ -11,9 +11,18 @@ echo.
 
 set "NODE="
 if exist "%~dp0runtime\win\node.exe" set "NODE=%~dp0runtime\win\node.exe"
+
 if not defined NODE (
-  where node >nul 2>nul
-  if not errorlevel 1 set "NODE=node"
+  for /f "delims=" %%i in ('where node 2^>nul') do if not defined NODE set "NODE=%%i"
+)
+
+if not defined NODE if exist "%ProgramFiles%\nodejs\node.exe" set "NODE=%ProgramFiles%\nodejs\node.exe"
+if not defined NODE if exist "%LOCALAPPDATA%\Programs\nodejs\node.exe" set "NODE=%LOCALAPPDATA%\Programs\nodejs\node.exe"
+
+if not defined NODE if exist "%USERPROFILE%\.workbuddy\binaries\node\versions" (
+  for /f "delims=" %%D in ('dir /b /ad /o-n "%USERPROFILE%\.workbuddy\binaries\node\versions" 2^>nul') do (
+    if not defined NODE if exist "%USERPROFILE%\.workbuddy\binaries\node\versions\%%D\node.exe" set "NODE=%USERPROFILE%\.workbuddy\binaries\node\versions\%%D\node.exe"
+  )
 )
 
 if not defined NODE (
@@ -30,6 +39,7 @@ if not defined NODE (
 )
 
 echo   正在启动，稍等几秒浏览器会自动打开...
+echo   Node: %NODE%
 echo   使用期间请不要关闭这个黑窗口，关闭窗口即退出程序。
 echo.
 

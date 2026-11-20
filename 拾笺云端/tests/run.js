@@ -143,6 +143,12 @@ ok('桌面端 .vbs 编码兼容 WSH（纯 ASCII 或 UTF-16 LE BOM）', vbsFiles.
   if (b[0] === 0xfe && b[1] === 0xff) return false;
   return b.every((x) => x < 0x80);
 }));
+const vbsBuf = fs.readFileSync(path.join(DESKTOP, '启动.vbs'));
+const vbsText = (vbsBuf[0] === 0xff && vbsBuf[1] === 0xfe)
+  ? vbsBuf.slice(2).toString('utf16le') : vbsBuf.toString('utf8');
+const iClear = vbsText.indexOf('Err.Clear');
+const iRun = vbsText.indexOf('WshShell.Run runLine');
+ok('启动.vbs 在 WshShell.Run 前清空 Err（避免空错误描述误报）', iClear >= 0 && iRun >= 0 && iClear < iRun);
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

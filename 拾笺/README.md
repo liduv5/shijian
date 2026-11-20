@@ -93,6 +93,8 @@ ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install
 只用 `启动.bat` / `启动.vbs` 的浏览器版不需要 Electron，系统有 Node 18+ 即可。
 
 > 维护注意：`启动.vbs` 含中文，必须保存为 **UTF-16 LE（带 BOM）** 或纯 ASCII。若被编辑器另存为 UTF-8 无 BOM，Windows Script Host 会按系统 ANSI 解码，把全角冒号后的引号吞掉，双击时报 `800A0409 未结束的字符串常量`（第 30 行）。`node 拾笺云端/tests/run.js` 已加编码守卫。
+>
+> Node 查找顺序（`.bat` 与 `.vbs` 一致）：项目内 `runtime\win\node.exe` → 系统 PATH → `Program Files\nodejs` → `%LOCALAPPDATA%\Programs\nodejs` → `%USERPROFILE%\.workbuddy\binaries\node\versions\*\node.exe`。WorkBuddy 自带 Node 不在系统 PATH 中，双击启动靠这条兜底；找不到时会给出明确提示，不再弹空错误。
 
 打包成安装包（产物在 `release/`）：
 
