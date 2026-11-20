@@ -1014,6 +1014,8 @@
     $('#listTitle').textContent = title;
     $('#listCount').textContent = list.length ? `${list.length} 篇` : '';
     syncBarTitle();
+    if (window.SJSyncHomeHead) window.SJSyncHomeHead();
+    if (window.SJSyncHome) window.SJSyncHome();
 
     if (!list.length) {
       const tip = document.createElement('div');
@@ -2753,7 +2755,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-20-106';
+  const APP_BUILD = '2026-11-20-107';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -4535,6 +4537,12 @@
   let drawerOpenedAt = 0;
   let lastDrawerTap = { kind: '', at: -1 };
   function openDrawer(kind) {
+    /* 华为风首页：列表已是全屏主视图，再开 m-list 抽屉只会让遮罩盖黑整屏。
+       首页态下所有 list 抽屉请求一律忽略；tree 抽屉照常（目录/工具还在里面）。 */
+    if (kind === 'list' && !document.body.classList.contains('sj-note-open')) {
+      closeDrawer();
+      return;
+    }
     document.body.classList.remove('m-tree', 'm-list');
     document.body.classList.add(kind === 'tree' ? 'm-tree' : 'm-list');
     drawerOpenedAt = Date.now();
@@ -4557,7 +4565,14 @@
   }
   /** 手机端点完分类/标签直接进列表，少点一次 */
   function afterPickCategory() {
-    if (NARROW()) openDrawer('list');
+    if (!NARROW()) return;
+    /* 华为风：在详情页从目录选了分类，就回列表首页看结果，而不是在正文上盖个抽屉 */
+    if (document.body.classList.contains('sj-note-open')) {
+      closeEditor();
+      closeDrawer();
+      return;
+    }
+    openDrawer('list');
   }
   /** 顶栏固定展示品牌区（朱砂方块 + 书法体拾笺 + 朱点），与电脑版一致。
       原本这里写的是「当前笔记名 / 列表名」，改成品牌后不再覆盖可见文字；
@@ -4573,8 +4588,15 @@
   /* 返回菜单 / 打开列表 = 离开编辑页，脏数据在这里落盘。 */
   $('#mTreeBtn').addEventListener('click', (e) => toggleDrawer('tree', e));
   /* 「笔记列表」是打开笔记后的返回出口：手机端三栏收成抽屉，
-     没有这个按钮用户会被困在编辑页，只能靠目录里的分类绕回去。 */
-  $('#mListBtn').addEventListener('click', (e) => toggleDrawer('list', e));
+     没有这个按钮用户会被困在编辑页，只能靠目录里的分类绕回去。
+     华为风首页下，详情页点它直接回列表首页；宽屏仍走抽屉 toggle。 */
+  $('#mListBtn').addEventListener('click', (e) => {
+    if (NARROW() && document.body.classList.contains('sj-note-open')) {
+      closeEditor();
+      return;
+    }
+    toggleDrawer('list', e);
+  });
   $('#mNewBtn').addEventListener('click', () => createNote());
   /* 「随手记」入口：华为 / EMUI 自带浏览器不读 manifest 的 shortcuts，
      长按桌面图标没有快捷菜单，所以入口必须做在 App 里。
@@ -5206,6 +5228,179 @@
     if (window.SJLocal) window.SJLocal.watchFiles();
     booted = true;
   }
+
+  /* ============================================================
+     华为备忘录风手机首页（仅窄屏；桌面端这些节点全隐藏，逻辑仍安全）
+     - 用 body.sj-note-open 区分「列表首页 / 笔记详情」，不新增第二套 state；
+       打开笔记 = 加 class，closeEditor = 去 class，与保存钩子完全解耦。
+     - 底部双 tab / 悬浮 + / 分类面板 / 详情底栏都复用已有函数，不造数据链路。
+     ============================================================ */
+  (function mobileHomeUI() {
+    const bar = $('#sjTabbar');
+    if (!bar) return;                       // 老页面结构兜底
+    const FAB = $('#sjFab'), DETAIL = $('#sjDetailBar');
+    const SHEET = $('#sjCatSheet'), TITLE = $('#sjCatTitle'), SEARCH = $('#sjHomeSearch');
+    let catMask = null;
+
+    /* 首页 / 详情切换：只同步 UI class，不动 selNote / dirty / saveNow。 */
+    function syncHome() {
+      const inNote = !!currentNote();
+      document.body.classList.toggle('sj-note-open', inNote);
+      if (inNote) hideCatSheet();
+      bar.classList.toggle('hidden', inNote);
+      if (FAB) FAB.classList.toggle('hidden', inNote);
+      if (DETAIL) DETAIL.classList.toggle('hidden', !inNote);
+      $('#sjTabNotes').classList.toggle('active', !inNote);
+      $('#sjTabQuick').classList.remove('active');
+    }
+    window.SJSyncHome = syncHome;
+
+    /* boot() 结尾与所有打开/关闭笔记的路径都会经过 renderList 或 openNote，
+       在 renderList 里挂一次同步最省事：列表页、详情页、同步重载都覆盖。 */
+    const origRenderList = window.__sjRenderListHook;
+    void origRenderList;
+    /* 用事件驱动更稳：openNote 成功、closeEditor、boot 后各调一次。 */
+    ['#mListBtn', '#sjTabNotes'].forEach((sel) => {
+      const el = $(sel); if (el) el.addEventListener('click', () => setTimeout(syncHome, 0));
+    });
+
+    /* 顶栏「新建」与悬浮 + 同源 */
+    if (FAB) FAB.addEventListener('click', () => createNote());
+
+    /* 底部 tab：笔记 = 关闭编辑器回首页（走现有 closeEditor 落盘钩子）；
+       随手记 = 走现有 openQuick()，带 q 参数导入，绝不裸跳。 */
+    $('#sjTabNotes').addEventListener('click', () => {
+      if (currentNote()) closeEditor();
+      closeDrawer();
+    });
+    $('#sjTabQuick').addEventListener('click', () => openQuick());
+
+    /* ---- 分类面板 ---- */
+    function folderCount(id) {
+      const ids = new Set([id]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const c of state.categories) {
+          if (c.parentId && ids.has(c.parentId) && !ids.has(c.id)) { ids.add(c.id); changed = true; }
+        }
+      }
+      return state.notes.filter((n) => ids.has(n.categoryId)).length;
+    }
+    function catRow(key, label, icon, count, indent) {
+      return `<button type="button" class="sj-cat-row${String(state.selCat) === String(key) ? ' on' : ''}${indent ? ' sj-cat-indent' : ''}" data-cat="${escapeHtml(key)}">`
+        + `${icon}<span class="sj-cat-name">${escapeHtml(label)}</span><span class="sj-cat-n">${count}</span></button>`;
+    }
+    const ICON_ALL = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 5h16M4 12h16M4 19h16"/></svg>';
+    const ICON_STAR = '<svg viewBox="0 0 24 24" class="ico"><path d="M12 3.6l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.8l5.9-.8z"/></svg>';
+    const ICON_BOX = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16v13H4zM4 7l2-3h12l2 3M9 11h6"/></svg>';
+    const ICON_TRASH = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>';
+    function renderCatSheet() {
+      if (!SHEET) return;
+      const all = state.notes.length;
+      const star = state.notes.filter((n) => n.starred).length;
+      const uncat = state.notes.filter((n) => !n.categoryId).length;
+      let html = catRow('all', '全部笔记', ICON_ALL, all, false)
+        + catRow('uncat', '未分类', ICON_BOX, uncat, false)
+        + catRow('starred', '我的收藏', ICON_STAR, star, false)
+        + `<button type="button" class="sj-cat-row" data-act="trash">${ICON_TRASH}<span class="sj-cat-name">最近删除</span><span class="sj-cat-n"></span></button>`
+        + '<div class="sj-cat-sep"><span>文件夹</span><button type="button" data-act="manage">管理</button></div>';
+      const roots = state.categories.filter((c) => !c.parentId);
+      function walk(parent, depth) {
+        for (const c of state.categories.filter((x) => (x.parentId || null) === parent)) {
+          html += catRow(c.id, c.name, ICON_BOX, folderCount(c.id), depth > 0);
+          walk(c.id, depth + 1);
+        }
+      }
+      walk(null, 0);
+      if (!roots.length) html += '<div class="sj-cat-row" style="color:var(--text-3)">还没有文件夹</div>';
+      SHEET.innerHTML = html;
+    }
+    function hideCatSheet() {
+      if (SHEET) SHEET.classList.add('hidden');
+      if (catMask) { catMask.remove(); catMask = null; }
+    }
+    function showCatSheet() {
+      if (!SHEET) return;
+      renderCatSheet();
+      if (!catMask) {
+        catMask = document.createElement('div');
+        catMask.className = 'sj-cat-mask';
+        document.body.appendChild(catMask);
+        catMask.addEventListener('click', hideCatSheet);
+      }
+      SHEET.classList.remove('hidden');
+    }
+    if (TITLE) TITLE.addEventListener('click', () => {
+      if (SHEET && SHEET.classList.contains('hidden')) showCatSheet(); else hideCatSheet();
+    });
+    if (SHEET) SHEET.addEventListener('click', (e) => {
+      const act = e.target.closest('[data-act]');
+      if (act) {
+        hideCatSheet();
+        if (act.dataset.act === 'trash') {
+          const b = $('#sjPlusToolsBtn'); if (b) b.click();
+        } else if (act.dataset.act === 'manage') {
+          openDrawer('tree');
+        }
+        return;
+      }
+      const row = e.target.closest('[data-cat]');
+      if (!row) return;
+      const key = row.dataset.cat;
+      state.selCat = key;
+      state.search = '';
+      const si = $('#searchInput'); if (si) si.value = '';
+      if (SEARCH) SEARCH.value = '';
+      renderTree();
+      renderList();
+      hideCatSheet();
+      closeDrawer();
+    });
+
+    /* 首页搜索框：与侧栏搜索框同一份 state.search，同步两边输入值 */
+    if (SEARCH) SEARCH.addEventListener('input', (e) => {
+      state.search = e.target.value;
+      const si = $('#searchInput'); if (si) si.value = e.target.value;
+      renderTree();
+      renderList();
+    });
+
+    /* 详情页四操作：全部指向现有按钮/菜单，不重复实现 */
+    if (DETAIL) DETAIL.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-act]');
+      if (!b) return;
+      const note = currentNote();
+      if (!note) return;
+      const act = b.dataset.act;
+      if (act === 'share') { const el = $('#exportBtn2'); if (el) el.click(); }
+      else if (act === 'star') { const el = $('#starBtn'); if (el) el.click(); }
+      else if (act === 'delete') { const el = $('#deleteNoteBtn'); if (el) el.click(); }
+      else if (act === 'more') {
+        const r = b.getBoundingClientRect();
+        showCtx(r.right - 120, r.top - 8, [
+          { label: '历史版本', icon: ICON_ALL, onClick: () => { const el = $('#historyBtn'); if (el) el.click(); } },
+          { label: '移动到分类', icon: I.folder, onClick: () => openCategoryPicker(note) },
+          { sep: true },
+          { label: '同步到云端', icon: I.download, onClick: () => { if (window.SJSync) window.SJSync.open(); } },
+        ]);
+      }
+    });
+
+    /* 首页大标题跟随列表标题与条数 */
+    function syncHomeHead() {
+      const t = $('#sjCatTitleText'), c = $('#sjHomeCount');
+      if (t) t.textContent = ($('#listTitle').textContent || '全部笔记');
+      if (c) c.textContent = $('#listCount').textContent ? ($('#listCount').textContent + '笔记') : '暂无笔记';
+      const star = $('#starBtn');
+      if (DETAIL && star) {
+        const sb = DETAIL.querySelector('[data-act="star"]');
+        if (sb) sb.classList.toggle('on', !!(currentNote() && currentNote().starred));
+      }
+    }
+    window.SJSyncHomeHead = syncHomeHead;
+    syncHome();
+  })();
 
   /* 手机端为本地优先：不自动与云端通信，只有在「同步」面板里手动点
      上传 / 拉取才会联网，避免任何动作都打云、费流量。 */

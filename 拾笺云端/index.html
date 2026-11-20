@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-20-106';
+  var SWV = '2026-11-20-107';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -283,6 +283,18 @@
 
   <!-- ============ 笔记列表 ============ -->
   <section class="list-pane">
+    <!-- 华为风手机首页专属头部：大标题（点开分类面板）+ 条数 + 胶囊搜索。
+         桌面端 display:none，沿用下面原来的 .list-head，功能一支不减。 -->
+    <div class="sj-home-head" id="sjHomeHead">
+      <button type="button" class="sj-home-title" id="sjCatTitle" aria-label="选择分类">
+        <span id="sjCatTitleText">全部笔记</span><span class="sj-caret">▼</span>
+      </button>
+      <div class="sj-home-count" id="sjHomeCount"></div>
+      <div class="sj-home-search">
+        <svg viewBox="0 0 24 24" class="ico"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="sjHomeSearch" type="text" placeholder="搜索笔记…" autocomplete="off">
+      </div>
+    </div>
     <header class="list-head">
       <div class="list-title-wrap">
         <h2 id="listTitle">全部笔记</h2>
@@ -298,6 +310,12 @@
       </div>
     </header>
     <div class="note-list" id="noteList"></div>
+    <!-- 悬浮新建：华为风首页右下角，点击复用 createNote() -->
+    <button type="button" class="sj-fab" id="sjFab" aria-label="新建笔记" title="新建笔记">
+      <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <!-- 分类面板：点大标题展开，全部/未分类/收藏/回收站 + 文件夹 -->
+    <div class="sj-cat-sheet hidden" id="sjCatSheet"></div>
   </section>
 
   <!-- ============ 编辑区 ============ -->
@@ -389,8 +407,35 @@
 
       <div class="drop-mask" id="dropMask"><span>松开即可添加附件</span></div>
     </div>
+
+    <!-- 华为风详情页底部操作栏：分享 / 收藏 / 删除 / 更多。仅窄屏编辑态显示，
+         四个按钮都是现有功能的别名，不新建任何数据链路。 -->
+    <div class="sj-detail-bar hidden" id="sjDetailBar">
+      <button type="button" data-act="share" aria-label="导出分享">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg><span>分享</span>
+      </button>
+      <button type="button" data-act="star" aria-label="收藏">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M12 3.6l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.8l5.9-.8z"/></svg><span>收藏</span>
+      </button>
+      <button type="button" data-act="delete" aria-label="删除" class="danger-hover">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg><span>删除</span>
+      </button>
+      <button type="button" data-act="more" aria-label="更多">
+        <svg viewBox="0 0 24 24" class="ico"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span>更多</span>
+      </button>
+    </div>
   </main>
 </div>
+
+<!-- ============ 华为风底部双 tab（仅窄屏首页显示） ============ -->
+<nav class="sj-tabbar hidden" id="sjTabbar" aria-label="主导航">
+  <button type="button" class="sj-tab active" id="sjTabNotes" aria-label="笔记">
+    <svg viewBox="0 0 24 24" class="ico"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg><span>笔记</span>
+  </button>
+  <button type="button" class="sj-tab" id="sjTabQuick" aria-label="随手记">
+    <svg viewBox="0 0 24 24" class="ico"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M13.5 6.5l3 3"/></svg><span>随手记</span>
+  </button>
+</nav>
 
 <div class="ctx-menu hidden" id="ctxMenu"></div>
 <div class="toast" id="toast"></div>

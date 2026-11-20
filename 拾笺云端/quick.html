@@ -65,6 +65,21 @@
   .desk-state:empty { display: none; }
   .isolated { background: #fbecec; border: 1px solid #ecd0d0; color: #8a4242;
     border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.7; margin-bottom: 16px; }
+  /* 华为风底部双 tab：与主程序同款，「笔记」回主程序（走 goMain 带 q 参数） */
+  .q-tabbar {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    height: calc(58px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: #fffefc; border-top: 1px solid #e2dfd6;
+  }
+  .q-tab {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    border: 0; background: transparent; font: inherit; font-size: 11px; color: #9c968a;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .q-tab svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .q-tab.active { color: #2f6f5e; }
+  body { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
 </style>
 </head>
 <body>
@@ -84,6 +99,14 @@
   </div>
   <div class="tip">速记先存在本页，点「打开拾笺」进笔记库。</div>
 </div>
+<nav class="q-tabbar" aria-label="主导航">
+  <button type="button" class="q-tab" id="qTabNotes" aria-label="笔记">
+    <svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg><span>笔记</span>
+  </button>
+  <button type="button" class="q-tab active" aria-label="随手记">
+    <svg viewBox="0 0 24 24"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M13.5 6.5l3 3"/></svg><span>随手记</span>
+  </button>
+</nav>
 <script>
 (function () {
   'use strict';
@@ -227,6 +250,9 @@
     const el = document.getElementById(id);
     if (el) el.onclick = (e) => { e.preventDefault(); goMain(); };
   }
+  /* 底部「笔记」tab 同样走 goMain()：带 q 参数把待发速记一起带进主程序，
+     绝不裸跳 index.html —— 否则写好的速记不会入库。 */
+  bindGo('qTabNotes');
 
   function compose(text, url, title) {
     let body = String(text || '').trim();
@@ -352,7 +378,7 @@
    安装，每次打开主程序都触发 controllerchange → 整页自动刷新。 */
 (function () {
   if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
-  var SWV = '2026-11-20-106';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
+  var SWV = '2026-11-20-107';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
   var sc = new URLSearchParams(location.search).get('sharecode') || 'X4WPKTHLIN';
   var url = '/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SWV;
   navigator.serviceWorker.getRegistration().then(function (reg) {
