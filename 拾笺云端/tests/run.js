@@ -1,7 +1,7 @@
 /* 拾笺 · 回归测试（纯 Node，无外部依赖）
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
-         ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件）。
+         ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
    来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-18-104 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
@@ -134,6 +134,15 @@ for (const f of SHARED) {
   const b = path.join(CLOUD, f);
   ok('共享文件一致：' + f, fs.existsSync(a) && fs.existsSync(b) && md5(a) === md5(b));
 }
+/* WSH 按系统 ANSI 解析无 BOM 的 .vbs；UTF-8 中文全角冒号后的引号会被吞掉，
+   报 800A0409「未结束的字符串常量」。脚本必须是纯 ASCII 或 UTF-16 LE BOM。 */
+const vbsFiles = files(DESKTOP, '.vbs');
+ok('桌面端 .vbs 编码兼容 WSH（纯 ASCII 或 UTF-16 LE BOM）', vbsFiles.length > 0 && vbsFiles.every((f) => {
+  const b = fs.readFileSync(f);
+  if (b[0] === 0xff && b[1] === 0xfe) return true;
+  if (b[0] === 0xfe && b[1] === 0xff) return false;
+  return b.every((x) => x < 0x80);
+}));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
