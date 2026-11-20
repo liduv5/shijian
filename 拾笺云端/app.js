@@ -2753,7 +2753,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-18-104';
+  const APP_BUILD = '2026-11-20-105';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -4578,8 +4578,8 @@
   $('#mNewBtn').addEventListener('click', () => createNote());
   /* 「随手记」入口：华为 / EMUI 自带浏览器不读 manifest 的 shortcuts，
      长按桌面图标没有快捷菜单，所以入口必须做在 App 里。
-     用同标签跳转（不 window.open）：独立标签 / 独立安装的 PWA 会拿到
-     隔离的 localStorage，速记就又写不进主程序的笔记库了。 */
+     用同标签跳转（不 window.open）：速记随 q 参数带过来，不依赖两套
+     PWA 是否共享 localStorage，独立安装也能导入。 */
   function quickUrl(from) {
     let sc = '';
     try {
@@ -4595,52 +4595,11 @@
     void saveNow();                    // 离开编辑页前把脏数据落盘
     location.href = quickUrl('app');
   }
-  /* 从桌面「随手记」图标进来、点过「打开拾笺」之后，这个标签的文档已经
-     变成主程序。部分手机浏览器（含华为自带浏览器）再点桌面图标时只把
-     已有窗口切回前台、并不重新导航到 quick.html，用户就卡在主程序列表页。
-     速记页跳走前留一个一次性标记：只要用户还没碰过主程序，切回前台时
-     就送回速记页；一旦点了列表 / 新建 / 任意位置，立即作废，不再打扰。 */
-  function armQuickReturn() {
-    let armed = false;
-    /* 读取即消费：标记只服务「刚点完打开拾笺」的这一次导航，不能残留到
-       以后从 bfcache 恢复或重新加载时又把自己武装起来。 */
-    try {
-      armed = sessionStorage.getItem('sj_quick_return') === '1';
-      if (armed) sessionStorage.removeItem('sj_quick_return');
-    } catch (_) {}
-    if (!armed) return;
-    let leftOnce = false, done = false;
-    const armedAt = Date.now();
-    const disarm = () => {
-      armed = false;
-      try { sessionStorage.removeItem('sj_quick_return'); } catch (_) {}
-    };
-    const restore = () => {
-      if (done || !armed || !leftOnce || Date.now() - armedAt < 800) return;
-      done = true; disarm();
-      location.replace(quickUrl('desk'));
-    };
-    /* 页面刚加载时浏览器自己派发的 blur/focus 不算「用户离开过」，
-       否则首屏可能立刻被弹回速记页。 */
-    const markLeft = () => { if (Date.now() - armedAt >= 800) leftOnce = true; };
-    /* 有些浏览器点桌面图标只是 bring-to-front，visibility 不一定变化，
-       所以 blur/focus 也接一路；必须先离开过一次，避免首次加载的 focus
-       就把刚打开的主程序弹回速记页。 */
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') markLeft();
-      else if (document.visibilityState === 'visible') restore();
-    });
-    window.addEventListener('blur', markLeft);
-    window.addEventListener('focus', restore);
-    /* 用户一旦在主程序里点了列表 / 新建 / 任意位置，自动返回立即作废 */
-    const opt = { capture: true, passive: true, once: true };
-    document.addEventListener('pointerdown', disarm, opt);
-    document.addEventListener('keydown', disarm, opt);
-    window.addEventListener('pageshow', (e) => { if (e && e.persisted) disarm(); });
-    /* 5 分钟后作废，别让一次性状态长期挂着 */
-    setTimeout(disarm, 5 * 60 * 1000);
-  }
-  armQuickReturn();
+  /* 2026-11-20：移除原来的 armQuickReturn()「切回前台自动弹回随手记」逻辑。
+     Chrome 同时安装「拾笺」和「随手记」两个 PWA 时，那段逻辑会把刚从随手记
+     跳进主程序的窗口一直记着，用户再打开「拾笺」应用（或把窗口切回前台）
+     就被 location.replace 弹回随手记页面。速记数据本来就随 q 参数导入，
+     不需要靠跳转 hack；回随手记请用主程序里的「随手记」按钮。 */
   ['#mQuickBtn', '#quickNoteBtn'].forEach((sel) => {
     const b = $(sel); if (b) b.addEventListener('click', openQuick);
   });
