@@ -2755,7 +2755,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-20-114';
+  const APP_BUILD = '2026-11-20-115';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -5413,9 +5413,9 @@
       }
       const grip = isRoot
         ? '<span class="sj-mgr-grip-space" aria-hidden="true"></span>'
-        : `<button type="button" class="sj-mgr-grip" data-act="mgr-grip" data-id="${id}" aria-label="拖动排序，点击更多操作">${ICON_GRIP}</button>`;
+        : `<button type="button" class="sj-mgr-grip" data-act="mgr-grip" data-id="${id}" aria-label="点击编辑类别，拖动排序">${ICON_GRIP}</button>`;
       return `<div class="sj-mgr-row" data-cat-id="${id}" data-parent="${parent}" data-depth="${depth}" style="padding-left:${pad}px">`
-        + `<span class="sj-mgr-main" data-act="mgr-rename" data-id="${id}">${lead}<span class="sj-mgr-name">${escapeHtml(cat.name)}</span></span>`
+        + `<span class="sj-mgr-main">${lead}<span class="sj-mgr-name">${escapeHtml(cat.name)}</span></span>`
         + tail + grip + '</div>';
     }
     function renderCatManager() {
@@ -5584,9 +5584,6 @@
           askCreateCategory(null);
         } else if (a === 'mgr-add-sub') {
           askCreateCategory(act.dataset.parent || null);
-        } else if (a === 'mgr-rename') {
-          const cat = state.categories.find((c) => c.id === act.dataset.id);
-          if (cat) renameCategory(cat);
         }
       });
       MGR_BODY.addEventListener('pointerdown', (e) => {

@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-114 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-115 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-20-114';
+const BUILD = '2026-11-20-115';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -212,6 +212,11 @@ ok('管理页复用分类新建/改名/删除与变更事件',
   appSrc.indexOf('renameCategory(cat)') >= 0 &&
   appSrc.indexOf('deleteCategory(cat)') >= 0 &&
   appSrc.indexOf("'sj-categories-changed'") >= 0);
+ok('管理页点分类名不进编辑，只点横杠进弹窗（图一交互）',
+  appSrc.indexOf('<span class="sj-mgr-main">') >= 0 &&
+  appSrc.indexOf('data-act="mgr-rename"') < 0 &&
+  !/else if \(a === 'mgr-rename'\)/.test(appSrc) &&
+  appSrc.indexOf('点击编辑类别，拖动排序') >= 0);
 ok('管理页支持拖动排序并回写 category.order',
   appSrc.indexOf('function saveCatOrder(parent)') >= 0 &&
   appSrc.indexOf('body: { order: i }') >= 0 &&
@@ -282,6 +287,11 @@ ok('编辑弹窗样式仅窄屏放开、桌面默认隐藏',
   /\.sj-cat-editor \{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('.sj-editor-sheet') >= 0 &&
   styleSrc.indexOf('.sj-editor-swatch.on::after') >= 0);
+ok('编辑弹窗字体与布局按华为图二：标题 22px 粗、输入 17px、取消保存平分带竖线',
+  /\.sj-editor-head h3 \{[\s\S]{0,120}font-size: 22px; font-weight: 700;/.test(styleSrc) &&
+  /\.sj-editor-field input \{[\s\S]{0,180}font-size: 17px;/.test(styleSrc) &&
+  /\.sj-editor-actions button \+ button \{\s*border-left: 1px solid var\(--border\);/.test(styleSrc) &&
+  /\.sj-editor-actions button \{\s*flex: 1;/.test(styleSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
