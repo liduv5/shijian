@@ -2755,7 +2755,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-20-116';
+  const APP_BUILD = '2026-11-20-117';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -5391,6 +5391,137 @@
     const sheetCollapsed = new Set();
     let catDrag = null, catDragJustMoved = false;
 
+    /* ---- 合并同名分类：按「同一父级 + 同名」分组，保留内容最多的一份 ----
+       成因：手机端与桌面端各自建类、ID 不同，同步按 ID 去重，同名项被同时保留。
+       合并前用 SJLocal.getState() 拍整库快照存 localStorage，提供一键撤销。
+       落库用 SJLocal.setState() 一次性替换，避免逐个 PATCH 中途失败留半截数据。 */
+    const MERGE_UNDO_KEY = 'sj_merge_undo_v1';
+
+    function dupGroups(cats) {
+      const map = new Map();
+      (cats || []).forEach((c) => {
+        const key = JSON.stringify([c.parentId || null, String(c.name || '').trim().toLocaleLowerCase()]);
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(c);
+      });
+      return Array.from(map.values()).filter((g) => g.length > 1);
+    }
+    function mergeScore(cat, cats, notes) {
+      const ids = new Set([cat.id]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const c of cats) {
+          if (c.parentId && ids.has(c.parentId) && !ids.has(c.id)) { ids.add(c.id); changed = true; }
+        }
+      }
+      const noteN = notes.filter((n) => ids.has(n.categoryId)).length;
+      return noteN * 1000 + ids.size;
+    }
+    /* 计算一次合并的结果：返回新的 categories/notes 与统计。不直接落库。 */
+    function buildMergeResult(snap) {
+      const cats = (snap.categories || []).map((c) => ({ ...c }));
+      const notes = (snap.notes || []).map((n) => ({ ...n }));
+      const groups = dupGroups(cats);
+      const stats = [];
+      let mergedGroups = 0;
+      let movedNotes = 0;
+      /* 迭代：合并后可能让原本不同父级的同名项变成同级（子分类上移），再扫一轮。 */
+      for (let pass = 0; pass < 20; pass += 1) {
+        const gs = dupGroups(cats);
+        if (!gs.length) break;
+        for (const g of gs) {
+          const keep = g.slice().sort((a, b) =>
+            mergeScore(b, cats, notes) - mergeScore(a, cats, notes)
+            || (a.createdAt || 0) - (b.createdAt || 0))[0];
+          const dropIds = new Set(g.filter((c) => c.id !== keep.id).map((c) => c.id));
+          if (!dropIds.size) continue;
+          /* 被并分类的直属笔记迁到保留项；被并分类的子分类改挂到保留项。 */
+          for (const n of notes) {
+            if (dropIds.has(n.categoryId)) { n.categoryId = keep.id; n.updatedAt = Date.now(); movedNotes += 1; }
+          }
+          for (const c of cats) {
+            if (dropIds.has(c.parentId)) c.parentId = keep.id;
+          }
+          const removed = cats.filter((c) => dropIds.has(c.id));
+          for (let i = cats.length - 1; i >= 0; i -= 1) if (dropIds.has(cats[i].id)) cats.splice(i, 1);
+          stats.push({ name: keep.name, keepId: keep.id, kept: 1, removed: removed.length });
+          mergedGroups += 1;
+        }
+      }
+      return { categories: cats, notes, versions: snap.versions || {}, stats, mergedGroups, movedNotes };
+    }
+    function previewMergeDups() {
+      if (!window.SJLocal || !window.SJLocal.getState) { toast('本地存储未就绪'); return; }
+      const snap = window.SJLocal.getState();
+      const groups = dupGroups(snap.categories);
+      if (!groups.length) { toast('没有发现同名分类'); return; }
+      const rows = groups.map((g) => {
+        const keep = g.slice().sort((a, b) =>
+          mergeScore(b, snap.categories, snap.notes) - mergeScore(a, snap.categories, snap.notes)
+          || (a.createdAt || 0) - (b.createdAt || 0))[0];
+        const drop = g.filter((c) => c.id !== keep.id);
+        const noteN = snap.notes.filter((n) => drop.some((d) => d.id === n.categoryId)).length;
+        const childN = snap.categories.filter((c) => drop.some((d) => d.id === c.parentId)).length;
+        return `<div class="sj-merge-row"><b>${escapeHtml(keep.name)}</b>`
+          + `<span>合并 ${drop.length} 个同名 · 迁移 ${noteN} 篇笔记${childN ? '、' + childN + ' 个子分类' : ''}</span></div>`;
+      }).join('');
+      const m = openModal(`
+        <h3>合并同名分类</h3>
+        <p>发现 <b>${groups.length}</b> 组同名分类。每组会保留内容最多的一份，其余分类下的笔记与子分类自动迁入，不会删除笔记。</p>
+        <div class="sj-merge-list">${rows}</div>
+        <p class="sj-merge-tip">合并前会自动备份，随时可一键撤销。合并后请到「设置 → 同步」上传一次，云端才会同步更新。</p>
+        <div class="modal-actions">
+          <button class="btn ghost" data-act="cancel">取消</button>
+          <button class="btn primary" id="sjMergeDupsGo">确认合并</button>
+        </div>`);
+      m.querySelector('[data-act="cancel"]').onclick = closeModal;
+      m.querySelector('#sjMergeDupsGo').onclick = async () => {
+        closeModal();
+        await executeMergeDups();
+      };
+    }
+    async function executeMergeDups() {
+      try {
+        if (window.SJSaveNow) window.SJSaveNow();
+        const snap = window.SJLocal.getState();
+        /* 合并前整库备份；写不下就中止，绝不无备份地动数据。 */
+        try {
+          localStorage.setItem(MERGE_UNDO_KEY, JSON.stringify({ at: Date.now(), snap }));
+        } catch (e) {
+          toast('备份失败，已取消合并：' + e.message);
+          return;
+        }
+        const result = buildMergeResult(snap);
+        if (!result.mergedGroups) { localStorage.removeItem(MERGE_UNDO_KEY); toast('没有可合并的分类'); return; }
+        window.SJLocal.setState({ categories: result.categories, notes: result.notes, versions: result.versions });
+        await (window.SJBoot ? window.SJBoot() : boot());
+        renderCatSheet();
+        if (MGR && !MGR.classList.contains('hidden')) renderCatManager();
+        window.dispatchEvent(new Event('sj-categories-changed'));
+        toast(`已合并 ${result.mergedGroups} 组，迁移 ${result.movedNotes} 篇笔记（可在页面底部撤销）`);
+      } catch (e) {
+        toast('合并失败：' + e.message);
+      }
+    }
+    async function undoMergeDups() {
+      try {
+        const raw = localStorage.getItem(MERGE_UNDO_KEY);
+        if (!raw) { toast('没有可撤销的合并'); return; }
+        const backup = JSON.parse(raw);
+        if (!backup || !backup.snap) { toast('备份数据无效'); return; }
+        window.SJLocal.setState(backup.snap);
+        await (window.SJBoot ? window.SJBoot() : boot());
+        localStorage.removeItem(MERGE_UNDO_KEY);
+        renderCatSheet();
+        if (MGR && !MGR.classList.contains('hidden')) renderCatManager();
+        window.dispatchEvent(new Event('sj-categories-changed'));
+        toast('已撤销合并，恢复合并前的分类');
+      } catch (e) {
+        toast('撤销失败：' + e.message);
+      }
+    }
+
     function mgrChildren(parent) {
       return state.categories
         .filter((c) => (c.parentId || null) === parent)
@@ -5435,6 +5566,16 @@
       }
       html += '<div class="sj-mgr-card sj-mgr-new-card">'
         + '<button type="button" class="sj-mgr-new" data-act="mgr-add-root">新建文件夹</button></div>';
+      /* 合并同名分类：重复分类的修复入口，仅在本地存储可用时显示。 */
+      if (window.SJLocal && window.SJLocal.setState) {
+        const dupN = dupGroups(state.categories).length;
+        const canUndo = !!localStorage.getItem(MERGE_UNDO_KEY);
+        html += '<div class="sj-mgr-card sj-mgr-fix-card">'
+          + '<button type="button" class="sj-mgr-fix" data-act="mgr-merge-dups">'
+          + '合并同名分类' + (dupN ? `<em>${dupN} 组</em>` : '') + '</button>'
+          + (canUndo ? '<button type="button" class="sj-mgr-fix undo" data-act="mgr-undo-merge">撤销上次合并</button>' : '')
+          + '</div>';
+      }
       MGR_BODY.innerHTML = html;
     }
     function closeCatManager(backToSheet) {
@@ -5577,6 +5718,10 @@
           askCreateCategory(null);
         } else if (a === 'mgr-add-sub') {
           askCreateCategory(act.dataset.parent || null);
+        } else if (a === 'mgr-merge-dups') {
+          previewMergeDups();
+        } else if (a === 'mgr-undo-merge') {
+          undoMergeDups();
         }
       });
       MGR_BODY.addEventListener('pointerdown', (e) => {

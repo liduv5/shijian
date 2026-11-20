@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-116 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-117 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-20-116';
+const BUILD = '2026-11-20-117';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -314,6 +314,40 @@ ok('新建按钮只对文字有效：inline-block 且左对齐到子分类名称
   /\.sj-mgr-new \{[\s\S]{0,220}margin-left: 72px/.test(styleSrc) &&
   styleSrc.indexOf('.sj-mgr-new-card .sj-mgr-new { margin-left: 0; }') >= 0 &&
   !/\.sj-mgr-new \{\s*display: block; width: 100%/.test(styleSrc));
+
+/* ---- 合并同名分类（2026-11-20-117）---- */
+ok('按「同一父级 + 同名」分组识别重复分类（不误并不同父级同名）',
+  appSrc.indexOf('function dupGroups(cats)') >= 0 &&
+  appSrc.indexOf('c.parentId || null, String(c.name || \'\').trim().toLocaleLowerCase()') >= 0 &&
+  appSrc.indexOf('.filter((g) => g.length > 1)') >= 0);
+ok('合并保留内容最多的一份：按子树笔记数与后代分类数打分',
+  appSrc.indexOf('function mergeScore(cat, cats, notes)') >= 0 &&
+  appSrc.indexOf('notes.filter((n) => ids.has(n.categoryId)).length') >= 0 &&
+  /mergeScore\(b, cats, notes\) - mergeScore\(a, cats, notes\)/.test(appSrc));
+ok('合并迁移笔记与子分类，笔记改 categoryId 并顶新 updatedAt 以便同步',
+  /if \(dropIds\.has\(n\.categoryId\)\) \{ n\.categoryId = keep\.id; n\.updatedAt = Date\.now\(\); movedNotes \+= 1; \}/.test(appSrc) &&
+  /if \(dropIds\.has\(c\.parentId\)\) c\.parentId = keep\.id;/.test(appSrc));
+ok('合并迭代多轮，处理子分类上移后新产生的同级同名',
+  /for \(let pass = 0; pass < 20; pass \+= 1\)/.test(appSrc) &&
+  /const gs = dupGroups\(cats\);[\s\S]{0,80}if \(!gs\.length\) break;/.test(appSrc));
+ok('合并前整库快照到 localStorage，失败即中止；落库用 setState 一次替换',
+  appSrc.indexOf("const MERGE_UNDO_KEY = 'sj_merge_undo_v1'") >= 0 &&
+  /localStorage\.setItem\(MERGE_UNDO_KEY, JSON\.stringify\(\{ at: Date\.now\(\), snap \}\)\)/.test(appSrc) &&
+  /window\.SJLocal\.setState\(\{ categories: result\.categories, notes: result\.notes, versions: result\.versions \}\)/.test(appSrc));
+ok('撤销合并恢复整库快照并清标记，合并后提示去同步',
+  appSrc.indexOf('async function undoMergeDups()') >= 0 &&
+  /window\.SJLocal\.setState\(backup\.snap\)/.test(appSrc) &&
+  /localStorage\.removeItem\(MERGE_UNDO_KEY\)/.test(appSrc) &&
+  appSrc.indexOf('合并后请到「设置 → 同步」上传一次') >= 0);
+ok('管理页提供合并入口与撤销入口，预览列出每组合并计划',
+  appSrc.indexOf('data-act="mgr-merge-dups"') >= 0 &&
+  appSrc.indexOf('data-act="mgr-undo-merge"') >= 0 &&
+  appSrc.indexOf('function previewMergeDups()') >= 0 &&
+  appSrc.indexOf('class="sj-merge-list"') >= 0);
+ok('合并相关样式仅窄屏、未在桌面放开（依托 .sj-cat-mgr 隐藏）',
+  styleSrc.indexOf('.sj-mgr-fix-card {') >= 0 &&
+  styleSrc.indexOf('.sj-merge-list {') >= 0 &&
+  styleSrc.indexOf('.sj-merge-row b {') >= 0);
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

@@ -3221,6 +3221,37 @@ body.m-list .pwa-tip {
   }
   .sj-mgr-new-card { padding: 4px 16px; }
   .sj-mgr-new-card .sj-mgr-new { margin-left: 0; }
+  /* 合并同名分类工具卡：修复双端各自建类造成的重复，华为风低调入口。 */
+  .sj-mgr-fix-card {
+    padding: 6px 16px;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  }
+  .sj-mgr-fix {
+    display: inline-flex; align-items: center; gap: 8px;
+    min-height: 46px; padding: 0;
+    border: 0; background: transparent; color: var(--accent);
+    font-family: var(--mgr-font); font-size: 15px; font-weight: 500;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .sj-mgr-fix em {
+    font-style: normal; font-size: 12px; font-weight: 500;
+    padding: 1px 8px; border-radius: 10px;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .sj-mgr-fix.undo { color: var(--text-3); font-size: 14px; }
+  /* 合并预览弹窗里的重复组列表 */
+  .sj-merge-list {
+    margin: 4px 0 12px; max-height: 40vh; overflow-y: auto;
+    border: 1px solid var(--border); border-radius: 12px;
+  }
+  .sj-merge-row {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+  }
+  .sj-merge-row:last-child { border-bottom: 0; }
+  .sj-merge-row b { font-size: 15px; color: var(--text); }
+  .sj-merge-row span { font-size: 12px; color: var(--text-3); }
+  .sj-merge-tip { font-size: 12px; line-height: 1.6; color: var(--text-3); margin: 0 0 14px; }
   body.sj-cat-mgr-open .pwd-tip { display: none; }
 
   /* ---- 编辑笔记本底部弹窗：点子分类双横杠弹出 ---- */
