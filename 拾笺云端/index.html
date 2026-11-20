@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-20-107';
+  var SWV = '2026-11-20-108';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -314,8 +314,6 @@
     <button type="button" class="sj-fab" id="sjFab" aria-label="新建笔记" title="新建笔记">
       <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
     </button>
-    <!-- 分类面板：点大标题展开，全部/未分类/收藏/回收站 + 文件夹 -->
-    <div class="sj-cat-sheet hidden" id="sjCatSheet"></div>
   </section>
 
   <!-- ============ 编辑区 ============ -->
@@ -436,6 +434,12 @@
     <svg viewBox="0 0 24 24" class="ico"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M13.5 6.5l3 3"/></svg><span>随手记</span>
   </button>
 </nav>
+
+<!-- 分类面板：点大标题展开，全部/未分类/收藏/回收站 + 文件夹。
+     必须放在 .app 外、body 直属：手机端 .app 是 position:fixed 自成的层叠上下文，
+     .list-pane 内部又有 z-index:66，面板放进去会被动态遮罩（z-index:67，根层）盖住，
+     只剩一层灰蒙蒙的遮罩（2026-11-20 反馈）。放根层后 68 > 67，面板正常浮在遮罩上。 -->
+<div class="sj-cat-sheet hidden" id="sjCatSheet"></div>
 
 <div class="ctx-menu hidden" id="ctxMenu"></div>
 <div class="toast" id="toast"></div>

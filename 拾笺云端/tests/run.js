@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-107 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-108 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-20-107';
+const BUILD = '2026-11-20-108';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -181,6 +181,11 @@ ok('桌面端默认隐藏新增 UI（只在 ≤980px 放开）',
   styleSrc.indexOf('@media (max-width: 980px)') >= 0);
 ok('新 UI 颜色全部走 CSS 变量（双主题）',
   !/sj-(?:home-head|tabbar|detail-bar|cat-sheet)[^{]*\{[^}]*#(?:fff|f4f3ef|22201c)/.test(styleSrc));
+/* 分类面板必须在 .app 外、body 直属：否则手机端会被 z-index:67 的动态遮罩盖住，
+   展开后只剩灰蒙蒙一层（2026-11-20 反馈）。用「面板声明出现在 </main> 之后」判定。 */
+ok('分类面板在 .app 外（body 直属），不被动态遮罩盖住',
+  indexSrc.indexOf('id="sjCatSheet"') > indexSrc.indexOf('</main>') &&
+  indexSrc.indexOf('id="sjCatSheet"') > indexSrc.indexOf('id="sjTabbar"'));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
