@@ -53,9 +53,9 @@ node server.js
 
 **然后（手机端）**
 
-4. 手机浏览器打开：<https://2120533470581252096.app.workbuddy.host/?sharecode=SSYXUMSNMI>
+4. 手机浏览器打开：<https://wbapp-qlmdiie5vedhwtjpkrwebn.app.workbuddy.host/?sharecode=X4WPKTHLIN>
 
-> 链接必须完整保留 `?sharecode=SSYXUMSNMI`。参数被聊天工具截断时会出现「链接不完整」或界面卡住、按钮无响应；用完整链接重新打开即可。v1.7.2 起页面会自动补参数，加载失败时也会给出「重新打开拾笺」按钮。
+> 链接必须完整保留 `?sharecode=X4WPKTHLIN`。参数被聊天工具截断时会出现「链接不完整」或界面卡住、按钮无响应；用完整链接重新打开即可。页面会自动补参数，加载失败时也会给出「重新打开拾笺」按钮。
 5. 用同一个 QQ 邮箱收验证码登录
 
 **日常**
@@ -90,12 +90,12 @@ npm run desktop      # 启动桌面客户端
 npm run dist         # 当前系统；也可以 --win / --mac / --linux
 ```
 
-> 桌面版数据存放在系统用户目录：
+> 桌面版（Electron）数据存放在系统用户目录：
 > - Windows：`%APPDATA%/拾笺/data`
 > - macOS：`~/Library/Application Support/拾笺/data`
 > - Linux：`~/.config/拾笺/data`
 >
-> 这样升级或重装软件不会丢笔记。
+> 直接双击 `启动.bat` / `启动.vbs` 时不走 Electron，数据在项目内的 `拾笺/data/`。两种启动方式的数据目录不同，别混用；迁移时按实际使用的那份拷贝。
 
 ## 数据在哪
 
@@ -136,6 +136,7 @@ data/
 - 附件原文件上传到云端存储桶，`sj_notes.attachments` 里只存**稳定路径**；渲染时按需换临时签名 URL 或走带鉴权下载，不把签名地址写进正文（避免过期裂图）
 - 所有库已放在 `public/vendor/`，**断网可用**
 - 默认端口 5173，可用 `PORT=8080 node server.js` 修改
+- 版本号两套：`package.json` 的 `1.1.0` 是桌面包版本；手机 PWA 构建号在 `拾笺云端/index.html` 的 `SWV`（当前 `2026-11-18-104`）。二者含义不同，不要互相覆盖。
 
 ## 边界说明
 
