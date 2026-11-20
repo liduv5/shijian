@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-120 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-121 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-20-120';
+const BUILD = '2026-11-21-121';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -177,7 +177,7 @@ ok('分类面板复用现有伪节点 all/uncat/starred',
 ok('首页搜索与侧栏搜索共享 state.search',
   appSrc.indexOf('state.search = e.target.value;') >= 0);
 ok('桌面端默认隐藏新增 UI（只在 ≤980px 放开）',
-  /\.sj-home-head, \.sj-fab, \.sj-tabbar, \.sj-detail-bar,[\s\S]{0,100}\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu,[\s\S]{0,60}\.sj-cat-editor \{ display: none; \}/.test(styleSrc) &&
+  /\.sj-home-head, \.sj-fab, \.sj-tabbar, \.sj-detail-bar,[\s\S]{0,100}\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu,[\s\S]{0,60}\.sj-cat-editor, \.sj-note-head, \.sj-edit-bar, \.sj-meta-cat \{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('@media (max-width: 980px)') >= 0);
 ok('手机端顶栏收起、--m-bar-total 归零（顶端无菜单）',
   /@media \(max-width: 980px\)[\s\S]{0,400}\.m-bar \{ display: none !important; \}/.test(styleSrc) &&
@@ -222,7 +222,7 @@ ok('管理页支持拖动排序并回写 category.order',
   appSrc.indexOf('body: { order: i }') >= 0 &&
   appSrc.indexOf('pointermove') >= 0);
 ok('分类管理页样式仅窄屏放开，桌面默认隐藏',
-  /\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu,[\s\S]{0,60}\.sj-cat-editor \{ display: none; \}/.test(styleSrc) &&
+  /\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu,[\s\S]{0,60}\.sj-cat-editor, \.sj-note-head, \.sj-edit-bar, \.sj-meta-cat \{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('.sj-cat-mgr {') >= 0 &&
   styleSrc.indexOf('.sj-mgr-card') >= 0 &&
   styleSrc.indexOf('body.sj-cat-mgr-open .pwd-tip') >= 0);
@@ -284,7 +284,7 @@ ok('后端两个分类 PATCH 都保存 color 字段（含 null 清除）',
   localSrc.indexOf('c.color } : {}') >= 0 &&
   serverSrc.indexOf('c.color } : {}') >= 0);
 ok('编辑弹窗样式仅窄屏放开、桌面默认隐藏',
-  /\.sj-cat-editor \{ display: none; \}/.test(styleSrc) &&
+  /\.sj-cat-editor, \.sj-note-head, \.sj-edit-bar, \.sj-meta-cat \{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('.sj-editor-sheet') >= 0 &&
   styleSrc.indexOf('.sj-editor-swatch.on::after') >= 0);
 ok('编辑弹窗字体与布局按华为图二：标题 22px 粗、输入 17px、取消保存平分带竖线',
@@ -315,7 +315,7 @@ ok('新建按钮只对文字有效：inline-block 且左对齐到子分类名称
   styleSrc.indexOf('.sj-mgr-new-card .sj-mgr-new { margin-left: 0; }') >= 0 &&
   !/\.sj-mgr-new \{\s*display: block; width: 100%/.test(styleSrc));
 
-/* ---- 合并同名分类（2026-11-20-120）---- */
+/* ---- 合并同名分类（2026-11-21-121）---- */
 ok('按「同一父级 + 同名」分组识别重复分类（不误并不同父级同名）',
   appSrc.indexOf('function dupGroups(cats)') >= 0 &&
   appSrc.indexOf('c.parentId || null, String(c.name || \'\').trim().toLocaleLowerCase()') >= 0 &&
@@ -387,6 +387,40 @@ ok('展开后标题行与首页完全一致：同字体/同字号/同字重/同�
   appSrc.indexOf("const nameEl = $('#sjCatTitleText'), cntEl = $('#sjHomeCount');") >= 0 &&
   appSrc.indexOf('<span>${escapeHtml(name)}</span><span class="sj-caret">▲</span></button>') >= 0 &&
   !/\.sj-cat-hero \.sj-home-title \{[\s\S]{0,200}font-size: 30px/.test(styleSrc));
+
+ok('手机详情页有阅读/编辑两态的结构：返回头部、分类胶囊、编辑工具条',
+  indexSrc.indexOf('id="sjNoteHead"') >= 0 &&
+  indexSrc.indexOf('sj-nh-acts') >= 0 &&
+  indexSrc.indexOf('data-act="nh-done"') >= 0 &&
+  indexSrc.indexOf('data-act="nh-undo"') >= 0 &&
+  indexSrc.indexOf('id="sjMetaCat"') >= 0 &&
+  indexSrc.indexOf('id="sjEditBar"') >= 0 &&
+  indexSrc.indexOf('data-act="fmt"') >= 0);
+
+ok('打开笔记默认阅读态、点正文才进编辑态（draft 直接进编辑）',
+  appSrc.indexOf('function setNoteMode(mode, point') >= 0 &&
+  appSrc.indexOf("document.body.classList.toggle('sj-note-edit', edit)") >= 0 &&
+  appSrc.indexOf("setNoteMode(note === draftNote || id === String(DRAFT_ID) ? 'edit' : 'read'") >= 0 &&
+  appSrc.indexOf('caretRangeFromPoint') >= 0 &&
+  /BODY_BOX\.addEventListener\('click'[\s\S]{0,220}setNoteMode\('edit'/.test(appSrc) &&
+  appSrc.indexOf("if (a === 'nh-done') { setNoteMode('read'); return; }") >= 0);
+
+ok('手机端不再有 Markdown / 富文本切换，阅读态大标题与大字正文按截图',
+  styleSrc.indexOf('#formatSwitch { display: none; }') >= 0 &&
+  appSrc.indexOf("format: NARROW() ? 'rich' : 'md'") >= 0 &&
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.title-input \{[\s\S]{0,140}font-size: 27px; font-weight: 700/.test(styleSrc) &&
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane,[\s\S]{0,120}font-size: 19px; line-height: 1\.95/.test(styleSrc) &&
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-detail-bar button\[data-act="back"\] \{ display: none; \}/.test(styleSrc) &&
+  styleSrc.indexOf('.sj-meta-cat {') >= 0);
+
+ok('编辑态：紧凑头部、隐藏四宫格底栏、露出编辑工具条',
+  /body\.sj-note-edit \.editor-head \{ display: none; \}/.test(styleSrc) &&
+  /body\.sj-note-edit \.sj-detail-bar \{ display: none !important; \}/.test(styleSrc) &&
+  /body\.sj-note-edit \.sj-edit-bar:not\(\.hidden\) \{ display: flex; \}/.test(styleSrc) &&
+  /body\.sj-note-edit\.sj-note-fmt \.toolbar \{ display: flex; \}/.test(styleSrc) &&
+  /body\.sj-note-edit \.sj-note-head \.title-input \{[\s\S]{0,220}font-size: 17px; font-weight: 600/.test(styleSrc) &&
+  appSrc.indexOf('function mountTitle(edit)') >= 0 &&
+  appSrc.indexOf('NOTE_HEAD.insertBefore(ti, NOTE_ACTIONS)') >= 0);
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

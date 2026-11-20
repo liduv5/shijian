@@ -2838,7 +2838,7 @@ body.m-list .pwa-tip {
 /* 桌面端默认隐藏：下面的 @media 里才按首页/详情页分别放开 */
 .sj-home-head, .sj-fab, .sj-tabbar, .sj-detail-bar,
 .sj-cat-mgr, .sj-manage-menu, .sj-more-btn, .sj-more-menu,
-.sj-cat-editor { display: none; }
+.sj-cat-editor, .sj-note-head, .sj-edit-bar, .sj-meta-cat { display: none; }
 
 @media (max-width: 980px) {
   /* ---- 华为备忘录配色（仅窄屏）----
@@ -3416,4 +3416,108 @@ body.m-list .pwa-tip {
   body .pwd-tip {
     bottom: calc(58px + env(safe-area-inset-bottom, 0px));
   }
+
+  /* ============================================================
+     华为风笔记详情：阅读态（默认）/ 编辑态（点正文进入）
+     两种状态共用一套 DOM：body.sj-note-edit 切换排版与底栏，
+     桌面端没有任何影响（全部写在 ≤980px 内）。
+     ============================================================ */
+  /* 头部：阅读态只露返回箭头；编辑态露出标题 + 撤销/重做/完成 */
+  .sj-note-head {
+    display: flex; align-items: center; gap: 6px; flex: none;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) 10px 0;
+  }
+  .sj-nh-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; flex: none;
+    border: 0; border-radius: 50%; background: transparent; color: var(--text);
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .sj-nh-btn:active { background: var(--surface-2); }
+  .sj-nh-btn .ico { width: 23px; height: 23px; stroke-width: 2; }
+  .sj-nh-acts { display: none; align-items: center; flex: none; }
+  .sj-nh-done { color: var(--accent); }
+  /* 编辑态：真正的标题输入框被搬进这一行，和返回/撤销/完成同一行 */
+  body.sj-note-edit .sj-nh-acts { display: flex; }
+  body.sj-note-edit .sj-note-head .title-input {
+    flex: 1 1 auto; min-width: 0; width: auto; height: 40px; padding: 0 2px;
+    font-family: var(--font-ui); font-size: 17px; font-weight: 600;
+    letter-spacing: 0; line-height: 40px; color: var(--text);
+    border: 0; outline: 0; background: transparent;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* 分类胶囊：日期后面那颗「未分类」 */
+  .sj-meta-cat {
+    display: inline-flex; align-items: center;
+    height: 22px; padding: 0 10px; flex: none;
+    border-radius: 999px; background: var(--surface-2);
+    font-size: 12px; color: var(--text-3); white-space: nowrap;
+  }
+  .sj-meta-cat.hidden { display: none; }
+
+  /* ---- 阅读态：大标题 + 日期/分类 + 大字正文 ---- */
+  body.sj-note-open:not(.sj-note-edit) .editor-head {
+    display: block; padding: 4px 20px 0;
+  }
+  body.sj-note-open:not(.sj-note-edit) .title-input {
+    width: 100%;
+    font-size: 27px; font-weight: 700; line-height: 1.32; letter-spacing: -.02em;
+    padding: 0;
+  }
+  body.sj-note-open:not(.sj-note-edit) .editor-actions { display: none; }
+  body.sj-note-open:not(.sj-note-edit) .meta-row {
+    padding: 8px 20px 6px; font-size: 12.5px; gap: 8px;
+  }
+  body.sj-note-open:not(.sj-note-edit) .meta-dot,
+  body.sj-note-open:not(.sj-note-edit) #saveState,
+  body.sj-note-open:not(.sj-note-edit) .word-count { display: none; }
+  body.sj-note-open:not(.sj-note-edit) .tag-row,
+  body.sj-note-open:not(.sj-note-edit) .toolbar { display: none; }
+  body.sj-note-open:not(.sj-note-edit) .rich-pane,
+  body.sj-note-open:not(.sj-note-edit) .preview-pane {
+    font-size: 19px; line-height: 1.95; padding: 4px 20px calc(180px + env(safe-area-inset-bottom, 0px));
+  }
+  /* 阅读态顶栏已有返回箭头，底栏不再重复一个「返回」 */
+  body.sj-note-open:not(.sj-note-edit) .sj-detail-bar button[data-act="back"] { display: none; }
+
+  /* 手机端不提供 Markdown / 富文本切换 */
+  #formatSwitch { display: none; }
+
+  /* ---- 编辑态：紧凑头部 + 编辑工具条 ---- */
+  body.sj-note-edit .editor-head { display: none; }
+  body.sj-note-edit .meta-row { padding: 2px 20px 2px; font-size: 12px; opacity: .55; gap: 8px; }
+  body.sj-note-edit .meta-dot,
+  body.sj-note-edit #saveState,
+  body.sj-note-edit .word-count { display: none; }
+  body.sj-note-edit .tag-row { display: none; }
+  body.sj-note-edit .toolbar { display: none; }
+  body.sj-note-edit.sj-note-fmt .toolbar { display: flex; }
+  body.sj-note-edit .rich-pane,
+  body.sj-note-edit .preview-pane {
+    font-size: 19px; line-height: 1.9; padding: 2px 20px calc(180px + env(safe-area-inset-bottom, 0px));
+  }
+  body.sj-note-edit .sj-detail-bar { display: none !important; }
+
+  /* 编辑态底部工具条：格式 / 图片 / 附件 / 收藏 / 更多 */
+  .sj-edit-bar {
+    position: fixed; z-index: 61;
+    left: 0; right: 0; bottom: 0;
+    align-items: center; justify-content: space-around;
+    height: calc(52px + env(safe-area-inset-bottom, 0px));
+    padding: 0 6px env(safe-area-inset-bottom, 0px);
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+  }
+  .sj-edit-bar.hidden { display: none; }
+  body.sj-note-edit .sj-edit-bar:not(.hidden) { display: flex; }
+  .sj-edit-bar button {
+    width: 46px; height: 44px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    border: 0; border-radius: 12px; background: transparent; color: var(--text-2);
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .sj-edit-bar button:active { background: var(--surface-2); }
+  .sj-edit-bar button .ico { width: 23px; height: 23px; }
+  .sj-edit-bar button.on { color: var(--accent); }
 }

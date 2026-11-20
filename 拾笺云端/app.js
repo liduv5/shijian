@@ -2755,7 +2755,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-20-120';
+  const APP_BUILD = '2026-11-21-121';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -4000,7 +4000,10 @@
     const t = Date.now();
     draftNote = {
       id: DRAFT_ID,
-      categoryId: target, title: '', content: '', format: 'md',
+      categoryId: target, title: '', content: '',
+      /* 手机端没有 Markdown / 富文本切换，新建就走富文本，所见即所得；
+         桌面端维持原来的 Markdown 默认，互不影响。 */
+      format: NARROW() ? 'rich' : 'md',
       starred: false, tags: [], attachments: [],
       createdAt: t, updatedAt: t,
     };
@@ -5258,6 +5261,8 @@
       if (more) more.classList.toggle('hidden', false);
       $('#sjTabNotes').classList.toggle('active', !inNote);
       $('#sjTabQuick').classList.remove('active');
+      /* 详情页再细分「阅读 / 编辑」两态：打开笔记默认阅读，点正文才编辑 */
+      syncNoteMode();
     }
     window.SJSyncHome = syncHome;
 
@@ -5874,6 +5879,175 @@
         ]);
       }
     });
+
+    /* ---- 华为风详情页：阅读态（默认）/ 编辑态（点正文进入） ----
+       共用一套 DOM，只切 body 上的 sj-note-edit 与 contenteditable：
+       阅读态 = 返回箭头 + 大标题 + 日期/分类 + 大字正文 + 四项底栏；
+       编辑态 = 返回/标题/撤销/重做/完成 + 编辑工具条。
+       不改任何数据格式，桌面端完全不受影响（样式都在 ≤980px 内）。 */
+    const NOTE_HEAD = $('#sjNoteHead'), NOTE_ACTIONS = NOTE_HEAD && NOTE_HEAD.querySelector('.sj-nh-acts');
+    const META_CAT = $('#sjMetaCat'), EDIT_BAR = $('#sjEditBar'), BODY_BOX = $('#editorBody');
+    const HEAD_BAR = document.querySelector('.editor-head');
+    let noteModeId = null;
+
+    /* 标题输入框在两态之间搬位置：阅读态放在正文上方当大标题；
+       编辑态挪进顶栏，和返回/撤销/完成挤同一行（华为备忘录就是这样）。
+       事件监听挂在元素本身，搬动节点不会失效。 */
+    function mountTitle(edit) {
+      const ti = $('#titleInput');
+      if (!ti) return;
+      if (edit) {
+        if (NOTE_HEAD && NOTE_ACTIONS && ti.parentElement !== NOTE_HEAD) {
+          NOTE_HEAD.insertBefore(ti, NOTE_ACTIONS);
+        }
+      } else if (HEAD_BAR && ti.parentElement !== HEAD_BAR) {
+        HEAD_BAR.insertBefore(ti, HEAD_BAR.firstChild);
+      }
+    }
+    function updateMetaCat(note) {
+      if (!META_CAT) return;
+      const cat = note && note.categoryId ? state.categories.find((c) => c.id === note.categoryId) : null;
+      META_CAT.textContent = cat ? cat.name : '未分类';
+      META_CAT.classList.toggle('hidden', !note);
+    }
+    /* 点正文进入编辑时，把光标落到手指点的那个字后面，而不是跳回开头 */
+    function caretTo(x, y) {
+      const pane = $('#richPane');
+      if (!pane) return;
+      try {
+        if (document.caretRangeFromPoint) {
+          const r = document.caretRangeFromPoint(x, y);
+          if (r) {
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(r);
+            return;
+          }
+        }
+        if (document.caretPositionFromPoint) {
+          const pos = document.caretPositionFromPoint(x, y);
+          if (pos) {
+            const r = document.createRange();
+            r.setStart(pos.offsetNode, pos.offset);
+            r.collapse(true);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(r);
+          }
+        }
+      } catch (_) {}
+    }
+    function setNoteMode(mode, point, opts) {
+      const note = currentNote();
+      if (!note) return;
+      const edit = mode === 'edit';
+      const doFocus = !opts || opts.focus !== false;
+      document.body.classList.toggle('sj-note-edit', edit);
+      if (!edit) document.body.classList.remove('sj-note-fmt');
+      const ti = $('#titleInput');
+      if (ti) ti.readOnly = !edit;
+      const rp = $('#richPane');
+      if (rp) rp.setAttribute('contenteditable', edit ? 'true' : 'false');
+      if (EDIT_BAR) EDIT_BAR.classList.toggle('hidden', !edit);
+      if (edit) {
+        if (viewFormat === 'md' && state.viewMode !== 'edit') {
+          state.viewMode = 'edit';
+          applyFormat(viewFormat);
+        }
+        mountTitle(true);
+        /* 打开已有笔记不抢焦点：手机上会自动弹键盘，很打扰 */
+        if (!doFocus) return;
+        setTimeout(() => {
+          const target = viewFormat === 'rich' ? $('#richPane') : $('#mdInput');
+          if (!target) return;
+          target.focus();
+          if (viewFormat === 'rich' && point) caretTo(point.x, point.y);
+        }, 0);
+      } else {
+        mountTitle(false);
+        const ae = document.activeElement;
+        if (ae && ae.blur && ae.tagName && ae.tagName !== 'BODY') ae.blur();
+        void saveNow();
+        if (viewFormat === 'md') {
+          state.viewMode = 'preview';
+          applyFormat(viewFormat);
+          setTimeout(refreshPreview, 0);
+        }
+      }
+    }
+    function syncNoteMode() {
+      const note = currentNote();
+      if (!note) {
+        document.body.classList.remove('sj-note-edit', 'sj-note-fmt');
+        noteModeId = null;
+        if (EDIT_BAR) EDIT_BAR.classList.add('hidden');
+        mountTitle(false);
+        return;
+      }
+      updateMetaCat(note);
+      const ebStar = EDIT_BAR && EDIT_BAR.querySelector('[data-act="star"]');
+      if (ebStar) ebStar.classList.toggle('on', !!note.starred);
+      /* 桌面端沿用原来的双栏编辑界面，不进这套形态 */
+      if (!NARROW()) {
+        document.body.classList.remove('sj-note-edit', 'sj-note-fmt');
+        const ti = $('#titleInput'); if (ti) ti.readOnly = false;
+        const rp = $('#richPane'); if (rp) rp.setAttribute('contenteditable', 'true');
+        if (EDIT_BAR) EDIT_BAR.classList.add('hidden');
+        mountTitle(false);
+        noteModeId = String(note.id);
+        return;
+      }
+      const id = String(note.id);
+      if (id !== noteModeId) {
+        noteModeId = id;
+        /* 新建的草稿直接进编辑（要马上写字，标题由 openNote 聚焦）；
+           已有笔记先进阅读态，不主动抢焦点。 */
+        setNoteMode(note === draftNote || id === String(DRAFT_ID) ? 'edit' : 'read', null, { focus: false });
+      }
+    }
+    if (NOTE_HEAD) NOTE_HEAD.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-act]');
+      if (!b) return;
+      const a = b.dataset.act;
+      if (a === 'nh-back') { hideMoreMenu(); closeEditor(); return; }
+      if (a === 'nh-done') { setNoteMode('read'); return; }
+      /* 撤销 / 重做：富文本走 execCommand，Markdown 走 textarea 自带的撤销栈 */
+      const target = viewFormat === 'rich' ? $('#richPane') : $('#mdInput');
+      if (!target) return;
+      target.focus();
+      try { document.execCommand(a === 'nh-undo' ? 'undo' : 'redo'); } catch (_) {}
+    });
+    if (EDIT_BAR) EDIT_BAR.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-act]');
+      if (!b) return;
+      const a = b.dataset.act;
+      if (a === 'fmt') {
+        const on = document.body.classList.toggle('sj-note-fmt');
+        b.classList.toggle('on', on);
+        return;
+      }
+      if (a === 'img') { const el = $('#imgBtn'); if (el) el.click(); return; }
+      if (a === 'attach') { const el = $('#attachBtn'); if (el) el.click(); return; }
+      /* 收藏 / 更多：直接复用详情底栏那两个按钮的既有逻辑，不另写一份 */
+      const proxy = DETAIL && DETAIL.querySelector(`[data-act="${a}"]`);
+      if (proxy) { proxy.click(); setTimeout(syncNoteMode, 0); }
+    });
+    /* 阅读态点正文任意位置 → 进编辑态，并把光标落到点击处 */
+    if (BODY_BOX) BODY_BOX.addEventListener('click', (e) => {
+      if (!NARROW() || !currentNote()) return;
+      if (document.body.classList.contains('sj-note-edit')) return;
+      setNoteMode('edit', { x: e.clientX, y: e.clientY });
+    });
+    /* 阅读态点标题 → 进编辑态并聚焦标题 */
+    const TI = $('#titleInput');
+    if (TI) {
+      TI.addEventListener('click', () => {
+        if (!NARROW() || !currentNote()) return;
+        if (document.body.classList.contains('sj-note-edit')) return;
+        setNoteMode('edit');
+        setTimeout(() => TI.focus(), 0);
+      });
+    }
 
     /* ---- 右上角四点菜单：顶栏收起后的设置/工具入口 ----
        全部 click 现有按钮，不新建数据链路；开关时清自动弹回标记无关，
