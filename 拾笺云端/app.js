@@ -2755,7 +2755,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-20-109';
+  const APP_BUILD = '2026-11-20-110';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -3861,6 +3861,7 @@
         }
         renderTree();
         toast(`已新建类别「${cat.name}」`);
+        window.dispatchEvent(new Event('sj-categories-changed'));
         return cat;
       });
   }
@@ -3888,6 +3889,7 @@
         renderList();
         if (state.selNote) openNote(state.selNote);
         toast('已重命名');
+        window.dispatchEvent(new Event('sj-categories-changed'));
       },
     });
   }
@@ -3944,6 +3946,7 @@
         renderTree();
         renderList();
         toast('类别已删除');
+        window.dispatchEvent(new Event('sj-categories-changed'));
       } catch (e) { toast(e.message); }
     };
   }
@@ -5296,7 +5299,28 @@
     const ICON_ALL = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 5h16M4 12h16M4 19h16"/></svg>';
     const ICON_STAR = '<svg viewBox="0 0 24 24" class="ico"><path d="M12 3.6l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.8l5.9-.8z"/></svg>';
     const ICON_BOX = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16v13H4zM4 7l2-3h12l2 3M9 11h6"/></svg>';
+    const ICON_FOLDER = '<svg viewBox="0 0 24 24" class="ico"><path d="M3 7h6l2 2h10v10H3z"/></svg>';
     const ICON_TRASH = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>';
+    const ICON_GRIP = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 8h16M4 16h16"/></svg>';
+    /* 每个分类的颜色只由「同级顺序」决定：不入库、不随设备变，刷新后也不会跳色。 */
+    function chipIndex(cat) {
+      const sibs = state.categories
+        .filter((c) => (c.parentId || null) === (cat.parentId || null))
+        .sort(byOrder);
+      const i = sibs.findIndex((c) => c.id === cat.id);
+      return Math.max(0, i) % 4;
+    }
+    function folderRow(cat, depth) {
+      const kids = state.categories.filter((c) => c.parentId === cat.id);
+      const lead = depth === 0
+        ? ICON_FOLDER
+        : `<span class="sj-cat-chip c${chipIndex(cat)}"></span>`;
+      const tail = depth === 0 && kids.length
+        ? '<span class="sj-cat-caret">⌄</span>'
+        : `<span class="sj-cat-n">${folderCount(cat.id)}</span>`;
+      return `<button type="button" class="sj-cat-row${String(state.selCat) === String(cat.id) ? ' on' : ''}${depth ? ' sj-cat-indent' : ''}" data-cat="${escapeHtml(cat.id)}">`
+        + `${lead}<span class="sj-cat-name">${escapeHtml(cat.name)}</span>${tail}</button>`;
+    }
     function renderCatSheet() {
       if (!SHEET) return;
       const all = state.notes.length;
@@ -5307,10 +5331,10 @@
         + catRow('starred', '我的收藏', ICON_STAR, star, false)
         + `<button type="button" class="sj-cat-row" data-act="trash">${ICON_TRASH}<span class="sj-cat-name">最近删除</span><span class="sj-cat-n"></span></button>`
         + '<div class="sj-cat-sep"><span>文件夹</span><button type="button" data-act="manage">管理</button></div>';
-      const roots = state.categories.filter((c) => !c.parentId);
+      const roots = state.categories.filter((c) => !c.parentId).sort(byOrder);
       function walk(parent, depth) {
-        for (const c of state.categories.filter((x) => (x.parentId || null) === parent)) {
-          html += catRow(c.id, c.name, ICON_BOX, folderCount(c.id), depth > 0);
+        for (const c of state.categories.filter((x) => (x.parentId || null) === parent).sort(byOrder)) {
+          html += folderRow(c, depth);
           walk(c.id, depth + 1);
         }
       }
@@ -5333,6 +5357,182 @@
       }
       SHEET.classList.remove('hidden');
     }
+
+    /* ---- 分类管理页：分类面板「管理」进入的全屏编辑页 ----
+       只做界面与手势，所有增删改都复用上面的 createCategory / renameCategory /
+       deleteCategory；排序走后端已有的 PATCH order，不新建数据格式。 */
+    const MGR = $('#sjCatMgr'), MGR_BODY = $('#sjCatMgrBody'), MGR_BACK = $('#sjCatMgrBack');
+    const mgrCollapsed = new Set();
+    let catDrag = null;
+
+    function mgrChildren(parent) {
+      return state.categories
+        .filter((c) => (c.parentId || null) === parent)
+        .sort(byOrder);
+    }
+    function mgrRow(cat, depth, isRoot) {
+      const id = escapeHtml(cat.id);
+      const parent = escapeHtml(cat.parentId || '');
+      const pad = isRoot ? 4 : 12 + depth * 18;
+      let lead = '';
+      let tail = '';
+      if (isRoot) {
+        const hasKids = state.categories.some((c) => c.parentId === cat.id);
+        lead = ICON_FOLDER;
+        tail = hasKids
+          ? `<button type="button" class="sj-mgr-caret${mgrCollapsed.has(cat.id) ? ' closed' : ''}" data-act="mgr-toggle" data-id="${id}" aria-label="展开或收起">⌄</button>`
+          : '';
+      } else {
+        lead = `<span class="sj-mgr-chip c${chipIndex(cat)}"></span>`;
+      }
+      const grip = isRoot
+        ? '<span class="sj-mgr-grip-space" aria-hidden="true"></span>'
+        : `<button type="button" class="sj-mgr-grip" data-act="mgr-grip" data-id="${id}" aria-label="拖动排序，点击更多操作">${ICON_GRIP}</button>`;
+      return `<div class="sj-mgr-row" data-cat-id="${id}" data-parent="${parent}" data-depth="${depth}" style="padding-left:${pad}px">`
+        + `<span class="sj-mgr-main" data-act="mgr-rename" data-id="${id}">${lead}<span class="sj-mgr-name">${escapeHtml(cat.name)}</span></span>`
+        + tail + grip + '</div>';
+    }
+    function renderCatManager() {
+      if (!MGR_BODY) return;
+      let html = '';
+      const roots = mgrChildren(null);
+      if (!roots.length) {
+        html += '<div class="sj-mgr-card sj-mgr-empty">还没有文件夹，点下面的「新建文件夹」开始整理。</div>';
+      }
+      for (const root of roots) {
+        html += `<div class="sj-mgr-card" data-root="${escapeHtml(root.id)}">`;
+        html += mgrRow(root, 0, true);
+        if (!mgrCollapsed.has(root.id)) {
+          const walk = (parentId, depth) => {
+            for (const c of mgrChildren(parentId)) {
+              html += mgrRow(c, depth, false);
+              if (!mgrCollapsed.has(c.id)) walk(c.id, depth + 1);
+            }
+          };
+          walk(root.id, 1);
+        }
+        html += `<button type="button" class="sj-mgr-new" data-act="mgr-add-sub" data-parent="${escapeHtml(root.id)}">新建</button>`;
+        html += '</div>';
+      }
+      html += '<div class="sj-mgr-card sj-mgr-new-card">'
+        + '<button type="button" class="sj-mgr-new" data-act="mgr-add-root">新建文件夹</button></div>';
+      MGR_BODY.innerHTML = html;
+    }
+    function closeCatManager(backToSheet) {
+      if (MGR) MGR.classList.add('hidden');
+      document.body.classList.remove('sj-cat-mgr-open');
+      if (backToSheet) showCatSheet(); else hideCatSheet();
+    }
+    function openCatManager() {
+      if (!MGR) return;
+      hideCatSheet();
+      if (typeof hideMoreMenu === 'function') hideMoreMenu();
+      mgrCollapsed.clear();
+      renderCatManager();
+      MGR.classList.remove('hidden');
+      document.body.classList.add('sj-cat-mgr-open');
+    }
+    async function saveCatOrder(parent) {
+      const key = parent || '';
+      const rows = Array.from(MGR_BODY.querySelectorAll('.sj-mgr-row[data-cat-id]'))
+        .filter((r) => (r.dataset.parent || '') === key);
+      const jobs = [];
+      rows.forEach((r, i) => {
+        const cat = state.categories.find((c) => c.id === r.dataset.catId);
+        if (!cat || cat.order === i) return;
+        cat.order = i;
+        jobs.push(api(`/api/categories/${cat.id}`, { method: 'PATCH', body: { order: i } }));
+      });
+      try {
+        await Promise.all(jobs);
+        renderTree();
+        renderCatManager();
+        renderCatSheet();
+        toast('文件夹顺序已保存');
+      } catch (e) {
+        toast(e.message);
+        renderCatManager();
+      }
+    }
+    function openCatActions(id, grip) {
+      const cat = state.categories.find((c) => c.id === id);
+      if (!cat) return;
+      const r = grip.getBoundingClientRect();
+      showCtx(r.left - 100, r.bottom + 6, [
+        { label: '重命名', icon: I.pencil, onClick: () => renameCategory(cat) },
+        { label: '新建子类别', icon: I.plus, onClick: () => askCreateCategory(cat.id) },
+        { sep: true },
+        { label: '删除类别', icon: I.trash, danger: true, onClick: () => deleteCategory(cat) },
+      ]);
+    }
+    if (MGR_BACK) MGR_BACK.addEventListener('click', () => closeCatManager(true));
+    if (MGR_BODY) {
+      MGR_BODY.addEventListener('click', (e) => {
+        const act = e.target.closest('[data-act]');
+        if (!act) return;
+        const a = act.dataset.act;
+        if (a === 'mgr-grip') return;               // 手势由 pointer 事件处理
+        if (a === 'mgr-toggle') {
+          const id = act.dataset.id;
+          if (mgrCollapsed.has(id)) mgrCollapsed.delete(id); else mgrCollapsed.add(id);
+          renderCatManager();
+        } else if (a === 'mgr-add-root') {
+          askCreateCategory(null);
+        } else if (a === 'mgr-add-sub') {
+          askCreateCategory(act.dataset.parent || null);
+        } else if (a === 'mgr-rename') {
+          const cat = state.categories.find((c) => c.id === act.dataset.id);
+          if (cat) renameCategory(cat);
+        }
+      });
+      MGR_BODY.addEventListener('pointerdown', (e) => {
+        const grip = e.target.closest('[data-act="mgr-grip"]');
+        if (!grip) return;
+        const row = grip.closest('.sj-mgr-row[data-cat-id]');
+        if (!row) return;
+        e.preventDefault();
+        try { grip.setPointerCapture(e.pointerId); } catch (_) {}
+        catDrag = {
+          grip, row,
+          parent: row.dataset.parent || '',
+          x: e.clientX, y: e.clientY, moved: false,
+        };
+      });
+      MGR_BODY.addEventListener('pointermove', (e) => {
+        if (!catDrag) return;
+        if (!catDrag.moved && Math.hypot(e.clientX - catDrag.x, e.clientY - catDrag.y) < 8) return;
+        if (!catDrag.moved) {
+          catDrag.moved = true;
+          catDrag.row.classList.add('sj-mgr-dragging');
+        }
+        const under = document.elementFromPoint(e.clientX, e.clientY);
+        const target = under && under.closest('.sj-mgr-row[data-cat-id]');
+        if (!target || target === catDrag.row || (target.dataset.parent || '') !== catDrag.parent) return;
+        const box = target.getBoundingClientRect();
+        catDrag.row.parentNode.insertBefore(catDrag.row, e.clientY < box.top + box.height / 2 ? target : target.nextSibling);
+      });
+      const finishDrag = async (e) => {
+        if (!catDrag) return;
+        const d = catDrag;
+        catDrag = null;
+        try { d.grip.releasePointerCapture(e.pointerId); } catch (_) {}
+        d.row.classList.remove('sj-mgr-dragging');
+        if (!d.moved) { openCatActions(d.row.dataset.catId, d.grip); return; }
+        await saveCatOrder(d.parent);
+      };
+      MGR_BODY.addEventListener('pointerup', finishDrag);
+      MGR_BODY.addEventListener('pointercancel', (e) => {
+        if (!catDrag) return;
+        catDrag.row.classList.remove('sj-mgr-dragging');
+        catDrag = null;
+      });
+    }
+    window.addEventListener('sj-categories-changed', () => {
+      mgrCollapsed.clear();
+      renderCatSheet();
+      if (MGR && !MGR.classList.contains('hidden')) renderCatManager();
+    });
+
     if (TITLE) TITLE.addEventListener('click', () => {
       if (SHEET && SHEET.classList.contains('hidden')) showCatSheet(); else hideCatSheet();
     });
@@ -5343,7 +5543,7 @@
         if (act.dataset.act === 'trash') {
           const b = $('#sjPlusToolsBtn'); if (b) b.click();
         } else if (act.dataset.act === 'manage') {
-          openDrawer('tree');
+          openCatManager();
         }
         return;
       }
