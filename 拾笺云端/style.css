@@ -3358,6 +3358,11 @@ body.m-list .pwa-tip {
   .sj-detail-bar button .ico { width: 21px; height: 21px; }
   .sj-detail-bar button.on { color: var(--accent); }
   .sj-detail-bar button.danger-hover { color: var(--danger); }
+  /* 附件面板贴在 .app 底部，而详情底栏 fixed 盖在最上层。
+     打开笔记时把主区底部抬到底栏上方，否则「附件 1」只露标题、卡片被挡住。 */
+  body.sj-note-open .app {
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
   /* 详情页底栏占位，正文末尾不被遮住 */
   body.sj-note-open #mdInput,
   body.sj-note-open .rich-pane,
