@@ -409,7 +409,7 @@ ok('手机端不再有 Markdown / 富文本切换，阅读态大标题与大字�
   styleSrc.indexOf('#formatSwitch { display: none; }') >= 0 &&
   appSrc.indexOf("format: NARROW() ? 'rich' : 'md'") >= 0 &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.title-input \{[\s\S]{0,140}font-size: 27px; font-weight: 700/.test(styleSrc) &&
-  /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane,[\s\S]{0,120}font-size: 19px; line-height: 1\.95/.test(styleSrc) &&
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane,[\s\S]{0,120}font-size: 19px; line-height: 1\.78/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-detail-bar button\[data-act="back"\] \{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('.sj-meta-cat {') >= 0);
 
