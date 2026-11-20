@@ -2755,7 +2755,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-20-108';
+  const APP_BUILD = '2026-11-20-109';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -5250,6 +5250,8 @@
       bar.classList.toggle('hidden', inNote);
       if (FAB) FAB.classList.toggle('hidden', inNote);
       if (DETAIL) DETAIL.classList.toggle('hidden', !inNote);
+      const more = $('#sjMoreBtn');
+      if (more) more.classList.toggle('hidden', false);
       $('#sjTabNotes').classList.toggle('active', !inNote);
       $('#sjTabQuick').classList.remove('active');
     }
@@ -5366,10 +5368,12 @@
       renderList();
     });
 
-    /* 详情页四操作：全部指向现有按钮/菜单，不重复实现 */
+    /* 详情页操作：全部指向现有按钮/菜单，不重复实现 */
     if (DETAIL) DETAIL.addEventListener('click', (e) => {
       const b = e.target.closest('[data-act]');
       if (!b) return;
+      /* 返回列表：顶栏收起后是详情页唯一返回出口，必须走 closeEditor 落盘 */
+      if (b.dataset.act === 'back') { hideMoreMenu(); closeEditor(); return; }
       const note = currentNote();
       if (!note) return;
       const act = b.dataset.act;
@@ -5386,6 +5390,74 @@
         ]);
       }
     });
+
+    /* ---- 右上角四点菜单：顶栏收起后的设置/工具入口 ----
+       全部 click 现有按钮，不新建数据链路；开关时清自动弹回标记无关，
+       只管自己这一层的显示。 */
+    const MORE = $('#sjMoreBtn'), MENU = $('#sjMoreMenu');
+    function hideMoreMenu() {
+      if (MENU) MENU.classList.add('hidden');
+      if (MORE) MORE.classList.remove('on');
+    }
+    window.SJHideMoreMenu = hideMoreMenu;
+    const MORE_ROWS = [
+      { act: 'tree', label: '目录分类', icon: '<svg viewBox="0 0 24 24" class="ico"><path d="M4 6h16M4 12h16M4 18h16"/></svg>' },
+      { act: 'batch', label: '批量整理', icon: '<svg viewBox="0 0 24 24" class="ico"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.4 12.4l2.6 2.6 4.6-5.2"/></svg>' },
+      { act: 'sort', label: '排序方式', icon: '<svg viewBox="0 0 24 24" class="ico"><path d="M4 7h10M4 12h7M4 17h4M17 6v12M14 15l3 3 3-3"/></svg>', hint: '点开选' },
+      { act: 'sync', label: '同步到云端', icon: '<svg viewBox="0 0 24 24" class="ico"><path d="M20 12a8 8 0 0 0-13.7-5.7"/><path d="M4 12a8 8 0 0 0 13.7 5.7"/></svg>' },
+      { act: 'io', label: '导入 / 导出', icon: '<svg viewBox="0 0 24 24" class="ico"><path d="M12 3v12M8.5 9.5 12 13l3.5-3.5M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>' },
+      { act: 'theme', label: '切换主题', icon: '<svg viewBox="0 0 24 24" class="ico"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>' },
+    ];
+    function renderMoreMenu() {
+      if (!MENU) return;
+      MENU.innerHTML = MORE_ROWS.map((r) =>
+        `<button type="button" class="sj-more-row" data-act="${r.act}">${r.icon}<span>${r.label}</span>`
+        + (r.hint ? `<span class="sj-more-n">${r.hint}</span>` : '') + '</button>').join('');
+    }
+    function doMore(act) {
+      hideMoreMenu();
+      if (act === 'tree') { hideCatSheet(); openDrawer('tree'); }
+      else if (act === 'batch') {
+        hideCatSheet();
+        const b = $('#sjBatchBtn'); if (b) b.click();
+      } else if (act === 'sort') {
+        hideCatSheet();
+        let cur = 'updated';
+        try { cur = localStorage.getItem('sj_sort_v1') || 'updated'; } catch (_) {}
+        showCtx((MORE ? MORE.getBoundingClientRect().left : 180) - 150,
+                (MORE ? MORE.getBoundingClientRect().bottom : 56) + 4, [
+          { label: '按更新时间' + (cur === 'updated' ? ' ✓' : ''), icon: I.clock,
+            onClick: () => { try { localStorage.setItem('sj_sort_v1', 'updated'); } catch (_) {} const s = $('#sjSortSel'); if (s) s.value = 'updated'; renderList(); } },
+          { label: '按创建时间' + (cur === 'created' ? ' ✓' : ''), icon: I.clock,
+            onClick: () => { try { localStorage.setItem('sj_sort_v1', 'created'); } catch (_) {} const s = $('#sjSortSel'); if (s) s.value = 'created'; renderList(); } },
+          { label: '按标题' + (cur === 'title' ? ' ✓' : ''), icon: I.fileText || I.folder,
+            onClick: () => { try { localStorage.setItem('sj_sort_v1', 'title'); } catch (_) {} const s = $('#sjSortSel'); if (s) s.value = 'title'; renderList(); } },
+        ]);
+      } else if (act === 'sync') { if (window.SJSync) window.SJSync.open(); }
+      else if (act === 'io') {
+        const r = { right: (MORE ? MORE.getBoundingClientRect().right : 120),
+                    top: (MORE ? MORE.getBoundingClientRect().bottom : 56) };
+        showCtx(r.right - 168, r.top + 4, [
+          { label: '导入备份', icon: I.download, onClick: () => { const el = $('#importBtn'); if (el) el.click(); } },
+          { label: '导出备份', icon: I.download, onClick: () => { const el = $('#exportBtn'); if (el) el.click(); } },
+          { label: '导出 Markdown', icon: I.download, onClick: () => { const el = $('#sjPlusToolsBtn'); if (el) el.click(); } },
+        ]);
+      } else if (act === 'theme') { const el = $('#themeBtn'); if (el) el.click(); }
+    }
+    if (MORE) MORE.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (MENU && MENU.classList.contains('hidden')) { renderMoreMenu(); MENU.classList.remove('hidden'); MORE.classList.add('on'); }
+      else hideMoreMenu();
+    });
+    if (MENU) MENU.addEventListener('click', (e) => {
+      const row = e.target.closest('[data-act]');
+      if (row) doMore(row.dataset.act);
+    });
+    document.addEventListener('pointerdown', (e) => {
+      if (!MENU || MENU.classList.contains('hidden')) return;
+      if (e.target.closest('#sjMoreMenu') || e.target.closest('#sjMoreBtn')) return;
+      hideMoreMenu();
+    }, true);
 
     /* 首页大标题跟随列表标题与条数 */
     function syncHomeHead() {

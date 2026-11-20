@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-108 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-109 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-20-108';
+const BUILD = '2026-11-20-109';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -177,8 +177,20 @@ ok('分类面板复用现有伪节点 all/uncat/starred',
 ok('首页搜索与侧栏搜索共享 state.search',
   appSrc.indexOf('state.search = e.target.value;') >= 0);
 ok('桌面端默认隐藏新增 UI（只在 ≤980px 放开）',
-  styleSrc.indexOf('.sj-home-head, .sj-fab, .sj-tabbar, .sj-detail-bar { display: none; }') >= 0 &&
+  /\.sj-home-head, \.sj-fab, \.sj-tabbar, \.sj-detail-bar,[\s\S]{0,40}\.sj-more-btn, \.sj-more-menu \{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('@media (max-width: 980px)') >= 0);
+ok('手机端顶栏收起、--m-bar-total 归零（顶端无菜单）',
+  /@media \(max-width: 980px\)[\s\S]{0,400}\.m-bar \{ display: none !important; \}/.test(styleSrc) &&
+  styleSrc.indexOf('--m-bar-total: 0px') >= 0);
+ok('右上角四点菜单按钮与面板存在、面板在 body 直属',
+  indexSrc.indexOf('id="sjMoreBtn"') > indexSrc.indexOf('</main>') &&
+  indexSrc.indexOf('id="sjMoreMenu"') > indexSrc.indexOf('</main>') &&
+  appSrc.indexOf("act === 'tree'") >= 0 && appSrc.indexOf("act === 'batch'") >= 0 &&
+  appSrc.indexOf("act === 'sync'") >= 0 && appSrc.indexOf("act === 'theme'") >= 0);
+ok('详情页底栏有返回出口（顶栏收起后唯一返回）',
+  indexSrc.indexOf('data-act="back"') >= 0 &&
+  appSrc.indexOf("b.dataset.act === 'back'") >= 0 &&
+  appSrc.indexOf("closeEditor(); return;") >= 0);
 ok('新 UI 颜色全部走 CSS 变量（双主题）',
   !/sj-(?:home-head|tabbar|detail-bar|cat-sheet)[^{]*\{[^}]*#(?:fff|f4f3ef|22201c)/.test(styleSrc));
 /* 分类面板必须在 .app 外、body 直属：否则手机端会被 z-index:67 的动态遮罩盖住，

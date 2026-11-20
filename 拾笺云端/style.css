@@ -1849,7 +1849,10 @@ html[data-theme="dark"] .sj-tip {
 .m-bar, .m-mask { display: none; }
 
 @media (max-width: 980px) {
-  body { --m-bar-h: 52px; --m-bar-total: calc(52px + env(safe-area-inset-top, 0px)); }
+  /* 华为风：手机端不显示 app 顶栏，顶端只有系统状态栏 + 页面留白。
+     --m-bar-total 归零：.app / 抽屉 / 遮罩 / 分类面板都靠它定位，统一收口在这里。 */
+  body { --m-bar-h: 0px; --m-bar-total: 0px; }
+  .m-bar { display: none !important; }
 
   /* ---- 顶栏 ---- */
   .m-bar {
@@ -2833,7 +2836,8 @@ body.m-list .pwa-tip {
    所有颜色走 var(--*)，light / dark 双主题自动适配。
    ============================================================ */
 /* 桌面端默认隐藏：下面的 @media 里才按首页/详情页分别放开 */
-.sj-home-head, .sj-fab, .sj-tabbar, .sj-detail-bar { display: none; }
+.sj-home-head, .sj-fab, .sj-tabbar, .sj-detail-bar,
+.sj-more-btn, .sj-more-menu { display: none; }
 
 @media (max-width: 980px) {
   /* ---- 首页头部：大标题 + 条数 + 胶囊搜索 ---- */
@@ -2904,6 +2908,49 @@ body.m-list .pwa-tip {
   body:not(.sj-note-open) .note-card-title { font-size: 15px; margin-bottom: 5px; }
   body:not(.sj-note-open) .note-card-snippet { font-size: 12.5px; margin-bottom: 9px; }
   body:not(.sj-note-open) .note-card-foot { font-size: 11px; }
+
+  /* ---- 右上角四点菜单（顶栏收起后的设置入口） ---- */
+  .sj-more-btn {
+    display: flex;
+    position: fixed; z-index: 72;
+    top: calc(env(safe-area-inset-top, 0px) + 10px); right: 12px;
+    width: 40px; height: 40px; border: 0; border-radius: 50%;
+    background: var(--surface-2); color: var(--text-2);
+    align-items: center; justify-content: center;
+    box-shadow: var(--shadow-sm);
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .sj-more-btn.hidden { display: none; }
+  .sj-more-btn .ico { width: 21px; height: 21px; fill: currentColor; stroke: none; }
+  .sj-more-btn.on { background: var(--accent-soft); color: var(--accent); }
+
+  .sj-more-menu {
+    display: block;
+    position: fixed; z-index: 74;
+    top: calc(env(safe-area-inset-top, 0px) + 56px); right: 12px;
+    width: 196px; padding: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-lg);
+    animation: pop .13s var(--ease);
+  }
+  .sj-more-menu.hidden { display: none; }
+  .sj-more-menu .sj-more-row {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; min-height: 46px; padding: 0 12px;
+    border: 0; border-radius: var(--r-md);
+    background: transparent; color: var(--text);
+    font-family: var(--font-ui); font-size: 14px; text-align: left;
+    touch-action: manipulation;
+  }
+  .sj-more-menu .sj-more-row:active { background: var(--surface-2); }
+  .sj-more-menu .sj-more-row .ico { width: 18px; height: 18px; color: var(--text-3); flex: none; }
+  .sj-more-menu .sj-more-row + .sj-more-row { border-top: 1px solid var(--border); border-radius: 0; }
+  .sj-more-menu .sj-more-row .sj-more-n { margin-left: auto; font-size: 11px; color: var(--text-3); }
+
+  /* 页面顶部留出状态栏安全区，避免大标题贴顶 */
+  .sj-home-head { padding-top: calc(18px + env(safe-area-inset-top, 0px)); }
 
   /* ---- 悬浮新建 ---- */
   .sj-fab {
@@ -3002,9 +3049,9 @@ body.m-list .pwa-tip {
   body.sj-note-open .sj-detail-bar:not(.hidden) { display: flex; }
   .sj-detail-bar button {
     flex: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 3px;
+    align-items: center; justify-content: center; gap: 2px;
     border: 0; background: transparent;
-    font-family: var(--font-ui); font-size: 11px; color: var(--text-2);
+    font-family: var(--font-ui); font-size: 10.5px; color: var(--text-2);
     touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
   .sj-detail-bar button .ico { width: 21px; height: 21px; }

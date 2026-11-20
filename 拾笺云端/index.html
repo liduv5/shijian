@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-20-108';
+  var SWV = '2026-11-20-109';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -182,6 +182,8 @@
   <button class="icon-btn" id="mNewBtn" aria-label="新建笔记" title="新建笔记">
     <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
   </button>
+  <!-- 华为风：整条顶栏在手机端收起，设置/工具入口收进右上角四点菜单 (#sjMoreBtn)。
+       按钮本身放 body 直属，避免被 .app 的层叠上下文盖住。 -->
 </header>
 <div class="app">
 
@@ -409,6 +411,9 @@
     <!-- 华为风详情页底部操作栏：分享 / 收藏 / 删除 / 更多。仅窄屏编辑态显示，
          四个按钮都是现有功能的别名，不新建任何数据链路。 -->
     <div class="sj-detail-bar hidden" id="sjDetailBar">
+      <button type="button" data-act="back" aria-label="返回笔记列表">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M15 18l-6-6 6-6"/></svg><span>返回</span>
+      </button>
       <button type="button" data-act="share" aria-label="导出分享">
         <svg viewBox="0 0 24 24" class="ico"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg><span>分享</span>
       </button>
@@ -440,6 +445,16 @@
      .list-pane 内部又有 z-index:66，面板放进去会被动态遮罩（z-index:67，根层）盖住，
      只剩一层灰蒙蒙的遮罩（2026-11-20 反馈）。放根层后 68 > 67，面板正常浮在遮罩上。 -->
 <div class="sj-cat-sheet hidden" id="sjCatSheet"></div>
+
+<!-- 华为风右上角四点菜单（仅窄屏显示）：顶栏收起后，设置/工具全部收进这里。
+     同样放 .app 外、body 直属，保证 z-index 不被抽屉上下文困住。 -->
+<button type="button" class="sj-more-btn hidden" id="sjMoreBtn" aria-label="更多设置" title="更多设置">
+  <svg viewBox="0 0 24 24" class="ico">
+    <circle cx="9" cy="9" r="1.8"/><circle cx="15" cy="9" r="1.8"/>
+    <circle cx="9" cy="15" r="1.8"/><circle cx="15" cy="15" r="1.8"/>
+  </svg>
+</button>
+<div class="sj-more-menu hidden" id="sjMoreMenu"></div>
 
 <div class="ctx-menu hidden" id="ctxMenu"></div>
 <div class="toast" id="toast"></div>
