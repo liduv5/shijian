@@ -216,22 +216,15 @@
        以后从主程序点「随手记」就不再重复显示安装引导。 */
     const url = MAIN + (q ? '&q=' + q : '') + (FROM_DESK ? '&deskInstalled=1' : '');
     const left = Math.max(0, list.length - picked.length);
-    /* 主程序和桌面快捷方式都在「当前窗口」返回：
-       以前桌面入口用 window.open 新开一个普通浏览器标签打开主程序，
-       顶部就会多出地址栏，还和已安装的全屏 PWA 窗口并存。速记本身
-       走 q 参数，不依赖两边共享 localStorage，同窗口跳转是安全的。
-       只有「被独立安装、有自己的空分区」的旧图标必须跳到浏览器主窗口，
-       否则主程序会读到一套空笔记库。 */
-    if ((FROM_APP || FROM_DESK) && !ISOLATED) {
-      /* 同窗口跳转：速记随 q 参数带过去，不依赖两边共享 localStorage。
-         2026-11-20：不再写 sj_quick_return——原来的「切回前台自动回速记」
-         在 Chrome 双 PWA 场景会把拾笺窗口弹回随手记。回速记请用主程序里的
-         「随手记」按钮；assign 保留历史，返回键也能回本页。 */
-      location.assign(url); return left;
-    }
-    const w = window.open(url, '_blank');
-    if (w) { try { w.opener = null; } catch (_) {} }
-    else location.href = url;
+    /* 2026-11-20：两个 PWA 各自保留窗口身份。
+       随手记点「打开拾笺」一律新开/复用主程序窗口，随手记窗口继续停在速记页；
+       速记随 q 参数带过去，不依赖两边是否共享 localStorage。这样：
+       ① 点随手记图标 → 始终是随手记页；
+       ② 点拾笺图标 → 始终是拾笺主程序；
+       ③ 随手记写完点「打开拾笺」→ 主程序打开并导入笔记；
+       ④ 再点拾笺图标 → 仍是主程序，不会被弹回随手记。 */
+    const w = window.open(url, 'sj_main', 'noopener');
+    if (!w) location.href = url;
     return left;
   }
   function bindGo(id) {

@@ -156,6 +156,9 @@ ok('随手记/拾笺无自动弹回标记（防双 PWA 串页）',
   quickSrc.indexOf("setItem('sj_quick_return'") < 0 &&
   appSrc.indexOf("getItem('sj_quick_return'") < 0 &&
   appSrc.indexOf("location.replace(quickUrl('desk'))") < 0);
+ok('两个 PWA 互开独立窗口（随手记不被主程序接管）',
+  quickSrc.indexOf("window.open(url, 'sj_main'") >= 0 &&
+  appSrc.indexOf("window.open(url, 'sj_quick'") >= 0);
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

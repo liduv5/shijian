@@ -4593,7 +4593,11 @@
   }
   function openQuick() {
     void saveNow();                    // 离开编辑页前把脏数据落盘
-    location.href = quickUrl('app');
+    /* 2026-11-20：两个 PWA 各自保留窗口身份。主程序里点「随手记」开新窗口，
+       不把拾笺窗口本身变成速记页；速记页再点「打开拾笺」也开新窗口。 */
+    const url = quickUrl('app');
+    const w = window.open(url, 'sj_quick', 'noopener');
+    if (!w) location.href = url;
   }
   /* 2026-11-20：移除原来的 armQuickReturn()「切回前台自动弹回随手记」逻辑。
      Chrome 同时安装「拾笺」和「随手记」两个 PWA 时，那段逻辑会把刚从随手记
