@@ -2755,7 +2755,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-20-119';
+  const APP_BUILD = '2026-11-20-120';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -5298,13 +5298,17 @@
       return `<button type="button" class="sj-cat-row${String(state.selCat) === String(key) ? ' on' : ''}${indent ? ' sj-cat-indent' : ''}" data-cat="${escapeHtml(key)}" style="--dl:52px">`
         + `${icon}<span class="sj-cat-name">${escapeHtml(label)}</span><span class="sj-cat-n">${count}</span></button>`;
     }
-    /* 华为风展开态的页头：大标题（点一下收起）+ 条数。放在面板内部，
-       这样面板用不透明浅灰铺满时，标题不会被遮罩压暗、也不受列表层级影响。 */
+    /* 华为风展开态的页头：必须和首页那一行**完全一致**（同一个名字、同一个条数、
+       同样字号与位置），只把三角从 ▼ 换成 ▲。所以文字直接取首页标题节点的当前值，
+       不在渲染期另算一套，避免两处口径不一致。 */
     function catHero() {
+      const nameEl = $('#sjCatTitleText'), cntEl = $('#sjHomeCount');
+      const name = (nameEl && nameEl.textContent.trim()) || '全部笔记';
+      const count = (cntEl && cntEl.textContent.trim()) || (state.notes.length + ' 条笔记');
       return '<div class="sj-cat-hero">'
         + '<button type="button" class="sj-home-title" data-act="cat-close">'
-        + '<span>全部笔记</span><span class="sj-caret">▲</span></button>'
-        + `<div class="sj-home-count">${state.notes.length} 条笔记</div>`
+        + `<span>${escapeHtml(name)}</span><span class="sj-caret">▲</span></button>`
+        + `<div class="sj-home-count">${escapeHtml(count)}</div>`
         + '</div>';
     }
     const ICON_ALL = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 5h16M4 12h16M4 19h16"/></svg>';

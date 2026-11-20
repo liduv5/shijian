@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-119 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-120 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-20-119';
+const BUILD = '2026-11-20-120';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -315,7 +315,7 @@ ok('新建按钮只对文字有效：inline-block 且左对齐到子分类名称
   styleSrc.indexOf('.sj-mgr-new-card .sj-mgr-new { margin-left: 0; }') >= 0 &&
   !/\.sj-mgr-new \{\s*display: block; width: 100%/.test(styleSrc));
 
-/* ---- 合并同名分类（2026-11-20-119）---- */
+/* ---- 合并同名分类（2026-11-20-120）---- */
 ok('按「同一父级 + 同名」分组识别重复分类（不误并不同父级同名）',
   appSrc.indexOf('function dupGroups(cats)') >= 0 &&
   appSrc.indexOf('c.parentId || null, String(c.name || \'\').trim().toLocaleLowerCase()') >= 0 &&
@@ -364,7 +364,7 @@ ok('分类面板按华为截图做整页展开：页头带▲、浅灰底不压�
   styleSrc.indexOf('body.sj-cat-open .sj-more-btn,') >= 0);
 
 ok('分类面板字号/行高/图标/系统字体按截图放大，分隔线从各行文字(--dl)起',
-  /\.sj-cat-hero \.sj-home-title \{[\s\S]{0,220}font-size: 30px; font-weight: 700/.test(styleSrc) &&
+  /\.sj-cat-hero \.sj-home-title \{[\s\S]{0,220}font-size: 26px; font-weight: 700/.test(styleSrc) &&
   /\.sj-cat-row \{[\s\S]{0,320}min-height: 62px; padding: 0 2px;/.test(styleSrc) &&
   /\.sj-cat-row \{[\s\S]{0,320}font-family: var\(--mgr-font, var\(--font-ui\)\); font-size: 17px/.test(styleSrc) &&
   /\.sj-cat-row \.ico \{ width: 23px; height: 23px/.test(styleSrc) &&
@@ -373,6 +373,20 @@ ok('分类面板字号/行高/图标/系统字体按截图放大，分隔线从�
   styleSrc.indexOf('left: var(--dl, 52px); right: 18px; top: 0;') >= 0 &&
   appSrc.indexOf('--dl:${dl}px') >= 0 &&
   appSrc.indexOf("data-act=\"cat-close\"") >= 0);
+
+ok('展开后标题行与首页完全一致：同字体/同字号/同字重/同间距/同缩进，只换三角方向',
+  // 首页基准：18px 左 + 18px+safe 顶，26px/700，gap 7，条数 12px
+  /\.sj-home-title \{[\s\S]{0,200}font-size: 26px; font-weight: 700;/.test(styleSrc) &&
+  styleSrc.indexOf('.sj-home-head { padding-top: calc(18px + env(safe-area-inset-top, 0px)); }') >= 0 &&
+  // 展开态：容器 padding 与首页同值（面板自带 16px 横向留白，2px 补足 18px 左缩进）
+  /\.sj-cat-hero \{\s*padding: calc\(18px \+ env\(safe-area-inset-top, 0px\)\) 2px 12px;/.test(styleSrc) &&
+  /\.sj-cat-hero \.sj-home-title \{[\s\S]{0,200}gap: 7px;[\s\S]{0,140}font-family: var\(--font-ui\);[\s\S]{0,80}font-size: 26px; font-weight: 700; line-height: 1\.3;/.test(styleSrc) &&
+  /\.sj-cat-hero \.sj-home-title \.sj-caret \{[^}]*font-size: 14px; font-weight: 500/.test(styleSrc) &&
+  /\.sj-cat-hero \.sj-home-count \{\s*margin: 3px 0 14px;[\s\S]{0,90}font-size: 12px/.test(styleSrc) &&
+  // 文字直接取首页节点，避免两处口径不一
+  appSrc.indexOf("const nameEl = $('#sjCatTitleText'), cntEl = $('#sjHomeCount');") >= 0 &&
+  appSrc.indexOf('<span>${escapeHtml(name)}</span><span class="sj-caret">▲</span></button>') >= 0 &&
+  !/\.sj-cat-hero \.sj-home-title \{[\s\S]{0,200}font-size: 30px/.test(styleSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
