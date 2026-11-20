@@ -2840,6 +2840,39 @@ body.m-list .pwa-tip {
 .sj-cat-mgr, .sj-manage-menu, .sj-more-btn, .sj-more-menu { display: none; }
 
 @media (max-width: 980px) {
+  /* ---- 华为备忘录配色（仅窄屏）----
+     照截图取色：浅灰底 / 纯白卡 / 华为蓝选中 / 中性灰文字。
+     只在此媒体查询内覆盖变量，桌面端仍用原来的米色+墨绿主题。 */
+  html[data-theme="light"] {
+    --bg: #f5f5f7;
+    --surface: #ffffff;
+    --surface-2: #f1f1f4;
+    --surface-3: #e8e8ec;
+    --border: #efeff2;
+    --border-strong: #dedee4;
+    --text: #1c1c1e;
+    --text-2: #6c6c72;
+    --text-3: #9b9ba1;
+    --accent: #0a59f7;
+    --accent-hover: #0846c4;
+    --accent-soft: rgba(10, 89, 247, .10);
+    --accent-line: rgba(10, 89, 247, .28);
+    --star: #e8a317;
+    --danger: #e5484d;
+    --sel: rgba(10, 89, 247, .14);
+    --shadow-sm: 0 1px 3px rgba(20, 20, 26, .05);
+    --shadow-md: 0 8px 26px -10px rgba(20, 20, 26, .20);
+    --shadow-lg: 0 20px 46px -16px rgba(20, 20, 26, .26);
+  }
+  /* 深色主题保留深色表面，只把主色换成亮蓝，切换后仍是华为蓝品牌感 */
+  html[data-theme="dark"] {
+    --accent: #4d8fff;
+    --accent-hover: #6ba4ff;
+    --accent-soft: rgba(77, 143, 255, .16);
+    --accent-line: rgba(77, 143, 255, .38);
+    --sel: rgba(77, 143, 255, .22);
+  }
+
   /* ---- 首页头部：大标题 + 条数 + 胶囊搜索 ---- */
   .sj-home-head {
     display: block; flex: none;
@@ -2860,7 +2893,7 @@ body.m-list .pwa-tip {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .sj-home-title .sj-caret {
-    font-size: 14px; font-weight: 500; color: var(--text-3); flex: none;
+    font-size: 14px; font-weight: 500; color: var(--text); flex: none;
   }
   .sj-home-count {
     font-size: 12px; color: var(--text-3); margin: 3px 0 14px;
@@ -3030,6 +3063,7 @@ body.m-list .pwa-tip {
   .sj-cat-row .sj-cat-n { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
   .sj-cat-row.on { color: var(--accent); background: transparent; }
   .sj-cat-row.on .ico { color: var(--accent); }
+  .sj-cat-row.on .sj-cat-n { color: var(--accent); }
   .sj-cat-toggle {
     width: 28px; flex: none; border: 0; background: transparent;
     color: var(--text-3); font-size: 16px; line-height: 1;

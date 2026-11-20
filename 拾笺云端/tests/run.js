@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-112 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-113 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-20-112';
+const BUILD = '2026-11-20-113';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -238,6 +238,17 @@ ok('两步菜单样式按截图：白卡圆角、两行、点按反馈',
   styleSrc.indexOf('.sj-manage-menu.hidden') >= 0 &&
   styleSrc.indexOf('min-height: 48px') >= 0 &&
   styleSrc.indexOf('.sj-manage-menu button + button') >= 0);
+
+/* 华为备忘录配色：只在窄屏媒体查询里覆盖变量，桌面端米色+墨绿主题不动 */
+ok('华为配色仅在 ≤980px 覆盖，桌面端主题不受影响',
+  /@media \(max-width: 980px\)[\s\S]{0,300}html\[data-theme="light"\] \{[\s\S]{0,400}--accent: #0a59f7;/.test(styleSrc) &&
+  styleSrc.indexOf('--bg: #f5f5f7') >= 0 &&
+  styleSrc.indexOf('--surface: #ffffff') >= 0);
+ok('深色主题手机端主色同步为亮蓝',
+  /html\[data-theme="dark"\] \{\s*--accent: #4d8fff;/.test(styleSrc));
+ok('标题小三角随正文色、选中分类篇数变蓝',
+  /\.sj-home-title \.sj-caret \{[\s\S]{0,120}color: var\(--text\);/.test(styleSrc) &&
+  styleSrc.indexOf('.sj-cat-row.on .sj-cat-n { color: var(--accent); }') >= 0);
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
