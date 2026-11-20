@@ -478,6 +478,9 @@
         if (typeof body.name === 'string' && body.name.trim()) cat.name = body.name.trim();
         if (typeof body.expanded === 'boolean') cat.expanded = body.expanded;
         if (typeof body.order === 'number') cat.order = body.order;
+        /* 分类颜色：0-7 调色板索引，null 表示跟随按序默认色。 */
+        if (body.color === null) delete cat.color;
+        else if (Number.isInteger(body.color) && body.color >= 0 && body.color <= 7) cat.color = body.color;
         if (body.parentId !== undefined) {
           if (body.parentId && !db.categories.some((c) => c.id === body.parentId)) throw new Error('目标类别不存在');
           if (body.parentId === id) throw new Error('不能移动到自身');
@@ -675,6 +678,7 @@
           id: c.id, name: String(c.name || '未命名类别').slice(0, 60),
           parentId: c.parentId || null, expanded: true, order: 0,
           createdAt: Number(c.createdAt) || Date.now(),
+          ...(Number.isInteger(c.color) && c.color >= 0 && c.color <= 7 ? { color: c.color } : {}),
         });
         catIds.add(c.id); catAdded++;
       }

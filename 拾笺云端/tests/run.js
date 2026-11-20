@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-113 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-20-114 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-20-113';
+const BUILD = '2026-11-20-114';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -177,7 +177,7 @@ ok('分类面板复用现有伪节点 all/uncat/starred',
 ok('首页搜索与侧栏搜索共享 state.search',
   appSrc.indexOf('state.search = e.target.value;') >= 0);
 ok('桌面端默认隐藏新增 UI（只在 ≤980px 放开）',
-  /\.sj-home-head, \.sj-fab, \.sj-tabbar, \.sj-detail-bar,[\s\S]{0,100}\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu \{ display: none; \}/.test(styleSrc) &&
+  /\.sj-home-head, \.sj-fab, \.sj-tabbar, \.sj-detail-bar,[\s\S]{0,100}\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu,[\s\S]{0,60}\.sj-cat-editor \{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('@media (max-width: 980px)') >= 0);
 ok('手机端顶栏收起、--m-bar-total 归零（顶端无菜单）',
   /@media \(max-width: 980px\)[\s\S]{0,400}\.m-bar \{ display: none !important; \}/.test(styleSrc) &&
@@ -217,7 +217,7 @@ ok('管理页支持拖动排序并回写 category.order',
   appSrc.indexOf('body: { order: i }') >= 0 &&
   appSrc.indexOf('pointermove') >= 0);
 ok('分类管理页样式仅窄屏放开，桌面默认隐藏',
-  /\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu \{ display: none; \}/.test(styleSrc) &&
+  /\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu,[\s\S]{0,60}\.sj-cat-editor \{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('.sj-cat-mgr {') >= 0 &&
   styleSrc.indexOf('.sj-mgr-card') >= 0 &&
   styleSrc.indexOf('body.sj-cat-mgr-open .pwd-tip') >= 0);
@@ -249,6 +249,39 @@ ok('深色主题手机端主色同步为亮蓝',
 ok('标题小三角随正文色、选中分类篇数变蓝',
   /\.sj-home-title \.sj-caret \{[\s\S]{0,120}color: var\(--text\);/.test(styleSrc) &&
   styleSrc.indexOf('.sj-cat-row.on .sj-cat-n { color: var(--accent); }') >= 0);
+
+/* 编辑笔记本底部弹窗：点分类管理页右侧双横杠弹出，可选色/改名/删除 */
+const serverSrc = fs.readFileSync(path.join(DESKTOP, 'server.js'), 'utf8');
+const localSrc = fs.readFileSync(path.join(CLOUD, 'local.js'), 'utf8');
+for (const id of ['sjCatEditor', 'sjEditorSwatches', 'sjEditorName', 'sjEditorChip', 'sjEditorSave', 'sjEditorDel']) {
+  ok('编辑笔记本弹窗 DOM 节点存在：#' + id, indexSrc.indexOf('id="' + id + '"') >= 0);
+}
+ok('点子分类双横杠打开编辑弹窗（不再弹右键操作菜单）',
+  appSrc.indexOf('function openCatActions(id, grip)') >= 0 &&
+  /function openCatActions\(id, grip\) \{\s*openCatEditor\(id\);\s*\}/.test(appSrc) &&
+  appSrc.indexOf('function openCatEditor(id)') >= 0);
+ok('编辑弹窗保存走 PATCH 写 name+color 并刷新分类',
+  /body: \{ name, color: edColor \}/.test(appSrc) &&
+  appSrc.indexOf('Object.assign(edCat, updated)') >= 0 &&
+  appSrc.indexOf("new Event('sj-categories-changed')") >= 0);
+ok('编辑弹窗删除复用 deleteCategory、取消关闭弹窗',
+  appSrc.indexOf('deleteCategory(cat);') >= 0 &&
+  appSrc.indexOf('function closeCatEditor()') >= 0 &&
+  indexSrc.indexOf('data-act="editor-close"') >= 0);
+ok('8 色板定义齐全，老分类回退黄/青/绿/红不跳色',
+  appSrc.indexOf('const CAT_PALETTE = [') >= 0 &&
+  (appSrc.match(/'#[0-9a-f]{6}'/g) || []).length >= 8 &&
+  /return \[2, 4, 3, 0\]\[Math\.max\(0, i\) % 4\];/.test(appSrc));
+ok('后端两个分类 PATCH 都保存 color 字段（含 null 清除）',
+  appSrc.indexOf('color: edColor') >= 0 &&
+  /body\.color === null\) delete cat\.color;/.test(localSrc) &&
+  /Number\.isInteger\(body\.color\)/.test(serverSrc) &&
+  localSrc.indexOf('c.color } : {}') >= 0 &&
+  serverSrc.indexOf('c.color } : {}') >= 0);
+ok('编辑弹窗样式仅窄屏放开、桌面默认隐藏',
+  /\.sj-cat-editor \{ display: none; \}/.test(styleSrc) &&
+  styleSrc.indexOf('.sj-editor-sheet') >= 0 &&
+  styleSrc.indexOf('.sj-editor-swatch.on::after') >= 0);
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

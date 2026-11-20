@@ -2755,7 +2755,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-20-113';
+  const APP_BUILD = '2026-11-20-114';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -5303,13 +5303,20 @@
     const ICON_FOLDER = '<svg viewBox="0 0 24 24" class="ico"><path d="M3 7h6l2 2h10v10H3z"/></svg>';
     const ICON_TRASH = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>';
     const ICON_GRIP = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 8h16M4 16h16"/></svg>';
-    /* 每个分类的颜色只由「同级顺序」决定：不入库、不随设备变，刷新后也不会跳色。 */
+    /* 华为备忘录 8 色：红/橙/黄/绿/青/蓝/紫/靛。分类把 color 存成 0-7 索引；
+       没存过 color 的老分类继续按同级顺序取色，界面不跳色。 */
+    const CAT_PALETTE = [
+      '#ea5455', '#f58b3c', '#f2c531', '#5cb85c',
+      '#3fc1c9', '#4a90e2', '#9b6dd6', '#5b5fc7',
+    ];
     function chipIndex(cat) {
+      if (Number.isInteger(cat.color) && cat.color >= 0 && cat.color <= CAT_PALETTE.length - 1) return cat.color;
       const sibs = state.categories
         .filter((c) => (c.parentId || null) === (cat.parentId || null))
         .sort(byOrder);
       const i = sibs.findIndex((c) => c.id === cat.id);
-      return Math.max(0, i) % 4;
+      /* 未设色的老分类沿用截图里的黄/青/绿/红，映射到调色板 2/4/3/0。 */
+      return [2, 4, 3, 0][Math.max(0, i) % 4];
     }
     function folderRow(cat, depth) {
       const isRoot = !cat.parentId;
@@ -5473,16 +5480,79 @@
         renderCatManager();
       }
     }
-    function openCatActions(id, grip) {
+    /* ---- 编辑笔记本底部弹窗：点子分类双横杠弹出，改色/改名/删除 ---- */
+    const EDITOR = $('#sjCatEditor'), ED_NAME = $('#sjEditorName'),
+      ED_SW = $('#sjEditorSwatches'), ED_CHIP = $('#sjEditorChip'),
+      ED_SAVE = $('#sjEditorSave'), ED_DEL = $('#sjEditorDel');
+    let edCat = null, edColor = 2;
+
+    function closeCatEditor() {
+      if (EDITOR) EDITOR.classList.add('hidden');
+      edCat = null;
+    }
+    function paintEditorSwatches() {
+      if (!ED_SW) return;
+      ED_SW.innerHTML = CAT_PALETTE.map((hex, i) =>
+        `<button type="button" class="sj-editor-swatch${i === edColor ? ' on' : ''}" data-c="${i}" aria-label="颜色 ${i + 1}" style="background:${hex}"></button>`
+      ).join('');
+    }
+    function paintEditorChip() {
+      if (!ED_CHIP) return;
+      ED_CHIP.className = 'sj-editor-chip c' + edColor;
+    }
+    function openCatEditor(id) {
       const cat = state.categories.find((c) => c.id === id);
-      if (!cat) return;
-      const r = grip.getBoundingClientRect();
-      showCtx(r.left - 100, r.bottom + 6, [
-        { label: '重命名', icon: I.pencil, onClick: () => renameCategory(cat) },
-        { label: '新建子类别', icon: I.plus, onClick: () => askCreateCategory(cat.id) },
-        { sep: true },
-        { label: '删除类别', icon: I.trash, danger: true, onClick: () => deleteCategory(cat) },
-      ]);
+      if (!cat || !EDITOR) return;
+      edCat = cat;
+      edColor = chipIndex(cat);
+      if (ED_NAME) ED_NAME.value = cat.name;
+      paintEditorSwatches();
+      paintEditorChip();
+      EDITOR.classList.remove('hidden');
+      if (typeof hideCtx === 'function') hideCtx();
+      setTimeout(() => { if (ED_NAME) { ED_NAME.focus(); ED_NAME.select(); } }, 40);
+    }
+    if (ED_SW) ED_SW.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-c]');
+      if (!b) return;
+      edColor = Number(b.dataset.c);
+      paintEditorSwatches();
+      paintEditorChip();
+    });
+    if (EDITOR) EDITOR.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-act]');
+      if (el && el.dataset.act === 'editor-close') closeCatEditor();
+    });
+    if (ED_SAVE) ED_SAVE.addEventListener('click', async () => {
+      if (!edCat) return;
+      const name = (ED_NAME && ED_NAME.value.trim()) || edCat.name;
+      ED_SAVE.disabled = true;
+      try {
+        const updated = await api(`/api/categories/${edCat.id}`, {
+          method: 'PATCH', body: { name, color: edColor },
+        });
+        Object.assign(edCat, updated);
+        closeCatEditor();
+        renderTree();
+        renderCatSheet();
+        if (MGR && !MGR.classList.contains('hidden')) renderCatManager();
+        window.dispatchEvent(new Event('sj-categories-changed'));
+        toast('已保存');
+      } catch (e) {
+        toast(e.message);
+      } finally {
+        ED_SAVE.disabled = false;
+      }
+    });
+    if (ED_DEL) ED_DEL.addEventListener('click', () => {
+      if (!edCat) return;
+      const cat = edCat;
+      closeCatEditor();
+      deleteCategory(cat);
+    });
+
+    function openCatActions(id, grip) {
+      openCatEditor(id);
     }
     if (MGR_BACK) MGR_BACK.addEventListener('click', () => closeCatManager(true));
     if (MMENU) {

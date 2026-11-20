@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-20-113';
+  var SWV = '2026-11-20-114';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -462,6 +462,29 @@
     <h2>编辑</h2>
   </header>
   <div class="sj-mgr-body" id="sjCatMgrBody"></div>
+</div>
+
+<!-- 编辑笔记本：在管理页点子分类右侧双横杠弹出，仿华为备忘录底部弹窗。
+     可选分类颜色、改名、删除；body 直属，z-index 高于管理页(#sjCatMgr=80)。 -->
+<div class="sj-cat-editor hidden" id="sjCatEditor" role="dialog" aria-modal="true" aria-label="编辑笔记本">
+  <div class="sj-editor-mask" data-act="editor-close"></div>
+  <div class="sj-editor-sheet">
+    <div class="sj-editor-head">
+      <h3>编辑笔记本</h3>
+      <button type="button" class="sj-editor-del" id="sjEditorDel" aria-label="删除类别">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+      </button>
+    </div>
+    <div class="sj-editor-swatches" id="sjEditorSwatches"></div>
+    <div class="sj-editor-field">
+      <span class="sj-editor-chip c0" id="sjEditorChip"></span>
+      <input type="text" id="sjEditorName" maxlength="40" aria-label="笔记本名称">
+    </div>
+    <div class="sj-editor-actions">
+      <button type="button" data-act="editor-close">取消</button>
+      <button type="button" class="save" id="sjEditorSave">保存</button>
+    </div>
+  </div>
 </div>
 
 <!-- 华为风右上角四点菜单（仅窄屏显示）：顶栏收起后，设置/工具全部收进这里。
