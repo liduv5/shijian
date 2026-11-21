@@ -3013,7 +3013,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-146';
+  const APP_BUILD = '2026-11-21-147';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -5635,12 +5635,14 @@
      华为备忘录风手机首页（仅窄屏；桌面端这些节点全隐藏，逻辑仍安全）
      - 用 body.sj-note-open 区分「列表首页 / 笔记详情」，不新增第二套 state；
        打开笔记 = 加 class，closeEditor = 去 class，与保存钩子完全解耦。
-     - 底部双 tab / 悬浮 + / 分类面板 / 详情底栏都复用已有函数，不造数据链路。
+     - 首页右下悬浮 + 单击弹「新建笔记 / 随手记」；分类面板 / 详情底栏都复用已有函数，
+       不造数据链路。底部双 tab 已移除（2026-11-21 合并进加号）。
      ============================================================ */
   (function mobileHomeUI() {
-    const bar = $('#sjTabbar');
-    if (!bar) return;                       // 老页面结构兜底
+    /* 存在性 guard 用加号按钮：底部 tab 已删，用它会在新页面上直接 return，
+       导致分类面板、详情页切换整块逻辑都不跑。 */
     const FAB = $('#sjFab'), DETAIL = $('#sjDetailBar');
+    if (!FAB) return;                       // 老页面结构兜底
     const SHEET = $('#sjCatSheet'), TITLE = $('#sjCatTitle'), SEARCH = $('#sjHomeSearch');
     const MMENU = $('#sjManageMenu');
     let catMask = null;
@@ -5650,13 +5652,11 @@
       const inNote = !!currentNote();
       document.body.classList.toggle('sj-note-open', inNote);
       if (inNote) hideCatSheet();
-      bar.classList.toggle('hidden', inNote);
       if (FAB) FAB.classList.toggle('hidden', inNote);
       if (DETAIL) DETAIL.classList.toggle('hidden', !inNote);
       const more = $('#sjMoreBtn');
       if (more) more.classList.toggle('hidden', false);
-      $('#sjTabNotes').classList.toggle('active', !inNote);
-      $('#sjTabQuick').classList.remove('active');
+      hideFabMenu();
       /* 详情页再细分「阅读 / 编辑」两态：打开笔记默认阅读，点正文才编辑 */
       syncNoteMode();
     }
@@ -5667,21 +5667,26 @@
     const origRenderList = window.__sjRenderListHook;
     void origRenderList;
     /* 用事件驱动更稳：openNote 成功、closeEditor、boot 后各调一次。 */
-    ['#mListBtn', '#sjTabNotes'].forEach((sel) => {
+    /* 用事件驱动更稳：openNote 成功、closeEditor、boot 后各调一次。 */
+    ['#mListBtn'].forEach((sel) => {
       const el = $(sel); if (el) el.addEventListener('click', () => setTimeout(syncHome, 0));
     });
 
-    /* 顶栏「新建」与悬浮 + 同源 */
-    if (FAB) FAB.addEventListener('click', () => createNote());
-
-    /* 底部 tab：笔记 = 关闭编辑器回首页（走现有 closeEditor 落盘钩子）；
-       随手记 = 走现有 openQuick()，带 q 参数导入，绝不裸跳。 */
-    $('#sjTabNotes').addEventListener('click', () => {
-      if (currentNote()) closeEditor();
-      hideCatSheet();
-      closeDrawer();
-    });
-    $('#sjTabQuick').addEventListener('click', () => { hideCatSheet(); openQuick(); });
+    /* 右下角加号：单击弹「新建笔记 / 随手记」两项菜单，替代原底部双 tab。
+       复用 ctxMenu：它有同一次 click 守卫、锚点跟随和弹出不横跳，样式与别处菜单一致。
+       anchor 用真按钮、above 让菜单浮在加号上方，不压住底部提示条。 */
+    const ICON_NEW_NOTE = '<svg viewBox="0 0 24 24" class="ico"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg>';
+    const ICON_QUICK = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M13.5 6.5l3 3"/></svg>';
+    function openFabMenu() {
+      if (!FAB || FAB.classList.contains('hidden')) return;
+      const r = FAB.getBoundingClientRect();
+      showCtx(r.right - 200, r.top + 4, [
+        { label: '新建笔记', icon: ICON_NEW_NOTE, onClick: () => createNote() },
+        { label: '随手记', icon: ICON_QUICK, onClick: () => { hideCatSheet(); openQuick(); } },
+      ], { above: true, anchor: FAB });
+    }
+    function hideFabMenu() { if (typeof hideCtx === 'function') hideCtx(); }
+    if (FAB) FAB.addEventListener('click', openFabMenu);
 
     /* ---- 分类面板 ---- */
     function folderCount(id) {

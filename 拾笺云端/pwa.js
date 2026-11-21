@@ -54,7 +54,7 @@
          发布清单五处同步改：index.html 的 SWV、sw.js 的 VERSION、
          mobilesync.js 的 BUILD、quick.html 末尾注册脚本的 SWV、这里的兜底值。
          优先读内联脚本给的 SWV，保证各处 register() 用同一个脚本 URL。 */
-      const SW_BUILD = window.__SJ_SWV__ || '2026-11-21-146';
+      const SW_BUILD = window.__SJ_SWV__ || '2026-11-21-147';
       navigator.serviceWorker.register('/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SW_BUILD, { scope: '/' })
         .then((reg) => {
           pushCode(reg);
@@ -124,6 +124,7 @@
         <button class="pwa-close" type="button" aria-label="以后再说">${'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'}</button>
       </div>`);
     document.body.appendChild(tipEl);
+    document.body.classList.add('sj-tip-open');
     requestAnimationFrame(() => tipEl.classList.add('show'));
 
     $('.pwa-go', tipEl).addEventListener('click', onAddClick);
@@ -136,6 +137,7 @@
   function hideTip() {
     if (!tipEl) return;
     tipEl.classList.remove('show');
+    document.body.classList.remove('sj-tip-open');
     const node = tipEl;
     tipEl = null;
     setTimeout(() => node.remove(), 420);

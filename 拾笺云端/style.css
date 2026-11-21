@@ -2651,6 +2651,10 @@ body.sj-note-open .pwa-tip {
   transform: translate(-50%, 150%);
   pointer-events: none;
 }
+/* 安装提示条出现时把右下加号顶到它上方，避免盖住（加号默认已落到底部 18px） */
+body.sj-tip-open:not(.sj-note-open) .sj-fab {
+  bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+}
 
 /* ============================================================
    笔记卡片 · 更多操作（删除等）
@@ -2886,7 +2890,7 @@ body.sj-note-open .pwa-tip {
    所有颜色走 var(--*)，light / dark 双主题自动适配。
    ============================================================ */
 /* 桌面端默认隐藏：下面的 @media 里才按首页/详情页分别放开 */
-.sj-home-head, .sj-fab, .sj-tabbar, .sj-detail-bar,
+.sj-home-head, .sj-fab, .sj-detail-bar,
 .sj-cat-mgr, .sj-manage-menu, .sj-more-btn, .sj-more-menu,
 .sj-cat-editor, .sj-note-head, .sj-edit-bar, .sj-meta-cat,
 .sj-home-bar, .sj-read-hero { display: none; }
@@ -3082,7 +3086,7 @@ body.sj-note-open .pwa-tip {
   .sj-fab {
     display: none;
     position: fixed; z-index: 62;
-    right: 18px; bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+    right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px));
     width: 54px; height: 54px; border: 0; border-radius: 50%;
     background: var(--accent); color: #fff;
     box-shadow: var(--shadow-md);
@@ -3091,27 +3095,6 @@ body.sj-note-open .pwa-tip {
   }
   body:not(.sj-note-open) .sj-fab { display: flex; }
   .sj-fab .ico { width: 26px; height: 26px; stroke-width: 2.4; }
-
-  /* ---- 底部双 tab ---- */
-  .sj-tabbar {
-    position: fixed; z-index: 60;
-    left: 0; right: 0; bottom: 0;
-    height: calc(58px + env(safe-area-inset-bottom, 0px));
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    display: flex; align-items: stretch;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-  }
-  .sj-tabbar.hidden { display: none; }
-  .sj-tab {
-    flex: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 3px;
-    border: 0; background: transparent;
-    font-family: var(--font-ui); font-size: 11px; color: var(--text-3);
-    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
-  }
-  .sj-tab .ico { width: 22px; height: 22px; }
-  .sj-tab.active { color: var(--accent); }
 
   /* 首页时顶栏不显示「返回列表」；编辑页保留 */
   body:not(.sj-note-open) #mListBtn { display: none; }
@@ -3137,8 +3120,7 @@ body.sj-note-open .pwa-tip {
     overscroll-behavior: contain;
   }
   .sj-cat-sheet.hidden { display: none; }
-  /* 整页展开时：底部 tab 浮到面板之上保持可点；右上四点按钮收起，贴合截图 */
-  body.sj-cat-open .sj-tabbar { z-index: 70; }
+  /* 整页展开时：右上四点按钮收起、加号也收起，贴合分类面板 */
   body.sj-cat-open .sj-more-btn,
   body.sj-cat-open .sj-fab { display: none; }
   /* 页头：展开后这一行必须和首页**逐字一致**——字体、字号、字重、位置都不变，

@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-146 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-147 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-146';
+const BUILD = '2026-11-21-147';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -151,6 +151,7 @@ const iRun = vbsText.indexOf('WshShell.Run runLine');
 ok('启动.vbs 在 WshShell.Run 前清空 Err（避免空错误描述误报）', iClear >= 0 && iRun >= 0 && iClear < iRun);
 
 const appSrc = fs.readFileSync(path.join(CLOUD, 'app.js'), 'utf8');
+const pwaSrc = fs.readFileSync(path.join(CLOUD, 'pwa.js'), 'utf8');
 const quickSrc = fs.readFileSync(path.join(CLOUD, 'quick.html'), 'utf8');
 ok('随手记/拾笺无自动弹回标记（防双 PWA 串页）',
   quickSrc.indexOf("setItem('sj_quick_return'") < 0 &&
@@ -165,19 +166,23 @@ ok('华为桌面兼容：随手记打开拾笺走同窗口导航（无 window.op
 /* 华为风手机首页：DOM / 逻辑 / CSS 三处齐全，且入口不丢 */
 const indexSrc = fs.readFileSync(path.join(CLOUD, 'index.html'), 'utf8');
 const styleSrc = fs.readFileSync(path.join(CLOUD, 'style.css'), 'utf8');
-for (const id of ['sjHomeHead', 'sjCatTitle', 'sjHomeSearch', 'sjCatSheet', 'sjFab', 'sjTabbar', 'sjTabNotes', 'sjTabQuick', 'sjDetailBar']) {
+for (const id of ['sjHomeHead', 'sjCatTitle', 'sjHomeSearch', 'sjCatSheet', 'sjFab', 'sjDetailBar']) {
   ok('首页 DOM 节点存在：#' + id, indexSrc.indexOf('id="' + id + '"') >= 0);
 }
+ok('底部双 tab 已移除（随手记并入加号菜单）',
+  indexSrc.indexOf('id="sjTabbar"') < 0 &&
+  indexSrc.indexOf('id="sjTabNotes"') < 0 &&
+  indexSrc.indexOf('id="sjTabQuick"') < 0);
 ok('随手记页有底部「笔记」tab 且绑定 goMain（q 参数不丢）',
   quickSrc.indexOf('id="qTabNotes"') >= 0 && quickSrc.indexOf("bindGo('qTabNotes')") >= 0);
-ok('底部「笔记」tab 走 closeEditor（保留 saveNow 落盘钩子）',
-  appSrc.indexOf("if (currentNote()) closeEditor();") >= 0);
+ok('详情页返回顶栏走 closeEditor（替代原底部笔记 tab）',
+  appSrc.indexOf("a === 'nh-back'") >= 0 && appSrc.indexOf('closeEditor(); return;') >= 0);
 ok('分类面板复用现有伪节点 all/uncat/starred',
   appSrc.indexOf("catRow('all'") >= 0 && appSrc.indexOf("catRow('uncat'") >= 0 && appSrc.indexOf("catRow('starred'") >= 0);
 ok('首页搜索与侧栏搜索共享 state.search',
   appSrc.indexOf('state.search = e.target.value;') >= 0);
 ok('桌面端默认隐藏新增 UI（只在 ≤980px 放开）',
-  /\.sj-home-head, \.sj-fab, \.sj-tabbar, \.sj-detail-bar,[\s\S]{0,100}\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu,[\s\S]{0,60}\.sj-cat-editor, \.sj-note-head, \.sj-edit-bar, \.sj-meta-cat,[\s\S]{0,80}\{ display: none; \}/.test(styleSrc) &&
+  /\.sj-home-head, \.sj-fab, \.sj-detail-bar,[\s\S]{0,100}\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu,[\s\S]{0,60}\.sj-cat-editor, \.sj-note-head, \.sj-edit-bar, \.sj-meta-cat,[\s\S]{0,80}\{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('@media (max-width: 980px)') >= 0);
 ok('手机端顶栏收起、--m-bar-total 归零（顶端无菜单）',
   /@media \(max-width: 980px\)[\s\S]{0,400}\.m-bar \{ display: none !important; \}/.test(styleSrc) &&
@@ -196,8 +201,7 @@ ok('新 UI 颜色全部走 CSS 变量（双主题）',
 /* 分类面板必须在 .app 外、body 直属：否则手机端会被 z-index:67 的动态遮罩盖住，
    展开后只剩灰蒙蒙一层（2026-11-20 反馈）。用「面板声明出现在 </main> 之后」判定。 */
 ok('分类面板在 .app 外（body 直属），不被动态遮罩盖住',
-  indexSrc.indexOf('id="sjCatSheet"') > indexSrc.indexOf('</main>') &&
-  indexSrc.indexOf('id="sjCatSheet"') > indexSrc.indexOf('id="sjTabbar"'));
+  indexSrc.indexOf('id="sjCatSheet"') > indexSrc.indexOf('</main>'));
 
 /* 分类管理页：从分类面板「管理」进入，按华为备忘录「编辑」页还原。 */
 for (const id of ['sjCatMgr', 'sjCatMgrBack', 'sjCatMgrBody']) {
@@ -360,7 +364,6 @@ ok('分类面板按华为截图做整页展开：页头带▲、浅灰底不压�
   appSrc.indexOf("document.body.classList.add('sj-cat-open')") >= 0 &&
   appSrc.indexOf("document.body.classList.remove('sj-cat-open')") >= 0 &&
   /body\.sj-cat-open \.sj-cat-mask \{[\s\S]{0,80}background: var\(--bg\)/.test(styleSrc) &&
-  /body\.sj-cat-open \.sj-tabbar \{ z-index: 70; \}/.test(styleSrc) &&
   styleSrc.indexOf('body.sj-cat-open .sj-more-btn,') >= 0);
 
 ok('分类面板字号/行高/图标/系统字体按截图放大，分隔线从各行文字(--dl)起',
@@ -774,6 +777,22 @@ ok('顶栏不出现标题框下边框线（首页和笔记页都去掉）',
   /* 首页顶栏实心背景与软过渡仍在；笔记页顶栏保持普通定位，正文滚走后露出底色 */
   /body:not\(\.sj-note-open\) \.sj-home-bar\.scrolled::before\s*\{ opacity: 1; \}/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \{ position: relative; \}/.test(styleSrc));
+
+ok('右下加号弹出「新建笔记 / 随手记」菜单，替代底部 tab',
+  /* 加号不再直接 createNote，而是复用 ctxMenu 弹两项菜单 */
+  /function openFabMenu\(\)/.test(appSrc) &&
+  /\{ label: '新建笔记', icon: ICON_NEW_NOTE, onClick: \(\) => createNote\(\) \}/.test(appSrc) &&
+  /\{ label: '随手记', icon: ICON_QUICK, onClick: \(\) => \{ hideCatSheet\(\); openQuick\(\); \} \}/.test(appSrc) &&
+  /FAB\.addEventListener\('click', openFabMenu\)/.test(appSrc) &&
+  /showCtx\(r\.right - 200, r\.top \+ 4, \[[\s\S]{0,200}\{ above: true, anchor: FAB \}\)/.test(appSrc) &&
+  /* guard 用加号而非已删的 tabbar，否则整块首页逻辑不执行 */
+  /const FAB = \$\('#sjFab'\), DETAIL = \$\('#sjDetailBar'\);[\s\S]{0,80}if \(!FAB\) return;/.test(appSrc));
+
+ok('加号落到底部且与首次安装提示条避让',
+  /right: 18px; bottom: calc\(18px \+ env\(safe-area-inset-bottom, 0px\)\);/.test(styleSrc) &&
+  /body\.sj-tip-open:not\(\.sj-note-open\) \.sj-fab \{[\s\S]{0,80}bottom: calc\(78px/.test(styleSrc) &&
+  /classList\.add\('sj-tip-open'\)/.test(pwaSrc) &&
+  /classList\.remove\('sj-tip-open'\)/.test(pwaSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

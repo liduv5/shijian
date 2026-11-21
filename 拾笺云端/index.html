@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-21-146';
+  var SWV = '2026-11-21-147';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -318,8 +318,8 @@
       </div>
     </header>
     <div class="note-list" id="noteList"></div>
-    <!-- 悬浮新建：华为风首页右下角，点击复用 createNote() -->
-    <button type="button" class="sj-fab" id="sjFab" aria-label="新建笔记" title="新建笔记">
+    <!-- 右下悬浮 + ：单击弹出「新建笔记 / 随手记」小菜单（替代原底部双 tab） -->
+    <button type="button" class="sj-fab" id="sjFab" aria-label="新建笔记或随手记" title="新建 / 随手记">
       <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
     </button>
   </section>
@@ -497,16 +497,6 @@
     </div>
   </main>
 </div>
-
-<!-- ============ 华为风底部双 tab（仅窄屏首页显示） ============ -->
-<nav class="sj-tabbar hidden" id="sjTabbar" aria-label="主导航">
-  <button type="button" class="sj-tab active" id="sjTabNotes" aria-label="笔记">
-    <svg viewBox="0 0 24 24" class="ico"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg><span>笔记</span>
-  </button>
-  <button type="button" class="sj-tab" id="sjTabQuick" aria-label="随手记">
-    <svg viewBox="0 0 24 24" class="ico"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M13.5 6.5l3 3"/></svg><span>随手记</span>
-  </button>
-</nav>
 
 <!-- 分类面板：点大标题展开，全部/未分类/收藏/回收站 + 文件夹。
      必须放在 .app 外、body 直属：手机端 .app 是 position:fixed 自成的层叠上下文，
