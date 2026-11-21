@@ -473,7 +473,7 @@ ok('「样式」面板的颜色与纸张：7 颗色点、5 张纸、纸张记在
   (indexSrc.match(/class="sj-ss-paper/g) || []).length >= 5 &&
   appSrc.indexOf("const PAPER_KEY = 'sj_paper_v1';") >= 0 &&
   /function applyPaper\(idx\)[\s\S]{0,220}document\.body\.dataset\.paper = v/.test(appSrc) &&
-  /body\.sj-note-open\[data-paper="2"\] \.editor-pane \{ background: #e9e1cd; \}/.test(styleSrc) &&
+  /html\[data-theme="light"\] body\.sj-note-open\[data-paper="2"\] \.editor-pane \{ background: #e9e1cd; \}/.test(styleSrc) &&
   /\.sj-ss-range \{[\s\S]{0,260}appearance: none/.test(styleSrc) &&
   /\.sj-style-sheet \{[\s\S]{0,220}position: fixed; z-index: 92/.test(styleSrc));
 

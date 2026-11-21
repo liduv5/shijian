@@ -3701,16 +3701,17 @@ body.m-list .pwa-tip {
   }
   .sj-ss-paper.on { border: 2px solid var(--accent); }
 
-  /* 纸张应用到正文整页（阅读态、编辑态都算），作用范围只在窄屏 */
-  body.sj-note-open[data-paper="0"] .editor-pane { background: #ffffff; }
-  body.sj-note-open[data-paper="1"] .editor-pane { background: #f1efea; }
-  body.sj-note-open[data-paper="2"] .editor-pane { background: #e9e1cd; }
-  body.sj-note-open[data-paper="3"] .editor-pane {
+  /* 纸张应用到正文整页（阅读态、编辑态都算），作用范围只在窄屏。
+     只在浅色主题生效：深色主题下正文是浅字，铺浅色纸会看不清。 */
+  html[data-theme="light"] body.sj-note-open[data-paper="0"] .editor-pane { background: #ffffff; }
+  html[data-theme="light"] body.sj-note-open[data-paper="1"] .editor-pane { background: #f1efea; }
+  html[data-theme="light"] body.sj-note-open[data-paper="2"] .editor-pane { background: #e9e1cd; }
+  html[data-theme="light"] body.sj-note-open[data-paper="3"] .editor-pane {
     background-color: #ffffff;
     background-image: radial-gradient(rgba(0, 0, 0, .10) 1px, transparent 1.2px);
     background-size: 13px 13px;
   }
-  body.sj-note-open[data-paper="4"] .editor-pane { background: #f7f0dd; }
+  html[data-theme="light"] body.sj-note-open[data-paper="4"] .editor-pane { background: #f7f0dd; }
 
   /* 待办列表：列表符号换成方框，点方框打勾（class 落在 li 上，随笔记内容一起存） */
   .rich-pane ul.sj-task, .preview-pane ul.sj-task {
