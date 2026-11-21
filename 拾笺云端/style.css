@@ -3992,3 +3992,62 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
   }
   .rich-pane ul.sj-task li.done { color: var(--text-3); text-decoration: line-through; }
 }
+
+/* ============================================================
+   电脑端（≥981px）中性简约风
+   与手机端（≤980px，蓝色品牌）区分开：去掉朱砂印章、朱点、行楷、
+   绿底加号，强调色从墨绿换成中性石墨灰。
+   整块只在 min-width:981px 生效，手机端一份不受影响。
+   ============================================================ */
+@media (min-width: 981px) {
+  /* 强调色 → 中性石墨灰：浅色用深灰（配白字清楚），深色用浅灰（深底上清楚） */
+  html[data-theme="light"] {
+    --accent: #43403a;
+    --accent-hover: #2e2c28;
+    --accent-soft: rgba(67, 64, 58, .09);
+    --accent-line: rgba(67, 64, 58, .26);
+    --sel: rgba(67, 64, 58, .13);
+    --danger: #5f5a53;
+    --star: #6d6860;
+  }
+  html[data-theme="dark"] {
+    --accent: #d5d0c7;
+    --accent-hover: #ece8e1;
+    --accent-soft: rgba(213, 208, 199, .13);
+    --accent-line: rgba(213, 208, 199, .32);
+    --sel: rgba(213, 208, 199, .18);
+    --danger: #b8b3aa;
+    --star: #b0aba2;
+  }
+  /* 深色下 accent 变浅，实心按钮要换深色字才看得清 */
+  html[data-theme="dark"] .btn.primary,
+  html[data-theme="dark"] .btn.primary:hover,
+  html[data-theme="dark"] .sj-browser-dl { color: #1c1a17; }
+  html[data-theme="dark"] .btn.danger,
+  html[data-theme="dark"] .btn.danger:hover { color: #1c1a17; }
+
+  /* 品牌区：去朱砂印章与朱点，行楷改无衬线纯文字，和手机顶栏一个观感 */
+  .brand .logo,
+  .brand-text h1 .seal { display: none; }
+  .brand-text h1 {
+    font-family: var(--font-ui);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: .1em;
+  }
+
+  /* 图标栏新建：去绿底实心块与红投影，改成与其余 rail-btn 一致的线性图标 */
+  .rail-new {
+    background: transparent;
+    color: var(--text-2);
+    box-shadow: none;
+  }
+  .rail-new:hover { background: rgba(60, 52, 40, .07); color: var(--text); filter: none; }
+  .rail-new svg.ico { width: 19px; height: 19px; stroke-width: 1.6; }
+
+  /* 口令提示条那处硬编码墨绿也一并中性化 */
+  .pwd-tip { background: var(--accent); }
+  html[data-theme="dark"] .pwd-tip,
+  html[data-theme="dark"] .pwd-tip span,
+  html[data-theme="dark"] .pwd-tip button { color: #1c1a17; }
+}

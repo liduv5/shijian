@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-149 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-150 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-149';
+const BUILD = '2026-11-21-150';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -279,6 +279,19 @@ ok('华为配色仅在 ≤980px 覆盖，桌面端主题不受影响',
   styleSrc.indexOf('--surface: #ffffff') >= 0);
 ok('深色主题手机端主色同步为亮蓝',
   /html\[data-theme="dark"\] \{\s*--accent: #4d8fff;/.test(styleSrc));
+ok('电脑端（≥981px）中性简约风：去印章朱点/行楷/绿底，强调色改石墨灰，不污染手机端',
+  /* 整块限定在 min-width:981px，手机端用独立的蓝色变量作用域 */
+  /@media \(min-width: 981px\) \{[\s\S]{0,900}html\[data-theme="light"\] \{[\s\S]{0,200}--accent: #43403a;/.test(styleSrc) &&
+  /@media \(min-width: 981px\) \{[\s\S]{0,900}html\[data-theme="dark"\] \{[\s\S]{0,200}--accent: #d5d0c7;/.test(styleSrc) &&
+  /* 去朱砂印章与朱点、行楷改无衬线 */
+  /@media \(min-width: 981px\) \{[\s\S]{0,1400}\.brand \.logo,[\s\S]{0,120}\.brand-text h1 \.seal \{ display: none; \}/.test(styleSrc) &&
+  /@media \(min-width: 981px\) \{[\s\S]{0,1400}\.brand-text h1 \{[\s\S]{0,120}font-family: var\(--font-ui\);/.test(styleSrc) &&
+  /* 绿底加号改透明线性 */
+  /@media \(min-width: 981px\) \{[\s\S]{0,1700}\.rail-new \{[\s\S]{0,120}background: transparent;/.test(styleSrc) &&
+  /* 深色实心按钮换深色字，保证对比度 */
+  /html\[data-theme="dark"\] \.btn\.primary,/.test(styleSrc) &&
+  /* 手机端蓝色仍旧健在（没被误覆盖） */
+  styleSrc.indexOf('--accent: #0a59f7') >= 0);
 ok('标题小三角随正文色、选中分类篇数变蓝',
   /\.sj-home-title \.sj-caret \{[\s\S]{0,120}color: var\(--text\);/.test(styleSrc) &&
   styleSrc.indexOf('.sj-cat-row.on .sj-cat-n { color: var(--accent); }') >= 0);
