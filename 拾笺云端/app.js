@@ -2175,9 +2175,59 @@
     return true;
   }
 
+  /* ---- 软件键盘：格式操作不弹输入法，点正文才弹 ----
+     手机上点「加粗 / 对齐 / 字号」只需要编辑焦点，不需要输入法；可 execCommand
+     又必须有焦点，两者本来是冲突的。Chromium 的 virtualkeyboardpolicy="manual"
+     正好能把这两件事拆开：拿得到焦点，但不唤起软键盘。
+     不认这个属性的浏览器会直接忽略它，行为退化成改造前的样子，不会更糟。 */
+  const KB_POLICY = 'virtualkeyboardpolicy';
+  let kbManual = false;
+
+  function setKbManual(on) {
+    /* 桌面端没有软键盘这回事，一律保持 auto，别留下状态 */
+    if (!NARROW()) { kbManual = false; return; }
+    kbManual = !!on;
+    const pane = $('#richPane');
+    if (!pane) return;
+    try {
+      if (on) pane.setAttribute(KB_POLICY, 'manual');
+      else pane.removeAttribute(KB_POLICY);
+    } catch (_) {}
+  }
+
+  /* 静默聚焦：拿到编辑焦点，但不弹输入法（面板按钮、撤销重做都走这条）。
+     已经有焦点就直接用——说明键盘本来就在，别去动它的策略。 */
+  function focusQuiet(pane) {
+    const el = pane || $('#richPane');
+    if (!el) return null;
+    if (document.activeElement === el) return el;
+    setKbManual(true);
+    el.focus({ preventScroll: true });
+    return el;
+  }
+
+  /* 收起输入法但保住选区（打开样式面板时用，面板不该被键盘顶到半屏） */
+  function hideSoftKeyboard() {
+    setKbManual(true);
+    const ae = document.activeElement;
+    if (ae && ae !== document.body && ae.blur) ae.blur();
+  }
+
+  /* 真要打字了：先撤掉 manual 再重新聚焦。已经聚焦的元素不会再触发
+     focus 事件，所以必须先 blur 一次，否则键盘不会重新出现。 */
+  function focusTyping(el) {
+    const t = el || $('#richPane');
+    if (!t) return null;
+    const wasManual = kbManual;
+    setKbManual(false);
+    if (wasManual && document.activeElement === t) t.blur();
+    t.focus({ preventScroll: true });
+    return t;
+  }
+
   function exec(cmd, value) {
     const pane = $('#richPane');
-    pane.focus();
+    focusQuiet(pane);
     restoreRange();
     try { document.execCommand('styleWithCSS', false, false); } catch (_) {}
     document.execCommand(cmd, false, value);
@@ -2188,7 +2238,7 @@
   // 而不是会被 DOMPurify 清掉 face 属性的旧 <font> 标签。
   function execFont(cmd, value) {
     const pane = $('#richPane');
-    pane.focus();
+    focusQuiet(pane);
     restoreRange();
     try { document.execCommand('styleWithCSS', false, true); } catch (_) {}
     document.execCommand(cmd, false, value);
@@ -2200,7 +2250,7 @@
   // 再把本次产生的那些 <font> 换成带精确 px 的 <span style="font-size">。
   function execFontSize(px) {
     const pane = $('#richPane');
-    pane.focus();
+    focusQuiet(pane);
     restoreRange();
     try { document.execCommand('styleWithCSS', false, false); } catch (_) {}
     // 记录执行前已有的 font 节点，避免误改正文里别处的内容
@@ -2243,7 +2293,7 @@
 
   function richCodeBlock() {
     const pane = $('#richPane');
-    pane.focus();
+    focusQuiet(pane);
     restoreRange();
     const sel = window.getSelection();
     const text = sel ? sel.toString() : '';
@@ -2759,7 +2809,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-123';
+  const APP_BUILD = '2026-11-21-124';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -3764,7 +3814,9 @@
     const isImg = /^image\//.test(a.type);
     if (viewFormat === 'rich') {
       const pane = $('#richPane');
-      pane.focus();
+      /* 插图不是打字：静默聚焦，别把输入法顶出来，也别丢原来的光标位置 */
+      focusQuiet(pane);
+      restoreRange();
       const html = isImg
         ? `<img src="${attDisplaySrc(a)}" alt="${escapeHtml(a.name)}" style="max-width:100%;height:auto;border-radius:8px;display:block;margin:8px 0">`
         : `<a href="${attDisplaySrc(a)}" target="_blank">${escapeHtml(a.name)}</a>`;
@@ -6017,10 +6069,15 @@
       if (STYLE_SHEET) STYLE_SHEET.classList.add('hidden');
       const b = EDIT_BAR && EDIT_BAR.querySelector('[data-act="fmt"]');
       if (b) b.classList.remove('on');
+      /* 面板收起后恢复默认键盘策略：用户接下来点正文就该弹输入法了 */
+      setKbManual(false);
     }
     function openStyleSheet() {
       if (!STYLE_SHEET) return;
       clearImgSel();
+      /* 调格式不需要输入法：面板弹起时顺手把键盘收掉，
+         否则键盘会把面板顶到半屏（用户 2026-11-21 反馈） */
+      hideSoftKeyboard();
       STYLE_SHEET.classList.remove('hidden');
       const b = EDIT_BAR && EDIT_BAR.querySelector('[data-act="fmt"]');
       if (b) b.classList.add('on');
@@ -6032,7 +6089,7 @@
     function cssCmd(cmd, val) {
       const pane = $('#richPane');
       if (!pane) return false;
-      pane.focus();
+      focusQuiet(pane);
       restoreRange();
       try { document.execCommand('styleWithCSS', false, true); } catch (_) {}
       let ok = false;
@@ -6232,14 +6289,21 @@
         toRichEditor();
         mountTitle();
         /* 打开已有笔记不抢焦点：手机上会自动弹键盘，很打扰 */
-        if (!doFocus) return;
+        if (!doFocus) { setKbManual(false); return; }
         setTimeout(() => {
           const target = viewFormat === 'rich' ? $('#richPane') : $('#mdInput');
           if (!target) return;
-          target.focus();
-          if (viewFormat === 'rich' && point) caretTo(point.x, point.y);
+          /* 点了正文里某个位置 = 用户要写字，这时才唤起输入法。
+             其它入口（新建草稿）也走 focusTyping，保证键盘策略是 auto。 */
+          if (viewFormat === 'rich') {
+            focusTyping(target);
+            if (point) caretTo(point.x, point.y);
+          } else {
+            target.focus();
+          }
         }, 0);
       } else {
+        setKbManual(false);
         clearImgSel();
         mountTitle();
         const ae = document.activeElement;
@@ -6267,6 +6331,7 @@
       if (ebStar) ebStar.classList.toggle('on', !!note.starred);
       /* 桌面端沿用原来的双栏编辑界面，不进这套形态 */
       if (!NARROW()) {
+        setKbManual(false);
         document.body.classList.remove('sj-note-edit', 'sj-note-fmt');
         const ti = $('#titleInput'); if (ti) ti.readOnly = false;
         const rp = $('#richPane'); if (rp) rp.setAttribute('contenteditable', 'true');
@@ -6289,10 +6354,12 @@
       const a = b.dataset.act;
       if (a === 'nh-back') { hideMoreMenu(); closeEditor(); return; }
       if (a === 'nh-done') { setNoteMode('read'); return; }
-      /* 撤销 / 重做：富文本走 execCommand，Markdown 走 textarea 自带的撤销栈 */
+      /* 撤销 / 重做：富文本走 execCommand，Markdown 走 textarea 自带的撤销栈。
+         用静默聚焦，撤销一下不该把输入法顶出来。 */
       const target = viewFormat === 'rich' ? $('#richPane') : $('#mdInput');
       if (!target) return;
-      target.focus();
+      if (viewFormat === 'rich') focusQuiet(target);
+      else target.focus();
       try { document.execCommand(a === 'nh-undo' ? 'undo' : 'redo'); } catch (_) {}
     });
     if (EDIT_BAR) EDIT_BAR.addEventListener('click', (e) => {
@@ -6312,6 +6379,14 @@
       const proxy = DETAIL && DETAIL.querySelector(`[data-act="${a}"]`);
       if (proxy) { proxy.click(); setTimeout(syncNoteMode, 0); }
     });
+    /* 点正文 = 要写字：这时才唤起输入法。面板里调格式永远不唤起。
+       （manual 策略下已聚焦的元素不会再触发 focus，必须先 blur 一次） */
+    function typingFocus(point) {
+      const rp = $('#richPane');
+      if (!rp) return;
+      focusTyping(rp);
+      if (point) caretTo(point.x, point.y);
+    }
     /* 阅读态点正文任意位置 → 进编辑态，并把光标落到点击处；
        编辑态点图片 → 选中并弹出图片操作条，点别处收起。 */
     if (BODY_BOX) BODY_BOX.addEventListener('click', (e) => {
@@ -6330,7 +6405,11 @@
           }
         }
         const inRich = img && img.closest('#richPane') ? img : null;
-        if (inRich) { e.preventDefault(); selectImg(inRich); } else clearImgSel();
+        if (inRich) { e.preventDefault(); selectImg(inRich); return; }
+        clearImgSel();
+        /* Markdown 源码框自带原生键盘行为，交给它自己处理 */
+        if (e.target.closest && e.target.closest('#mdInput')) return;
+        typingFocus({ x: e.clientX, y: e.clientY });
         return;
       }
       /* 阅读态点图片：同样进编辑，并把同一张图选中，省得再点一次 */
