@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-150 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-151 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-150';
+const BUILD = '2026-11-21-151';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -199,6 +199,19 @@ ok('随手记页配色/字体/主题与拾笺主程序统一',
   /* 电脑宽屏底栏收进卡片宽度，不再横贯全屏 */
   /@media \(max-width: 600px\)/.test(quickSrc) &&
   /width: min\(520px, calc\(100% - 36px\)\);/.test(quickSrc));
+ok('随手记电脑端（≥981px）中性简约风：去印章朱点/行楷/墨绿，强调色改石墨灰，不污染手机端',
+  /* 整块限定 min-width:981px */
+  /@media \(min-width: 981px\) \{[\s\S]{0,900}html\[data-theme="light"\] \{[\s\S]{0,300}--accent: #43403a;/.test(quickSrc) &&
+  /@media \(min-width: 981px\) \{[\s\S]{0,900}html\[data-theme="dark"\] \{[\s\S]{0,300}--accent: #d5d0c7;/.test(quickSrc) &&
+  /* 去朱砂小印与朱点、行楷改无衬线 */
+  /@media \(min-width: 981px\) \{[\s\S]{0,1500}\.brand-logo, \.brand-name \.seal \{ display: none; \}/.test(quickSrc) &&
+  /@media \(min-width: 981px\) \{[\s\S]{0,1500}\.brand-name \{[\s\S]{0,120}font-family: var\(--font-ui\);/.test(quickSrc) &&
+  /* 深色实心按钮换深色字 */
+  /@media \(min-width: 981px\) \{[\s\S]{0,1500}html\[data-theme="dark"\] \.primary \{ color: #1c1a17; \}/.test(quickSrc) &&
+  /* 桌面绿色提示条也中性化 */
+  /--desk-bg: #f1efeb;/.test(quickSrc) &&
+  /* 手机端墨绿仍旧健在（未被误覆盖） */
+  /html\[data-theme="light"\] \{[\s\S]{0,200}--accent: #2f6f5e;/.test(quickSrc));
 ok('详情页返回顶栏走 closeEditor（替代原底部笔记 tab）',
   appSrc.indexOf("a === 'nh-back'") >= 0 && appSrc.indexOf('closeEditor(); return;') >= 0);
 ok('分类面板复用现有伪节点 all/uncat/starred',

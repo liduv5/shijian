@@ -180,6 +180,40 @@
     }
     body { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
   }
+  /* ============================================================
+     电脑端（≥981px）中性简约风：与主程序同一套观感。
+     去掉朱砂小印 / 朱点 / 行楷，墨绿强调色改中性石墨灰，绿色系
+     桌面提示条一并中性化；整块只在 min-width:981px 生效，手机端
+     保持墨绿品牌不动。
+     ============================================================ */
+  @media (min-width: 981px) {
+    html[data-theme="light"] {
+      --accent: #43403a; --accent-hover: #2e2c28;
+      --accent-soft: rgba(67, 64, 58, .09); --accent-line: rgba(67, 64, 58, .26);
+      --star: #6d6860; --danger: #5f5a53; --danger-soft: #f1efeb;
+      --danger-line: #dcd8d0; --danger-text: #5f5a53;
+      --desk-bg: #f1efeb; --desk-line: #dcd8d0; --desk-text: #5f5a53;
+      --desk-url-bg: #fff; --desk-url-line: #cfcbc2; --desk-url-text: #43403a;
+    }
+    html[data-theme="dark"] {
+      --accent: #d5d0c7; --accent-hover: #ece8e1;
+      --accent-soft: rgba(213, 208, 199, .13); --accent-line: rgba(213, 208, 199, .32);
+      --star: #b0aba2; --danger: #b8b3aa; --danger-soft: #262420;
+      --danger-line: #473f36; --danger-text: #b8b3aa;
+      --desk-bg: #262420; --desk-line: #473f36; --desk-text: #b8b3aa;
+      --desk-url-bg: #141618; --desk-url-line: #49443c; --desk-url-text: #d5d0c7;
+    }
+    /* 深色下 accent 变浅，实心按钮换深色字才看得清 */
+    html[data-theme="dark"] .primary { color: #1c1a17; }
+    /* 品牌区：去朱砂小印与朱点，行楷改无衬线纯文字 */
+    .brand-logo, .brand-name .seal { display: none; }
+    .brand-name {
+      font-family: var(--font-ui);
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: .1em;
+    }
+  }
 </style>
 </head>
 <body>
@@ -503,7 +537,7 @@
    安装，每次打开主程序都触发 controllerchange → 整页自动刷新。 */
 (function () {
   if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
-  var SWV = '2026-11-21-150';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
+  var SWV = '2026-11-21-151';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
   var sc = new URLSearchParams(location.search).get('sharecode') || 'X4WPKTHLIN';
   var url = '/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SWV;
   navigator.serviceWorker.getRegistration().then(function (reg) {
