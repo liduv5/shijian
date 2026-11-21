@@ -731,6 +731,21 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
 }
 .btn.primary:hover { background: var(--accent-hover); }
 .btn.primary:active { transform: translateY(1px); }
+
+/* 首页「+ 新建笔记」专属淡蓝：作为界面里唯一的亮色点缀，其他 .btn.primary 保持中性 */
+#homeNewNote {
+  background: #dbeafe;
+  color: #1e5aa8;
+  box-shadow: 0 4px 14px -6px rgba(37, 99, 235, .35);
+}
+#homeNewNote:hover { background: #c7ddf9; }
+#homeNewNote:active { transform: translateY(1px); }
+html[data-theme="dark"] #homeNewNote,
+html[data-theme="dark"] #homeNewNote:hover {
+  background: #bcd6f5;
+  color: #163a68;
+  box-shadow: 0 4px 14px -6px rgba(120, 170, 235, .35);
+}
 .btn.block { flex: 1; }
 .btn.ghost { color: var(--text-2); }
 .btn.ghost:hover { background: var(--surface-2); color: var(--text); }
