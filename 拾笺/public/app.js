@@ -622,8 +622,7 @@
     tree.innerHTML = '';
     if (state.search.trim()) { renderSearchResults(tree); return; }
 
-    $('#statNotes').textContent = `${state.notes.length} 篇`;
-    $('#statCats').textContent = `${state.categories.length} 个类别`;
+    $('#statText').textContent = `${state.notes.length} 篇 · ${state.categories.length} 个类别`;
 
     const nodes = [
       { key: 'all', label: '全部笔记', icon: I.grid, list: state.notes },
@@ -4126,8 +4125,7 @@
 
     restoreLastCat();
     applyRecentState();
-    $('#statNotes').textContent = `${state.notes.length} 篇`;
-    $('#statCats').textContent = `${state.categories.length} 个类别`;
+    $('#statText').textContent = `${state.notes.length} 篇 · ${state.categories.length} 个类别`;
     renderTree();
     renderList();
 
