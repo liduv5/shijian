@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-125 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-126 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-125';
+const BUILD = '2026-11-21-126';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -481,7 +481,7 @@ ok('输入法：格式操作静默聚焦不弹键盘，点正文才唤起输入�
   appSrc.indexOf("const KB_POLICY = 'virtualkeyboardpolicy';") >= 0 &&
   /function setKbManual\(on\) \{[\s\S]{0,260}pane\.setAttribute\(KB_POLICY, 'manual'\)/.test(appSrc) &&
   /function focusQuiet\(pane\) \{[\s\S]{0,220}setKbManual\(true\)/.test(appSrc) &&
-  /function hideSoftKeyboard\(\) \{[\s\S]{0,160}\.blur\(\)/.test(appSrc) &&
+  /function hideSoftKeyboard\(\) \{[\s\S]{0,300}\.blur\(\)/.test(appSrc) &&
   /function focusTyping\(el\) \{[\s\S]{0,260}if \(wasManual && document\.activeElement === t\) t\.blur\(\)/.test(appSrc) &&
   /* 面板按钮走的四条命令链都用静默聚焦 */
   (appSrc.match(/focusQuiet\(pane\);/g) || []).length >= 5 &&
@@ -504,6 +504,19 @@ ok('样式面板不再遮挡正文：编辑区抬到面板上方、调完格式�
   /body\.sj-style-open \.pwd-tip \{ display: none; \}/.test(styleSrc) &&
   /max-height: min\(88vh, 470px\)/.test(styleSrc) &&
   appSrc.indexOf("window.addEventListener('resize', () => { if (styleSheetOpen()) syncSheetHeight(); });") >= 0);
+
+ok('光标常驻 + 面板不误关：收键盘后焦点仍在正文，点正文只挪光标不收起面板',
+  /* 收键盘不能连光标一起收：blur 之后要把焦点静默放回正文 */
+  /function hideSoftKeyboard\(\) \{[\s\S]{0,420}hadPane[\s\S]{0,200}pane\.focus\(/.test(appSrc) &&
+  /function focusQuiet\(pane\) \{[\s\S]{0,220}setKbManual\(true\)[\s\S]{0,120}activeElement === el/.test(appSrc) &&
+  /* 面板开着点正文：定位光标 + 滚进视野，直接 return，不走 typingFocus */
+  /if \(styleSheetOpen\(\)\) \{[\s\S]{0,240}caretTo\(e\.clientX, e\.clientY\)[\s\S]{0,200}revealSelection\(\)[\s\S]{0,40}return;/.test(appSrc) &&
+  /* 外部点击的自动收起要放过整块编辑区，只留 A / × */
+  /t\.closest\('\.editor-pane'\)/.test(appSrc) &&
+  /t\.closest\('#richPane'\)/.test(appSrc) &&
+  /* 只有一根光标时点 B/I/U 也要有反馈：先选中所在段落再套格式 */
+  /if \(NARROW\(\) && \/\^\(bold\|italic\|underline\)\$\//.test(appSrc) &&
+  (appSrc.match(/function ensureBlockSel\(/g) || []).length === 1);
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

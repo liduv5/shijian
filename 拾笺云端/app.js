@@ -2200,17 +2200,28 @@
   function focusQuiet(pane) {
     const el = pane || $('#richPane');
     if (!el) return null;
-    if (document.activeElement === el) return el;
+    /* 每次都确认 manual 策略：先点正文唤起过键盘的话，kbManual 已经被
+       focusTyping 关掉了，这里不补回来，下一次聚焦又会弹键盘。 */
     setKbManual(true);
+    if (document.activeElement === el) return el;
     el.focus({ preventScroll: true });
     return el;
   }
 
-  /* 收起输入法但保住选区（打开样式面板时用，面板不该被键盘顶到半屏） */
+  /* 收起输入法但保住选区（打开样式面板时用，面板不该被键盘顶到半屏）。
+     2026-11-21 补：光 blur 会让正文失焦，光标那根竖线随之消失，
+     用户看不出自己在编辑哪一行。所以收完键盘要把焦点静默放回正文——
+     manual 策略下聚焦只画光标、不弹键盘，正好。 */
   function hideSoftKeyboard() {
     setKbManual(true);
     const ae = document.activeElement;
+    const hadPane = !!(ae && ae.id === 'richPane');
     if (ae && ae !== document.body && ae.blur) ae.blur();
+    if (!hadPane) return;
+    const pane = $('#richPane');
+    if (!pane) return;
+    try { pane.focus({ preventScroll: true }); } catch (_) { pane.focus(); }
+    try { restoreRange(); } catch (_) {}
   }
 
   /* 真要打字了：先撤掉 manual 再重新聚焦。已经聚焦的元素不会再触发
@@ -2258,10 +2269,34 @@
     else if (last.bottom > pr.bottom - pad) pane.scrollTop += (last.bottom - (pr.bottom - pad));
   }
 
+  /* 光标只是一根竖线时，先把整段选中再套格式，否则字号/颜色看不见效果。
+     选区优先取正文里当前的，取不到就退回 savedRange（点按钮后焦点会跑）。
+     放在模块作用域：样式面板（mobileHomeUI）和 exec 系列都要用。 */
+  function ensureBlockSel() {
+    const pane = $('#richPane');
+    if (!pane) return;
+    const sel = window.getSelection();
+    let r = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+    if (!r || !pane.contains(r.startContainer)) r = savedRange;
+    if (!r || !pane.contains(r.startContainer) || !r.collapsed) return;
+    let el = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+    while (el && el !== pane && !/^(P|DIV|LI|H1|H2|H3|BLOCKQUOTE|PRE)$/.test(el.tagName)) el = el.parentElement;
+    if (!el || el === pane) return;
+    const nr = document.createRange();
+    nr.selectNodeContents(el);
+    sel.removeAllRanges();
+    sel.addRange(nr);
+    savedRange = nr.cloneRange();
+  }
+
   function exec(cmd, value) {
     const pane = $('#richPane');
     focusQuiet(pane);
     restoreRange();
+    /* 手机上只有光标时点 B/I/U，浏览器只会给「下一次输入」记个状态，
+       现有文字一点变化都看不见，用户以为按钮坏了。窄屏下没有选区就先
+       选中光标所在那一段再套格式——和字号/颜色一个规矩，点了就有反馈。 */
+    if (NARROW() && /^(bold|italic|underline)$/.test(cmd)) ensureBlockSel();
     try { document.execCommand('styleWithCSS', false, false); } catch (_) {}
     document.execCommand(cmd, false, value);
     onRichInput();
@@ -2844,7 +2879,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-125';
+  const APP_BUILD = '2026-11-21-126';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -6147,25 +6182,8 @@
       return ok;
     }
 
-    /* 光标只是一根竖线时，先把整段选中再套格式，否则字号/颜色看不见效果。
-       选区优先取正文里当前的，取不到就退回 savedRange（点按钮后焦点会跑）。 */
-    function ensureBlockSel() {
-      const pane = $('#richPane');
-      if (!pane) return;
-      const sel = window.getSelection();
-      let r = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
-      if (!r || !pane.contains(r.startContainer)) r = savedRange;
-      if (!r || !pane.contains(r.startContainer) || !r.collapsed) return;
-      let el = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
-      while (el && el !== pane && !/^(P|DIV|LI|H1|H2|H3|BLOCKQUOTE|PRE)$/.test(el.tagName)) el = el.parentElement;
-      if (!el || el === pane) return;
-      const nr = document.createRange();
-      nr.selectNodeContents(el);
-      sel.removeAllRanges();
-      sel.addRange(nr);
-      savedRange = nr.cloneRange();
-    }
-
+    /* 光标只是一根竖线时，先把整段选中再套格式（ensureBlockSel 在模块作用域，
+       和 exec 系列共用一份） */
     /* 列表：先插普通列表，再把符号换成字母或方框 */
     function styleList(kind) {
       const pane = $('#richPane');
@@ -6272,11 +6290,15 @@
         if (b.dataset.paper != null) { applyPaper(b.dataset.paper); }
       });
     }
-    /* 点正文或别处收回面板；点 A 按钮自己不算（它负责开关） */
+    /* 点别处收回面板；点正文 / 标题行 / 面板自己都不收回。
+       2026-11-21：以前点一下正文面板就消失，用户没法「点一行、立刻调这行」，
+       所以把整块编辑区都排除掉，只有点 A 按钮或 × 才收起。 */
     document.addEventListener('click', (e) => {
       if (!styleSheetOpen()) return;
       if (STYLE_SHEET.contains(e.target)) return;
-      if (e.target.closest && e.target.closest('[data-act="fmt"]')) return;
+      const t = e.target;
+      if (t.closest && (t.closest('[data-act="fmt"]') || t.closest('.editor-pane')
+        || t.closest('#richPane') || t.closest('#mdInput') || t.closest('.sj-note-head'))) return;
       closeStyleSheet();
     });
     /* 转屏、键盘收起都会改变可视高度，面板高度跟着重算 */
@@ -6460,6 +6482,18 @@
         clearImgSel();
         /* Markdown 源码框自带原生键盘行为，交给它自己处理 */
         if (e.target.closest && e.target.closest('#mdInput')) return;
+        /* 样式面板开着时点正文 = 只挪光标、不弹输入法：
+           面板留着继续调格式，光标竖线看得见，能确认自己在改哪一行。
+           想打字就先点 A 或 × 收起面板（收起后才唤起键盘）。 */
+        if (styleSheetOpen()) {
+          const rp = $('#richPane');
+          if (rp) {
+            focusQuiet(rp);
+            caretTo(e.clientX, e.clientY);
+            revealSelection();
+          }
+          return;
+        }
         typingFocus({ x: e.clientX, y: e.clientY });
         return;
       }
