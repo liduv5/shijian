@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-142 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-143 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-142';
+const BUILD = '2026-11-21-143';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -409,8 +409,8 @@ ok('打开笔记默认阅读态、点正文才进编辑态（draft 直接进编�
 ok('手机端不再有 Markdown / 富文本切换，标题与返回箭头同一行、大字正文按截图',
   styleSrc.indexOf('#formatSwitch { display: none; }') >= 0 &&
   appSrc.indexOf("format: NARROW() ? 'rich' : 'md'") >= 0 &&
-  // 阅读态标题不再单独占一大行：搬进顶栏和返回箭头同行（20px/700 单行省略）
-  /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \.title-input \{[\s\S]{0,120}font-size: 20px; font-weight: 700/.test(styleSrc) &&
+  // 阅读态标题钉在顶栏和返回箭头同行，初始大字（26px/700），随滚动缩到 17px
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \.title-input \{[\s\S]{0,200}font-size: 26px; font-weight: 700/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.editor-head \{ display: none; \}/.test(styleSrc) &&
   !/body\.sj-note-open:not\(\.sj-note-edit\) \.title-input \{[\s\S]{0,140}font-size: 27px/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane,[\s\S]{0,120}font-size: 19px; line-height: 1\.78/.test(styleSrc) &&
@@ -735,20 +735,22 @@ ok('首页大标题原地缩小并钉在顶部：不再「先飞出屏幕再由�
   /* 缩到位的距离 = 条数+搜索那段的高度；到头才出细线；滚动时补软过渡 */
   /function placeHome\(\)[\s\S]{0,900}head\.offsetHeight[\s\S]{0,300}scale\([\s\S]{0,400}classList\.toggle\('scrolled', p > 0\.02\)[\s\S]{0,200}classList\.toggle\('show', p > 0\.9\)/.test(appSrc));
 
-ok('阅读态大标题随正文上滚、缩进顶栏（和华为备忘录一致）',
-  /* 标题 + 分类/日期放进正文顶部，跟着正文一起滚；滚动容器从 .rich-pane
-     换成整块 .editor-body，标题才滚得走 */
+ok('阅读态标题也原地缩小钉在顶栏：不再先滚出屏幕再浮回来',
+  /* 标题就在顶栏里（一个元素干到底），正文顶部只留分类/日期跟着滚走 */
   /id="sjReadHero"/.test(indexSrc) &&
-  /id="sjReadTitle"/.test(indexSrc) &&
+  /\.sj-rh-title \{ display: none; \}/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.editor-body \{[\s\S]{0,220}overflow-y: auto/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-read-hero \{[\s\S]{0,80}display: block/.test(styleSrc) &&
-  /* 静止时顶栏只留返回箭头，小标题等大标题滚过去再浮现 */
-  /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \.title-input \{[\s\S]{0,140}opacity: 0/.test(styleSrc) &&
+  /* 顶栏实心遮住从背后滚过的正文；标题从第一帧起就在原位，只做 transform 缩小 */
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \{[\s\S]{0,160}background: var\(--surface\)/.test(styleSrc) &&
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \.title-input \{[\s\S]{0,200}transform-origin: left center/.test(styleSrc) &&
+  !/body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \.title-input \{[\s\S]{0,140}opacity: 0/.test(styleSrc) &&
   /function mountMeta\(\)[\s\S]{0,700}READ_META\.appendChild\(META_CAT\)/.test(appSrc) &&
   /* 两种形态的滚动容器不同，切换时要换算位置，否则点一下正文会跳回顶部 */
   /rpEl\.scrollTop = Math\.max\(0, bodyY - heroH\)/.test(appSrc) &&
   /BODY_BOX\.scrollTop = rpY \+ heroH/.test(appSrc) &&
-  /function placeRead\(\)[\s\S]{0,700}ti\.style\.opacity/.test(appSrc));
+  /function placeRead\(\)[\s\S]{0,800}heroH[\s\S]{0,300}ti\.style\.transform = p > 0 \? 'scale\('/.test(appSrc) &&
+  /function placeRead\(\)[\s\S]{0,900}classList\.toggle\('sj-head-solid', p > 0\.9\)/.test(appSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

@@ -3567,8 +3567,11 @@ body.sj-note-open .pwa-tip {
     border: 0; outline: 0; background: transparent;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  /* 阅读态标题钉在顶栏里，随正文上滚原地缩小（和首页标题一个方式）：
+     初始大字，缩到位后定格，不再「先滚出屏幕再浮回来」。 */
   body.sj-note-open:not(.sj-note-edit) .sj-note-head .title-input {
-    font-size: 20px; font-weight: 700; line-height: 42px;
+    font-size: 26px; font-weight: 700; line-height: 42px;
+    transform-origin: left center; will-change: transform;
   }
   body.sj-note-edit .sj-note-head .title-input {
     font-size: 17px; font-weight: 600; line-height: 40px; height: 40px;
@@ -3647,26 +3650,19 @@ body.sj-note-open .pwa-tip {
     display: block;
     padding: 2px 20px 12px;
   }
-  .sj-rh-title {
-    margin: 0;
-    font-family: var(--font-ui);
-    font-size: 27px; line-height: 1.34; font-weight: 700;
-    color: var(--text); word-break: break-word;
-  }
-  .sj-rh-title:empty { display: none; }
+  /* 标题已经钉在顶栏（上面 .sj-note-head 里），正文顶部只留分类/日期跟着滚 */
+  .sj-rh-title { display: none; }
   .sj-rh-meta {
     display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
-    margin-top: 9px;
   }
   .sj-rh-meta:empty { display: none; }
   /* 分类/日期搬进大标题下方后，原来那一行只剩空壳 */
   body.sj-note-open:not(.sj-note-edit) .meta-row { display: none; }
-  /* 顶栏小标题：静止时藏起来，大标题滚过去后浮现（透明度由脚本按滚动位置写） */
-  body.sj-note-open:not(.sj-note-edit) .sj-note-head .title-input {
-    opacity: 0;
-    transition: opacity .14s linear;
+  /* 顶栏实心，正文滚到它背后被遮住；标题就钉在这里随滚动缩小 */
+  body.sj-note-open:not(.sj-note-edit) .sj-note-head {
+    position: relative; z-index: 6;
+    background: var(--surface);
   }
-  body.sj-note-open:not(.sj-note-edit) .sj-note-head { position: relative; }
   /* 滚动后顶栏下面补一条细线（伪元素，不占高度，不会让整页跳一下） */
   body.sj-note-open:not(.sj-note-edit).sj-head-solid .sj-note-head::after {
     content: ''; position: absolute; left: 0; right: 0; bottom: 0;

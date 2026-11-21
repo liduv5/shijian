@@ -3013,7 +3013,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-142';
+  const APP_BUILD = '2026-11-21-143';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -6286,6 +6286,7 @@
     const META_CAT = $('#sjMetaCat'), EDIT_BAR = $('#sjEditBar'), BODY_BOX = $('#editorBody');
     const META_ROW = META_CAT && META_CAT.parentElement;
     const READ_HERO = $('#sjReadHero'), READ_TITLE = $('#sjReadTitle'), READ_META = $('#sjRhMeta');
+    let lastReadHeroH = 0;   /* 阅读态 hero 高度：编辑态它是 display:none，换算滚动位置时得用缓存 */
     const IMG_BAR = $('#sjImgBar');
     const HEAD_BAR = document.querySelector('.editor-head');
     let noteModeId = null;
@@ -7057,7 +7058,7 @@
       const wasEdit = document.body.classList.contains('sj-note-edit');
       const rpEl = $('#richPane');
       const heroEl = $('#sjReadHero');
-      const heroH = heroEl && heroEl.offsetHeight ? heroEl.offsetHeight : 0;
+      const heroH = (heroEl && heroEl.offsetHeight ? heroEl.offsetHeight : lastReadHeroH) || 0;
       const bodyY = BODY_BOX ? BODY_BOX.scrollTop : 0;
       const rpY = rpEl ? rpEl.scrollTop : 0;
       document.body.classList.toggle('sj-note-edit', edit);
@@ -7070,8 +7071,8 @@
       const ti = $('#titleInput');
       if (ti) {
         ti.readOnly = !edit;
-        /* 阅读态由滚动位置决定小标题透明度，编辑态一律显示 */
-        if (edit) ti.style.opacity = '';
+        /* 阅读态由滚动位置决定标题缩放，编辑态一律恢复原字号 */
+        if (edit) { ti.style.transform = ''; ti.style.opacity = ''; }
       }
       const rp = $('#richPane');
       if (rp) rp.setAttribute('contenteditable', edit ? 'true' : 'false');
@@ -7355,15 +7356,20 @@
       const read = NARROW() && BODY_BOX
         && document.body.classList.contains('sj-note-open')
         && !document.body.classList.contains('sj-note-edit');
-      if (!read) { document.body.classList.remove('sj-head-solid'); return; }
-      /* 按「大标题底边离顶栏还有多远」算，而不是按滚动距离：
-         标题一两行还是三行都能对上，两个标题也不会同时叠在屏幕上。 */
-      if (!NOTE_HEAD || !READ_TITLE) return;
-      const gap = READ_TITLE.getBoundingClientRect().bottom - NOTE_HEAD.getBoundingClientRect().bottom;
-      const p = Math.min(1, Math.max(0, (4 - gap) / 24));
       const ti = $('#titleInput');
-      if (ti) ti.style.opacity = p > 0.02 ? p.toFixed(2) : '';
-      document.body.classList.toggle('sj-head-solid', p > 0.95);
+      if (!read) {
+        document.body.classList.remove('sj-head-solid');
+        if (ti) { ti.style.transform = ''; ti.style.opacity = ''; }
+        return;
+      }
+      /* 和首页标题一个方式：标题钉在顶栏里原地缩小，缩到位后一直定格。
+         分母取正文顶部那段（分类/日期）的高度——等它滑到顶栏背后，标题正好收满。 */
+      const heroH = READ_HERO && READ_HERO.offsetHeight ? READ_HERO.offsetHeight : 56;
+      lastReadHeroH = heroH;
+      const p = Math.min(1, Math.max(0, BODY_BOX.scrollTop / Math.max(40, heroH)));
+      if (ti) ti.style.transform = p > 0 ? 'scale(' + (1 - 0.35 * p).toFixed(3) + ')' : '';
+      /* 收起到位才出底边细线 */
+      document.body.classList.toggle('sj-head-solid', p > 0.9);
     }
     /* 形态切换、开新笔记、改分类之后由脚本主动调一次，不必等滚动事件 */
     function syncCollapse() { placeHome(); placeRead(); }
@@ -7376,7 +7382,7 @@
         mountMeta();
         document.body.classList.remove('sj-head-solid');
         const ti = $('#titleInput');
-        if (ti && !NARROW()) ti.style.opacity = '';
+        if (ti && !NARROW()) { ti.style.opacity = ''; ti.style.transform = ''; }
         syncCollapse();
       };
       const pane = document.querySelector('.list-pane');
