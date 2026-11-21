@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-129 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-130 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-129';
+const BUILD = '2026-11-21-130';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -489,7 +489,13 @@ ok('输入法：格式操作静默聚焦不弹键盘，点正文才唤起输入�
   /* 面板按钮走的四条命令链都用静默聚焦 */
   (appSrc.match(/focusQuiet\(pane\);/g) || []).length >= 5 &&
   /function openStyleSheet\(\) \{[\s\S]{0,420}hideSoftKeyboard\(\)/.test(appSrc) &&
-  /function closeStyleSheet\(\) \{[\s\S]{0,420}setKbManual\(false\)/.test(appSrc) &&
+  /* 收起面板不立刻放开键盘策略：一撤属性输入法就弹，和高度回落叠起来就是闪屏 */
+  !/function closeStyleSheet\(\) \{[\s\S]{0,600}setKbManual\(false\)/.test(appSrc) &&
+  /function closeStyleSheet\(\) \{[\s\S]{0,1100}cmSettle\(\)/.test(appSrc) &&
+  /* 收起时面板淡出再隐藏，别在编辑区回落时留一块空白 */
+  /\.sj-style-sheet\.sj-ss-closing \{[\s\S]{0,160}opacity: 0/.test(styleSrc) &&
+  /clearTimeout\(ssCloseTimer\)/.test(appSrc) &&
+  /STYLE_SHEET\.classList\.add\('sj-ss-closing'\)/.test(appSrc) &&
   /* 编辑态点正文（非图片、非待办框）才唤起输入法 */
   /function typingFocus\(point\) \{[\s\S]{0,200}focusTyping\(rp\)/.test(appSrc) &&
   /typingFocus\(\{ x: e\.clientX, y: e\.clientY \}\)/.test(appSrc) &&
@@ -522,13 +528,29 @@ ok('光标常驻 + 面板不误关：收键盘后焦点仍在正文，点正文�
   (appSrc.match(/function ensureBlockSel\(/g) || []).length === 1 &&
   /* 自绘光标：手机内核不保证聚焦时一直画原生光标，面板开着就自己画一根 */
   /\.sj-caret-mark \{[\s\S]{0,220}position: fixed/.test(styleSrc) &&
-  /body\.sj-style-open \.rich-pane \{ caret-color: transparent; \}/.test(styleSrc) &&
-  /function cmPaint\(\) \{[\s\S]{0,1400}classList\.remove\('hidden'\)/.test(appSrc) &&
+  /body\.sj-caret-drawn \.rich-pane \{ caret-color: transparent; \}/.test(styleSrc) &&
+  /function cmHide\(\) \{[\s\S]{0,220}classList\.remove\('sj-caret-drawn'\)/.test(appSrc) &&
+  /document\.body\.classList\.add\('sj-caret-drawn'\)/.test(appSrc) &&
+  /function cmPaint\(\) \{[\s\S]{0,2200}classList\.remove\('hidden'\)/.test(appSrc) &&
   /caretRefresh = cmSync/.test(appSrc) &&
   (appSrc.match(/refreshCaret\(\)/g) || []).length >= 6 &&
   /pane\.addEventListener\('scroll'[\s\S]{0,200}cmPaint\(\)/.test(appSrc) &&
-  /* 滚动事件被节流/不派发时的兜底：面板开着每 250ms 对一次位置 */
-  /setInterval\(\(\) => \{ if \(styleSheetOpen\(\)\) cmPaint\(\); \}, 250\)/.test(appSrc));
+  /* 兜底对位改成全局定时（cmPaint 自己判断该不该画） */
+  /setInterval\(cmPaint, 250\)/.test(appSrc) &&
+  /* 窄屏编辑态就一直画，不是只在面板打开时：收起那一刻光标要连续 */
+  /!NARROW\(\) \|\| !editing \|\| !\(focused \|\| styleSheetOpen\(\)\)/.test(appSrc) &&
+  /document\.addEventListener\('selectionchange', cmPaint\)/.test(appSrc));
+
+ok('收起样式面板不闪屏：高度回落有过渡、键盘不抢着弹、光标不断',
+  /* 过渡写在基础规则上，收起时才不会从 378 瞬跳到 56 */
+  /body\.sj-note-open \.app \{[\s\S]{0,300}transition: bottom \.18s/.test(styleSrc) &&
+  /function cmSettle\(\) \{[\s\S]{0,200}forEach\(\(t\) => setTimeout\(cmPaint, t\)\)/.test(appSrc) &&
+  /function closeStyleSheet\(\) \{[\s\S]{0,1100}cmSettle\(\)/.test(appSrc) &&
+  /* 收起时面板淡出再隐藏，别在编辑区回落时留一块空白 */
+  /\.sj-style-sheet\.sj-ss-closing \{[\s\S]{0,160}opacity: 0/.test(styleSrc) &&
+  /clearTimeout\(ssCloseTimer\)/.test(appSrc) &&
+  /STYLE_SHEET\.classList\.add\('sj-ss-closing'\)/.test(appSrc) &&
+  /function openStyleSheet\(\) \{[\s\S]{0,900}cmSettle\(\)/.test(appSrc));
 
 ok('列表：数字/字母/圆点/待办可互相换类型，数字列表真的是 <ol>',
   /* 数字列表必须走 insertOrderedList，之前只判了 alpha，点数字出来是圆点 */

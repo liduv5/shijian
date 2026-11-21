@@ -2901,7 +2901,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-129';
+  const APP_BUILD = '2026-11-21-130';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -6155,17 +6155,32 @@
     const PAPER_KEY = 'sj_paper_v1';
 
     function styleSheetOpen() {
-      return !!(STYLE_SHEET && !STYLE_SHEET.classList.contains('hidden'));
+      return !!(STYLE_SHEET && !STYLE_SHEET.classList.contains('hidden')
+        && !STYLE_SHEET.classList.contains('sj-ss-closing'));
     }
+    let ssCloseTimer = 0;
     function closeStyleSheet() {
-      if (STYLE_SHEET) STYLE_SHEET.classList.add('hidden');
+      if (!STYLE_SHEET) return;
+      /* 面板先淡出、编辑区同时回落，两个动作叠在一起，中间不会露出空白 */
+      STYLE_SHEET.classList.add('sj-ss-closing');
       document.body.classList.remove('sj-style-open');
       document.documentElement.style.removeProperty('--ss-h');
       const b = EDIT_BAR && EDIT_BAR.querySelector('[data-act="fmt"]');
       if (b) b.classList.remove('on');
-      /* 面板收起后恢复默认键盘策略：用户接下来点正文就该弹输入法了 */
-      setKbManual(false);
-      cmHide();
+      /* 这里不再立刻放开键盘策略：正文还有焦点，属性一撤输入法会自己弹起来，
+         视口再被压一次，和上面的高度回落叠在一起就是「闪一下」。
+         留给下一次点正文的 focusTyping 去撤——那时弹键盘才是用户的本意。
+         自绘光标也不藏：窄屏编辑态一直画着，收起面板时位置连续，不会断一下。 */
+      clearTimeout(ssCloseTimer);
+      ssCloseTimer = setTimeout(() => {
+        STYLE_SHEET.classList.add('hidden');
+        STYLE_SHEET.classList.remove('sj-ss-closing');
+      }, 180);
+      cmSettle();
+    }
+    /* 面板升降有 180ms 的高度过渡，期间布局一直在变，光标得多跟几帧 */
+    function cmSettle() {
+      [0, 60, 130, 220, 340].forEach((t) => setTimeout(cmPaint, t));
     }
 
     /* ---------------- 自绘光标 ----------------
@@ -6195,7 +6210,11 @@
       if (savedRange && pane.contains(savedRange.startContainer)) return savedRange;
       return null;
     }
-    function cmHide() { if (cmEl) cmEl.classList.add('hidden'); }
+    function cmHide() {
+      if (cmEl) cmEl.classList.add('hidden');
+      /* 自绘光标一收，原生光标就得回来，否则正文里一根都没有 */
+      document.body.classList.remove('sj-caret-drawn');
+    }
     /* 光标跟着字色走：改成紫字，光标就该是紫的，不然在彩色行里找不到它在哪 */
     function cmColorAt(r) {
       try {
@@ -6211,9 +6230,14 @@
     }
     function cmPaint() {
       const pane = $('#richPane');
-      if (!pane || !styleSheetOpen() || !document.body.classList.contains('sj-note-edit')) { cmHide(); return; }
+      if (!pane) return;
+      /* 窄屏编辑态就一直画（不再只在面板打开时）：这样收起面板那一刻光标是连续的，
+         不会「先藏掉再等原生重绘」中间空一拍。宽屏仍用系统原生光标。 */
+      const editing = document.body.classList.contains('sj-note-edit');
+      const focused = document.activeElement === pane;
+      if (!NARROW() || !editing || !(focused || styleSheetOpen())) { cmHide(); return; }
       const r = cmLiveRange();
-      if (!r) { cmHide(); return; }
+      if (!r || !r.collapsed) { cmHide(); return; }
       let box = null;
       try { const rs = r.getClientRects(); if (rs && rs.length) box = rs[rs.length - 1]; } catch (_) {}
       if (!box) {
@@ -6228,13 +6252,16 @@
       const lh = parseFloat(window.getComputedStyle(pane).lineHeight) || 22;
       const h = Math.round(box.height || lh);
       const y = Math.round(box.top);
-      if (y + h < pr.top || y > pr.bottom) { el.classList.add('hidden'); return; }
+      /* 滚出正文可视区就收起来（原生光标这时也不在可视区，不会两根打架） */
+      if (y + h < pr.top || y > pr.bottom) { cmHide(); return; }
       el.style.left = Math.round(box.left) + 'px';
       el.style.top = y + 'px';
       el.style.height = h + 'px';
       const col = cmColorAt(r);
       if (col) el.style.background = col;
       el.classList.remove('hidden');
+      /* 确实画出来了才把原生光标藏掉，避免出现「一根光标都没有」 */
+      document.body.classList.add('sj-caret-drawn');
     }
     /* 选区变了、滚动了、调完格式都走这里：位置重算一遍 */
     function cmSync() {
@@ -6248,20 +6275,27 @@
       const pane = $('#richPane');
       if (!pane) return;
       /* 滚动时直接重画（按 16ms 节流）：不用 rAF——部分内核/后台标签页里 rAF
-         会被节流甚至不跑，光标就会停在旧位置，用户看到的就是「又没了」。 */
+         会被节流甚至不跑，光标就会停在旧位置，用户看到的就是「又没了」。
+         cmPaint 自己判断该不该画，这里不用再套条件。 */
       let last = 0;
       pane.addEventListener('scroll', () => {
-        if (!styleSheetOpen()) return;
         const now = Date.now();
         if (now - last < 16) return;
         last = now;
         cmPaint();
       }, { passive: true });
-      window.addEventListener('resize', () => { if (styleSheetOpen()) cmPaint(); });
-      if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { if (styleSheetOpen()) cmPaint(); });
+      /* 打字、挪光标：选区一变就重画（自绘光标是唯一的可见光标） */
+      document.addEventListener('selectionchange', cmPaint);
+      pane.addEventListener('input', cmPaint);
+      pane.addEventListener('keyup', cmPaint);
+      window.addEventListener('resize', cmPaint);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', cmPaint);
+        window.visualViewport.addEventListener('scroll', cmPaint);
+      }
       /* 兜底：个别内核滚动时不派发 scroll（或被节流得很厉害），
-         面板开着就每 250ms 对一次位置，代价只有一次 getClientRects。 */
-      setInterval(() => { if (styleSheetOpen()) cmPaint(); }, 250);
+         每 250ms 对一次位置，代价只有一次 getClientRects。 */
+      setInterval(cmPaint, 250);
     })();
     /* 面板是 fixed 定位，量出真实高度交给 CSS，把编辑区整体抬到它上方 */
     function syncSheetHeight() {
@@ -6275,6 +6309,8 @@
       /* 调格式不需要输入法：面板弹起时顺手把键盘收掉，
          否则键盘会把面板顶到半屏（用户 2026-11-21 反馈） */
       hideSoftKeyboard();
+      clearTimeout(ssCloseTimer);
+      STYLE_SHEET.classList.remove('sj-ss-closing');
       STYLE_SHEET.classList.remove('hidden');
       document.body.classList.add('sj-style-open');
       const b = EDIT_BAR && EDIT_BAR.querySelector('[data-act="fmt"]');
@@ -6283,6 +6319,7 @@
       /* 先按上一帧的高度占位，再量真值兜一次；最后把正在调的位置滚进视野 */
       syncSheetHeight();
       requestAnimationFrame(() => { syncSheetHeight(); revealSelection(); refreshCaret(); });
+      cmSettle();
     }
 
     /* 对齐 / 缩进 / 颜色必须 styleWithCSS=true：否则浏览器会生成 align 属性或

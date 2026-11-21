@@ -3404,6 +3404,9 @@ body.m-list .pwa-tip {
      打开笔记时把主区底部抬到底栏上方，否则「附件 1」只露标题、卡片被挡住。 */
   body.sj-note-open .app {
     bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    /* 打开和收起都要有过渡：只写在 .sj-style-open 里的话，收起就是 378→56 的瞬跳，
+       整页像闪了一下（用户 2026-11-21 反馈） */
+    transition: bottom .18s var(--ease);
   }
   /* 详情页底栏占位，正文末尾不被遮住 */
   body.sj-note-open #mdInput,
@@ -3417,7 +3420,6 @@ body.m-list .pwa-tip {
      调完格式根本看不见效果。抬上去之后正文在自己的可视区里正常滚动。 */
   body.sj-note-open.sj-style-open .app {
     bottom: var(--ss-h, 360px);
-    transition: bottom .18s var(--ease);
   }
   /* 抬上去以后下方不再压着工具条，正文不用留那么大的空转余量 */
   body.sj-note-edit.sj-style-open .rich-pane,
@@ -3611,10 +3613,17 @@ body.m-list .pwa-tip {
     -webkit-tap-highlight-color: transparent;
   }
   .sj-style-sheet.hidden { display: none; }
+  /* 收起时先淡出 160ms 再 display:none：编辑区同时在回落，两者叠着走不露空档 */
+  .sj-style-sheet.sj-ss-closing {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .16s var(--ease);
+  }
 
   /* ---- 自绘光标：面板开着、键盘压着时，手机内核不保证一直画原生光标。
      这里在正文上方画一根自己的，跟着文字滚（位置由脚本按选区算）。
-     面板开着时把原生光标设成透明，避免两根一起闪。 */
+     窄屏编辑态一律用自绘的，原生那条设成透明避免两根一起闪——
+     只在面板开着时换，收起面板那一刻光标会断一下（用户 2026-11-21 反馈）。 */
   .sj-caret-mark {
     position: fixed; z-index: 91;
     width: 2px; border-radius: 1px;
@@ -3627,7 +3636,9 @@ body.m-list .pwa-tip {
     0%, 49% { opacity: 1; }
     50%, 100% { opacity: 0; }
   }
-  body.sj-style-open .rich-pane { caret-color: transparent; }
+  /* 只有自绘光标真的画出来了才藏原生光标：万一本脚本没画出（选区不在这里、
+     失焦等），原生光标还在，用户不会「一根都没有」 */
+  body.sj-caret-drawn .rich-pane { caret-color: transparent; }
 
   .sj-ss-head {
     display: flex; align-items: center; justify-content: space-between;
