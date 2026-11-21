@@ -350,28 +350,13 @@ html[data-theme="dark"] .rail-btn[data-tip]::after {
   padding: 2px 6px 10px;
 }
 
-/* 左上角品牌：手机端同款方印「拾」，改淡蓝与「+ 新建笔记」按钮呼应 */
+/* 左上角品牌：手机端同款「便签＋笔」图标，淡蓝配色与「+ 新建笔记」按钮呼应 */
 .logo {
   width: 32px; height: 32px;
   border-radius: 9px;
-  background: linear-gradient(150deg, #dbeafe, #bfdbfe);
-  color: #1e5aa8;
-  display: grid;
-  place-items: center;
-  font-family: var(--font-brand);
-  font-size: 20px;
-  line-height: 1;
-  padding-bottom: 2px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .7),
-              0 3px 10px -4px rgba(37, 99, 235, .4);
+  object-fit: contain;
   flex: none;
   user-select: none;
-}
-html[data-theme="dark"] .logo {
-  background: linear-gradient(150deg, #bcd6f5, #93c5fd);
-  color: #163a68;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4),
-              0 3px 10px -4px rgba(120, 170, 235, .45);
 }
 
 .brand-text { flex: 1; min-width: 0; }
