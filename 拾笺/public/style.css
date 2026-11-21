@@ -347,7 +347,7 @@ html[data-theme="dark"] .rail-btn[data-tip]::after {
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 2px 6px 10px;
+  padding: 0 6px 4px;
 }
 
 /* 左上角品牌：淡蓝便签＋淡粉笔图标（去背景），放大显示 */
