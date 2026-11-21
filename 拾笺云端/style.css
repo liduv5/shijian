@@ -2839,6 +2839,7 @@ body.m-list .pwa-tip {
 .sj-home-head, .sj-fab, .sj-tabbar, .sj-detail-bar,
 .sj-cat-mgr, .sj-manage-menu, .sj-more-btn, .sj-more-menu,
 .sj-cat-editor, .sj-note-head, .sj-edit-bar, .sj-meta-cat { display: none; }
+.sj-meta-date, .sj-img-bar { display: none; }
 
 @media (max-width: 980px) {
   /* ---- 华为备忘录配色（仅窄屏）----
@@ -3422,11 +3423,16 @@ body.m-list .pwa-tip {
      两种状态共用一套 DOM：body.sj-note-edit 切换排版与底栏，
      桌面端没有任何影响（全部写在 ≤980px 内）。
      ============================================================ */
-  /* 头部：阅读态只露返回箭头；编辑态露出标题 + 撤销/重做/完成 */
+  /* 头部：手机端两种形态都是「返回 + 标题」同一行；阅读态只是标题不可编辑。
+     以前阅读态标题单独占一大行，和返回箭头分两行，用户 2026-11-21 要求并到一行。 */
   .sj-note-head {
     display: flex; align-items: center; gap: 6px; flex: none;
     padding: calc(8px + env(safe-area-inset-top, 0px)) 10px 0;
   }
+  /* 阅读态右上角有固定的四点按钮（右侧 12 + 40 宽），给标题让出位置 */
+  body.sj-note-open:not(.sj-note-edit) .sj-note-head { padding-right: 58px; }
+  /* 编辑态右上角是撤销/重做/完成，四点按钮会压住「完成」，收起 */
+  body.sj-note-edit .sj-more-btn { display: none; }
   .sj-nh-btn {
     display: flex; align-items: center; justify-content: center;
     width: 40px; height: 40px; flex: none;
@@ -3437,38 +3443,77 @@ body.m-list .pwa-tip {
   .sj-nh-btn .ico { width: 23px; height: 23px; stroke-width: 2; }
   .sj-nh-acts { display: none; align-items: center; flex: none; }
   .sj-nh-done { color: var(--accent); }
-  /* 编辑态：真正的标题输入框被搬进这一行，和返回/撤销/完成同一行 */
   body.sj-note-edit .sj-nh-acts { display: flex; }
-  body.sj-note-edit .sj-note-head .title-input {
+  /* 标题输入框：两种形态都在顶栏（阅读态只读），和返回箭头同一行 */
+  .sj-note-head .title-input {
     order: 0;              /* 覆盖手机端旧规则里的 order:-1，否则会把返回键挤到右边 */
-    flex: 1 1 auto; min-width: 0; width: auto; height: 40px; padding: 0 2px;
-    font-family: var(--font-ui); font-size: 17px; font-weight: 600;
-    letter-spacing: 0; line-height: 40px; color: var(--text);
+    flex: 1 1 auto; min-width: 0; width: auto; height: 42px; padding: 0 2px;
+    font-family: var(--font-ui); letter-spacing: 0; color: var(--text);
     border: 0; outline: 0; background: transparent;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  body.sj-note-open:not(.sj-note-edit) .sj-note-head .title-input {
+    font-size: 20px; font-weight: 700; line-height: 42px;
+  }
+  body.sj-note-edit .sj-note-head .title-input {
+    font-size: 17px; font-weight: 600; line-height: 40px; height: 40px;
+  }
 
-  /* 分类胶囊：日期后面那颗「未分类」 */
+  /* 标题下面一行：分类（可点换类）+ 创建日期。
+     分类不再重复出现在右边胶囊里，见 updateMetaCat。 */
   .sj-meta-cat {
-    display: inline-flex; align-items: center;
-    height: 22px; padding: 0 10px; flex: none;
-    border-radius: 999px; background: var(--surface-2);
-    font-size: 12px; color: var(--text-3); white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 3px;
+    height: 22px; padding: 0 9px; flex: none; max-width: 52vw;
+    border: 0; border-radius: 999px; background: var(--surface-2);
+    font-family: var(--font-ui); font-size: 12.5px; color: var(--accent);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
+  .sj-meta-cat::after { content: '▾'; font-size: 9px; opacity: .7; flex: none; }
+  .sj-meta-cat.is-empty { color: var(--text-3); }
+  .sj-meta-cat:active { background: var(--accent-soft); }
   .sj-meta-cat.hidden { display: none; }
+  .sj-meta-date {
+    display: inline-flex; align-items: center; flex: none;
+    font-family: var(--font-ui); font-size: 12.5px; color: var(--text-3);
+  }
+  .sj-meta-date::before { content: '·'; margin-right: 5px; opacity: .8; }
+  .sj-meta-date.hidden { display: none; }
+  #metaInfo { display: none; }   /* 手机端这一行改用分类 + 日期两段，避免重复 */
 
-  /* ---- 阅读态：大标题 + 日期/分类 + 大字正文 ---- */
-  body.sj-note-open:not(.sj-note-edit) .editor-head {
-    display: block; padding: 4px 20px 0;
+  /* 正文图片：铺满可用宽度、圆角；选中时描蓝边，配合下方操作条 */
+  body.sj-note-open #richPane img,
+  body.sj-note-open #previewPane img {
+    max-width: 100%; height: auto; border-radius: 10px; display: block; margin: 10px 0;
   }
-  body.sj-note-open:not(.sj-note-edit) .title-input {
-    width: 100%;
-    font-size: 27px; font-weight: 700; line-height: 1.32; letter-spacing: -.02em;
-    padding: 0;
+  #richPane img.sj-img-sel { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* 图片操作条：浮在编辑工具条上方 */
+  .sj-img-bar {
+    position: fixed; z-index: 63;
+    left: 50%; transform: translateX(-50%);
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    display: flex; align-items: center; gap: 2px; padding: 4px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 999px; box-shadow: var(--shadow-lg);
   }
+  .sj-img-bar.hidden { display: none; }
+  .sj-img-bar button {
+    display: flex; align-items: center; gap: 4px; flex: none;
+    height: 36px; padding: 0 12px; border: 0; border-radius: 999px;
+    background: transparent; color: var(--text);
+    font-family: var(--font-ui); font-size: 13px;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .sj-img-bar button:active { background: var(--surface-2); }
+  .sj-img-bar button .ico { width: 17px; height: 17px; }
+  .sj-img-bar button[data-act="img-del"] { color: #d93b3b; }
+
+  /* ---- 阅读态：标题已在顶栏，正文上移 ---- */
+  body.sj-note-open:not(.sj-note-edit) .editor-head { display: none; }
   body.sj-note-open:not(.sj-note-edit) .editor-actions { display: none; }
   body.sj-note-open:not(.sj-note-edit) .meta-row {
-    padding: 8px 20px 6px; font-size: 12.5px; gap: 8px;
+    padding: 6px 20px 8px; font-size: 12.5px; gap: 7px;
   }
   body.sj-note-open:not(.sj-note-edit) .meta-dot,
   body.sj-note-open:not(.sj-note-edit) #saveState,
@@ -3494,7 +3539,7 @@ body.m-list .pwa-tip {
 
   /* ---- 编辑态：紧凑头部 + 编辑工具条 ---- */
   body.sj-note-edit .editor-head { display: none; }
-  body.sj-note-edit .meta-row { padding: 2px 20px 2px; font-size: 12px; opacity: .55; gap: 8px; }
+  body.sj-note-edit .meta-row { padding: 2px 20px 6px; font-size: 12.5px; gap: 7px; }
   body.sj-note-edit .meta-dot,
   body.sj-note-edit #saveState,
   body.sj-note-edit .word-count { display: none; }

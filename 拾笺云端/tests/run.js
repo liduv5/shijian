@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-121 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-122 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-121';
+const BUILD = '2026-11-21-122';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -402,16 +402,41 @@ ok('打开笔记默认阅读态、点正文才进编辑态（draft 直接进编�
   appSrc.indexOf("document.body.classList.toggle('sj-note-edit', edit)") >= 0 &&
   appSrc.indexOf("setNoteMode(note === draftNote || id === String(DRAFT_ID) ? 'edit' : 'read'") >= 0 &&
   appSrc.indexOf('caretRangeFromPoint') >= 0 &&
-  /BODY_BOX\.addEventListener\('click'[\s\S]{0,220}setNoteMode\('edit'/.test(appSrc) &&
+  /BODY_BOX\.addEventListener\('click'[\s\S]{0,900}setNoteMode\('edit'/.test(appSrc) &&
   appSrc.indexOf("if (a === 'nh-done') { setNoteMode('read'); return; }") >= 0);
 
-ok('手机端不再有 Markdown / 富文本切换，阅读态大标题与大字正文按截图',
+ok('手机端不再有 Markdown / 富文本切换，标题与返回箭头同一行、大字正文按截图',
   styleSrc.indexOf('#formatSwitch { display: none; }') >= 0 &&
   appSrc.indexOf("format: NARROW() ? 'rich' : 'md'") >= 0 &&
-  /body\.sj-note-open:not\(\.sj-note-edit\) \.title-input \{[\s\S]{0,140}font-size: 27px; font-weight: 700/.test(styleSrc) &&
+  // 阅读态标题不再单独占一大行：搬进顶栏和返回箭头同行（20px/700 单行省略）
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \.title-input \{[\s\S]{0,120}font-size: 20px; font-weight: 700/.test(styleSrc) &&
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.editor-head \{ display: none; \}/.test(styleSrc) &&
+  !/body\.sj-note-open:not\(\.sj-note-edit\) \.title-input \{[\s\S]{0,140}font-size: 27px/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane,[\s\S]{0,120}font-size: 19px; line-height: 1\.78/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-detail-bar button\[data-act="back"\] \{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('.sj-meta-cat {') >= 0);
+
+ok('标题下面只留一份分类且可点：分类胶囊可点换类、右边不再重复一颗',
+  indexSrc.indexOf('id="sjMetaDate"') >= 0 &&
+  indexSrc.indexOf('<button type="button" class="sj-meta-cat hidden" id="sjMetaCat"') >= 0 &&
+  appSrc.indexOf('META_CAT.addEventListener') >= 0 &&
+  appSrc.indexOf('openCategoryPicker(note)') >= 0 &&
+  appSrc.indexOf("d.textContent = note ? '创建于 ' + fmtDate(note.createdAt) : ''") >= 0 &&
+  /#metaInfo \{ display: none; \}/.test(styleSrc) &&
+  /\.sj-meta-cat::after \{ content: '▾'/.test(styleSrc) &&
+  appSrc.indexOf("window.addEventListener('sj-categories-changed', () => { refreshNoteMetaLine(); })") >= 0);
+
+ok('写正文时图片保持图片：手机端进编辑先转富文本，不再露出 data URI 长串',
+  appSrc.indexOf('function toRichEditor()') >= 0 &&
+  /function toRichEditor\(\)[\s\S]{0,420}renderMarkdown/.test(appSrc) &&
+  /setNoteMode[\s\S]{0,700}toRichEditor\(\);/.test(appSrc) &&
+  appSrc.indexOf('if (NARROW()) return;') >= 0 &&
+  indexSrc.indexOf('id="sjImgBar"') >= 0 &&
+  appSrc.indexOf('function selectImg(img)') >= 0 &&
+  appSrc.indexOf('function moveImg(dir)') >= 0 &&
+  appSrc.indexOf('function deleteImg()') >= 0 &&
+  /#richPane img\.sj-img-sel \{ outline: 2px solid var\(--accent\)/.test(styleSrc) &&
+  /\.sj-img-bar \{[\s\S]{0,180}position: fixed; z-index: 63/.test(styleSrc));
 
 ok('编辑态：紧凑头部、隐藏四宫格底栏、露出编辑工具条',
   /body\.sj-note-edit \.editor-head \{ display: none; \}/.test(styleSrc) &&
@@ -419,7 +444,7 @@ ok('编辑态：紧凑头部、隐藏四宫格底栏、露出编辑工具条',
   /body\.sj-note-edit \.sj-edit-bar:not\(\.hidden\) \{ display: flex; \}/.test(styleSrc) &&
   /body\.sj-note-edit\.sj-note-fmt \.toolbar \{ display: flex; \}/.test(styleSrc) &&
   /body\.sj-note-edit \.sj-note-head \.title-input \{[\s\S]{0,220}font-size: 17px; font-weight: 600/.test(styleSrc) &&
-  appSrc.indexOf('function mountTitle(edit)') >= 0 &&
+  appSrc.indexOf('function mountTitle()') >= 0 &&
   appSrc.indexOf('NOTE_HEAD.insertBefore(ti, NOTE_ACTIONS)') >= 0);
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');

@@ -405,6 +405,9 @@
   function bindImgResize(container, mode) {
     if (!container) return;
     container.addEventListener('click', (e) => {
+      /* 手机端走详情页自己的图片操作条（上移/下移/删除），不开桌面这条宽度条；
+         这里直接放行，别 stopPropagation，否则点正文进编辑会被它吃掉。 */
+      if (NARROW()) return;
       const img = e.target.closest ? e.target.closest('img') : null;
       if (!img || !container.contains(img)) return;
       e.preventDefault();
@@ -1124,6 +1127,7 @@
     if (!note || state.selNote !== note.id) return;
     const el = $('#metaInfo');
     if (el) el.textContent = metaInfoText(note);
+    if (window.SJRefreshNoteMeta) window.SJRefreshNoteMeta();
   }
   function scopeName(scope) {
     if (state.search.trim()) return '搜索结果';
@@ -2755,7 +2759,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-121';
+  const APP_BUILD = '2026-11-21-122';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -3982,6 +3986,8 @@
         const cat = catMap().get(id);
         const el = $('#metaInfo');
         if (el) el.textContent = metaInfoText(note);
+        /* 手机端标题下面那一行也要跟着换，否则分类还停在上一个 */
+        if (window.SJRefreshNoteMeta) window.SJRefreshNoteMeta();
         toast('已移动到「' + (cat ? cat.name : '未分类') + '」');
       });
     });
@@ -5887,16 +5893,17 @@
        不改任何数据格式，桌面端完全不受影响（样式都在 ≤980px 内）。 */
     const NOTE_HEAD = $('#sjNoteHead'), NOTE_ACTIONS = NOTE_HEAD && NOTE_HEAD.querySelector('.sj-nh-acts');
     const META_CAT = $('#sjMetaCat'), EDIT_BAR = $('#sjEditBar'), BODY_BOX = $('#editorBody');
+    const IMG_BAR = $('#sjImgBar');
     const HEAD_BAR = document.querySelector('.editor-head');
     let noteModeId = null;
 
-    /* 标题输入框在两态之间搬位置：阅读态放在正文上方当大标题；
-       编辑态挪进顶栏，和返回/撤销/完成挤同一行（华为备忘录就是这样）。
+    /* 标题输入框：手机端两种形态都待在顶栏，和返回箭头同一行（阅读态只是不可编辑）；
+       桌面端仍放在正文上方的 .editor-head 里。
        事件监听挂在元素本身，搬动节点不会失效。 */
-    function mountTitle(edit) {
+    function mountTitle() {
       const ti = $('#titleInput');
       if (!ti) return;
-      if (edit) {
+      if (NARROW()) {
         if (NOTE_HEAD && NOTE_ACTIONS && ti.parentElement !== NOTE_HEAD) {
           NOTE_HEAD.insertBefore(ti, NOTE_ACTIONS);
         }
@@ -5904,12 +5911,95 @@
         HEAD_BAR.insertBefore(ti, HEAD_BAR.firstChild);
       }
     }
+    /* 标题下方那一行：分类（可点改名/换类）+ 创建日期。
+       分类不再重复出现在右边胶囊里（用户 2026-11-21 反馈「分类出现两次」）。 */
     function updateMetaCat(note) {
       if (!META_CAT) return;
       const cat = note && note.categoryId ? state.categories.find((c) => c.id === note.categoryId) : null;
       META_CAT.textContent = cat ? cat.name : '未分类';
       META_CAT.classList.toggle('hidden', !note);
+      META_CAT.classList.toggle('is-empty', !cat);
+      const d = $('#sjMetaDate');
+      if (d) {
+        d.textContent = note ? '创建于 ' + fmtDate(note.createdAt) : '';
+        d.classList.toggle('hidden', !note);
+      }
     }
+    /* 别处改了分类（管理页改名、换类、合并）后，把这一行刷新回来 */
+    function refreshNoteMetaLine() {
+      const n = currentNote();
+      if (n) updateMetaCat(n);
+    }
+    window.SJRefreshNoteMeta = refreshNoteMetaLine;
+
+    /* ---- 正文图片：点一下选中，浮动条里上移 / 下移 / 删除 ----
+       富文本里的图片本来就是 <img> 节点，这里只补「选中 + 换位置」，
+       改完调 onRichInput() 落脏，和正常打字走同一条保存链路。 */
+    let imgSel = null;
+    function imgBlockOf(img) {
+      const pane = $('#richPane');
+      if (!pane || !img) return img;
+      let el = img;
+      while (el && el.parentElement && el.parentElement !== pane) el = el.parentElement;
+      return el && el.parentElement === pane ? el : img;
+    }
+    function clearImgSel() {
+      if (imgSel) imgSel.classList.remove('sj-img-sel');
+      imgSel = null;
+      if (IMG_BAR) IMG_BAR.classList.add('hidden');
+    }
+    function selectImg(img) {
+      clearImgSel();
+      if (!img) return;
+      imgSel = img;
+      img.classList.add('sj-img-sel');
+      if (IMG_BAR) IMG_BAR.classList.remove('hidden');
+    }
+    function moveImg(dir) {
+      if (!imgSel) return;
+      const blk = imgBlockOf(imgSel);
+      const sib = dir < 0 ? blk.previousElementSibling : blk.nextElementSibling;
+      if (!sib) { toast(dir < 0 ? '已经是最前面' : '已经是最后面'); return; }
+      if (dir < 0) blk.parentElement.insertBefore(blk, sib);
+      else blk.parentElement.insertBefore(sib, blk);
+      onRichInput();
+      selectImg(imgSel);
+    }
+    function deleteImg() {
+      if (!imgSel) return;
+      const blk = imgBlockOf(imgSel);
+      /* 整个块里只有这张图就整块删掉，别留下一个空的占位段落 */
+      const onlyImg = blk === imgSel || (blk.querySelectorAll('img').length === 1 && !blk.textContent.trim());
+      (onlyImg ? blk : imgSel).remove();
+      clearImgSel();
+      onRichInput();
+      toast('已删除图片');
+    }
+    if (IMG_BAR) IMG_BAR.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-act]');
+      if (!b) return;
+      e.preventDefault();
+      const a = b.dataset.act;
+      if (a === 'img-up') moveImg(-1);
+      else if (a === 'img-down') moveImg(1);
+      else if (a === 'img-del') deleteImg();
+    });
+    /* 点别处收起图片操作条（点图片本身由正文点击处理） */
+    document.addEventListener('click', (e) => {
+      if (!imgSel) return;
+      if (IMG_BAR && IMG_BAR.contains(e.target)) return;
+      if (e.target.closest && e.target.closest('#richPane img')) return;
+      clearImgSel();
+    });
+    /* 标题下方的分类：点一下就换类（复用原有的分类选择弹层） */
+    if (META_CAT) META_CAT.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const note = currentNote();
+      if (note) openCategoryPicker(note);
+    });
+    /* 分类改名 / 合并后，标题下面这一行跟着变 */
+    window.addEventListener('sj-categories-changed', () => { refreshNoteMetaLine(); });
     /* 点正文进入编辑时，把光标落到手指点的那个字后面，而不是跳回开头 */
     function caretTo(x, y) {
       const pane = $('#richPane');
@@ -5937,6 +6027,21 @@
         }
       } catch (_) {}
     }
+    /* 手机端只认富文本：Markdown 里的图片是 `![](data:image/…)` / `![](/api/files/…)`
+       这种长串源码，直接丢进 textarea 就是用户说的「一长串压缩码」。
+       进编辑前先渲染成富文本，图片回到 <img>，才能正常显示、删除、换位置。
+       只在真正输入后由 onRichInput 把 format 写成 rich，光看不动不改数据。 */
+    function toRichEditor() {
+      if (viewFormat === 'rich') return;
+      const md = $('#mdInput').value || '';
+      const pane = $('#richPane');
+      if (pane) pane.innerHTML = DOMPurify.sanitize(renderMarkdown(md));
+      viewFormat = 'rich';
+      state.viewMode = 'edit';
+      applyFormat('rich');
+      renderToolbar();
+      decorateRichAttachments();
+    }
     function setNoteMode(mode, point, opts) {
       const note = currentNote();
       if (!note) return;
@@ -5950,11 +6055,8 @@
       if (rp) rp.setAttribute('contenteditable', edit ? 'true' : 'false');
       if (EDIT_BAR) EDIT_BAR.classList.toggle('hidden', !edit);
       if (edit) {
-        if (viewFormat === 'md' && state.viewMode !== 'edit') {
-          state.viewMode = 'edit';
-          applyFormat(viewFormat);
-        }
-        mountTitle(true);
+        toRichEditor();
+        mountTitle();
         /* 打开已有笔记不抢焦点：手机上会自动弹键盘，很打扰 */
         if (!doFocus) return;
         setTimeout(() => {
@@ -5964,7 +6066,8 @@
           if (viewFormat === 'rich' && point) caretTo(point.x, point.y);
         }, 0);
       } else {
-        mountTitle(false);
+        clearImgSel();
+        mountTitle();
         const ae = document.activeElement;
         if (ae && ae.blur && ae.tagName && ae.tagName !== 'BODY') ae.blur();
         void saveNow();
@@ -5981,7 +6084,7 @@
         document.body.classList.remove('sj-note-edit', 'sj-note-fmt');
         noteModeId = null;
         if (EDIT_BAR) EDIT_BAR.classList.add('hidden');
-        mountTitle(false);
+        mountTitle();
         return;
       }
       updateMetaCat(note);
@@ -5993,7 +6096,7 @@
         const ti = $('#titleInput'); if (ti) ti.readOnly = false;
         const rp = $('#richPane'); if (rp) rp.setAttribute('contenteditable', 'true');
         if (EDIT_BAR) EDIT_BAR.classList.add('hidden');
-        mountTitle(false);
+        mountTitle();
         noteModeId = String(note.id);
         return;
       }
@@ -6032,11 +6135,27 @@
       const proxy = DETAIL && DETAIL.querySelector(`[data-act="${a}"]`);
       if (proxy) { proxy.click(); setTimeout(syncNoteMode, 0); }
     });
-    /* 阅读态点正文任意位置 → 进编辑态，并把光标落到点击处 */
+    /* 阅读态点正文任意位置 → 进编辑态，并把光标落到点击处；
+       编辑态点图片 → 选中并弹出图片操作条，点别处收起。 */
     if (BODY_BOX) BODY_BOX.addEventListener('click', (e) => {
       if (!NARROW() || !currentNote()) return;
-      if (document.body.classList.contains('sj-note-edit')) return;
+      const img = e.target.closest ? e.target.closest('#richPane img, #previewPane img') : null;
+      if (document.body.classList.contains('sj-note-edit')) {
+        const inRich = img && img.closest('#richPane') ? img : null;
+        if (inRich) { e.preventDefault(); selectImg(inRich); } else clearImgSel();
+        return;
+      }
+      /* 阅读态点图片：同样进编辑，并把同一张图选中，省得再点一次 */
+      let idx = -1;
+      if (img) {
+        const pane = img.closest('#richPane') || img.closest('#previewPane');
+        if (pane) idx = Array.prototype.indexOf.call(pane.querySelectorAll('img'), img);
+      }
       setNoteMode('edit', { x: e.clientX, y: e.clientY });
+      if (idx >= 0) setTimeout(() => {
+        const again = BODY_BOX.querySelectorAll('#richPane img')[idx];
+        if (again) selectImg(again);
+      }, 0);
     });
     /* 阅读态点标题 → 进编辑态并聚焦标题 */
     const TI = $('#titleInput');

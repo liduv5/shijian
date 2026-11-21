@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-21-121';
+  var SWV = '2026-11-21-122';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -382,7 +382,10 @@
 
       <div class="meta-row">
         <span id="metaInfo"></span>
-        <span class="sj-meta-cat hidden" id="sjMetaCat"></span>
+        <!-- 手机端：分类 + 日期紧贴标题下方，分类本身可点（点开改分类）；
+             桌面端仍用上面这行合并文字，这一组在窄屏外隐藏。 -->
+        <button type="button" class="sj-meta-cat hidden" id="sjMetaCat" aria-label="修改分类"></button>
+        <span class="sj-meta-date hidden" id="sjMetaDate"></span>
         <span class="meta-dot">·</span>
         <span id="saveState" class="save-state"></span>
         <span class="spacer"></span>
@@ -464,6 +467,20 @@
       </button>
       <button type="button" data-act="more" aria-label="更多">
         <svg viewBox="0 0 24 24" class="ico"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+      </button>
+    </div>
+
+    <!-- 点正文里的图片 → 弹出这颗浮动条：上移 / 下移 / 删除。
+         只在手机端编辑态出现，操作完直接改富文本并落脏，不新增数据格式。 -->
+    <div class="sj-img-bar hidden" id="sjImgBar" role="toolbar" aria-label="图片操作">
+      <button type="button" data-act="img-up" aria-label="上移">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M12 19V5M6 11l6-6 6 6"/></svg><span>上移</span>
+      </button>
+      <button type="button" data-act="img-down" aria-label="下移">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M6 13l6 6 6-6"/></svg><span>下移</span>
+      </button>
+      <button type="button" data-act="img-del" aria-label="删除图片" class="danger-hover">
+        <svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg><span>删除</span>
       </button>
     </div>
   </main>
