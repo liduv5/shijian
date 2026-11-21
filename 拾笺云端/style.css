@@ -2599,9 +2599,12 @@ img.sj-img-picked {
   white-space: nowrap;
 }
 
-/* 抽屉打开时先收起底部提示条，避免挡住侧栏按钮 */
+/* 抽屉打开时先收起底部提示条，避免挡住侧栏按钮；
+   笔记详情页同理——它压着编辑工具条/详情底栏（z-index 89 高过 61），
+   首次打开又没装 PWA 的人会被它挡住右下角那颗「更多」。 */
 body.m-tree .pwa-tip,
-body.m-list .pwa-tip {
+body.m-list .pwa-tip,
+body.sj-note-open .pwa-tip {
   opacity: 0;
   transform: translate(-50%, 150%);
   pointer-events: none;

@@ -3007,7 +3007,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-137';
+  const APP_BUILD = '2026-11-21-138';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -4482,7 +4482,11 @@
 
   /* ---------------------------------------------------------- 右键菜单 */
   const ctx = $('#ctxMenu');
-  function showCtx(x, y, items) {
+  /* 菜单常常是在一次 click 里弹出的（底栏「更多」这类），事件紧接着冒泡到下面那个
+     「点别处关菜单」的 document 监听，会把刚弹出的菜单立刻关掉——表现就是点了没反应。
+     这里立一个只活到本任务结束的守卫，把这一次冒泡挡掉；下次点击是新任务，守卫已清。 */
+  let ctxJustOpened = false;
+  function showCtx(x, y, items, opts) {
     ctx.innerHTML = '';
     items.forEach((it) => {
       if (it.sep) {
@@ -4498,11 +4502,15 @@
     ctx.classList.remove('hidden');
     const rect = ctx.getBoundingClientRect();
     const px = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8));
-    const py = Math.max(8, Math.min(y, window.innerHeight - rect.height - 8));
+    /* above：y 当作「菜单底边」看待，让菜单整个落在锚点上方（底栏/工具条那颗「更多」） */
+    const top = opts && opts.above ? y - rect.height : y;
+    const py = Math.max(8, Math.min(top, window.innerHeight - rect.height - 8));
     ctx.style.left = px + 'px';
     ctx.style.top = py + 'px';
+    ctxJustOpened = true;
+    setTimeout(() => { ctxJustOpened = false; }, 0);
   }
-  function hideCtx() { ctx.classList.add('hidden'); }
+  function hideCtx() { ctx.classList.add('hidden'); ctxJustOpened = false; }
 
   /* ---------------------------------------------------------- 笔记卡片操作菜单
      手机上没有 hover 也没有右键，编辑器那排按钮又会被横向裁掉，
@@ -4560,6 +4568,7 @@
   }
 
   document.addEventListener('click', (e) => {
+    if (ctxJustOpened) return;
     if (!ctx.contains(e.target)) hideCtx();
   });
   document.addEventListener('contextmenu', (e) => {
@@ -6155,6 +6164,20 @@
       renderList();
     });
 
+    /* 详情页「更多」菜单：锚点一定要用真正被点到的那个按钮。
+       编辑态下详情底栏是 display:none，拿它的 rect 会得到全 0，
+       菜单就被钳到屏幕左上角——看着像没反应。所以两处入口各传自己的按钮。 */
+    function openNoteMore(anchor, note) {
+      if (!anchor || !note) return;
+      const r = anchor.getBoundingClientRect();
+      showCtx(r.right - 120, r.top - 8, [
+        { label: '历史版本', icon: ICON_ALL, onClick: () => { const el = $('#historyBtn'); if (el) el.click(); } },
+        { label: '移动到分类', icon: I.folder, onClick: () => openCategoryPicker(note) },
+        { sep: true },
+        { label: '同步到云端', icon: I.download, onClick: () => { if (window.SJSync) window.SJSync.open(); } },
+      ], { above: true });
+    }
+
     /* 详情页操作：全部指向现有按钮/菜单，不重复实现 */
     if (DETAIL) DETAIL.addEventListener('click', (e) => {
       const b = e.target.closest('[data-act]');
@@ -6167,15 +6190,7 @@
       if (act === 'share') { const el = $('#exportBtn2'); if (el) el.click(); }
       else if (act === 'star') { const el = $('#starBtn'); if (el) el.click(); }
       else if (act === 'delete') { const el = $('#deleteNoteBtn'); if (el) el.click(); }
-      else if (act === 'more') {
-        const r = b.getBoundingClientRect();
-        showCtx(r.right - 120, r.top - 8, [
-          { label: '历史版本', icon: ICON_ALL, onClick: () => { const el = $('#historyBtn'); if (el) el.click(); } },
-          { label: '移动到分类', icon: I.folder, onClick: () => openCategoryPicker(note) },
-          { sep: true },
-          { label: '同步到云端', icon: I.download, onClick: () => { if (window.SJSync) window.SJSync.open(); } },
-        ]);
-      }
+      else if (act === 'more') openNoteMore(b, note);
     });
 
     /* ---- 华为风详情页：阅读态（默认）/ 编辑态（点正文进入） ----
@@ -7032,7 +7047,9 @@
       }
       if (a === 'img') { const el = $('#imgBtn'); if (el) el.click(); return; }
       if (a === 'attach') { const el = $('#attachBtn'); if (el) el.click(); return; }
-      /* 收藏 / 更多：直接复用详情底栏那两个按钮的既有逻辑，不另写一份 */
+      /* 更多：用工具条自己那颗按钮当锚点（详情底栏这时候是隐藏的，不能用） */
+      if (a === 'more') { openNoteMore(b, currentNote()); return; }
+      /* 收藏：复用详情底栏那颗按钮的既有逻辑，不另写一份 */
       const proxy = DETAIL && DETAIL.querySelector(`[data-act="${a}"]`);
       if (proxy) { proxy.click(); setTimeout(syncNoteMode, 0); }
     });

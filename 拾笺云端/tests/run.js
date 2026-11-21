@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-137 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-138 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-137';
+const BUILD = '2026-11-21-138';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -646,6 +646,24 @@ ok('点正文弹键盘后，正文跟着滚到光标那一行（键盘底下那�
   /window\.addEventListener\('resize', \(\) => \{ revealTypingCaret\(\); \}\)/.test(appSrc) &&
   /visualViewport\.addEventListener\('resize', \(\) => \{ revealTypingCaret\(\); \}\)/.test(appSrc) &&
   /interactive-widget=resizes-content/.test(indexSrc));
+
+ok('底栏「更多」点了有反应：菜单不被同一次点击关掉，锚点用真按钮',
+  /* showCtx 是在 click 里弹的，事件会继续冒泡到「点别处关菜单」的 document 监听，
+     旧写法等于自己关自己——用户看着就是点了没效果 */
+  /let ctxJustOpened = false;/.test(appSrc) &&
+  /ctxJustOpened = true;\s*setTimeout\(\(\) => \{ ctxJustOpened = false; \}, 0\);/.test(appSrc) &&
+  /document\.addEventListener\('click', \(e\) => \{\s*if \(ctxJustOpened\) return;/.test(appSrc) &&
+  /* 编辑态详情底栏是 display:none，拿它的 rect 全是 0，菜单会被钳到屏幕左上角 */
+  /function openNoteMore\(anchor, note\) \{[\s\S]{0,300}anchor\.getBoundingClientRect\(\)[\s\S]{0,700}同步到云端[\s\S]{0,200}\{ above: true \}/.test(appSrc) &&
+  /* above：y 当菜单底边算，整个菜单落在工具条上方，不压住那排图标 */
+  /function showCtx\(x, y, items, opts\) \{[\s\S]{0,900}opts && opts\.above \? y - rect\.height : y/.test(appSrc) &&
+  /else if \(act === 'more'\) openNoteMore\(b, note\);/.test(appSrc) &&
+  /if \(a === 'more'\) \{ openNoteMore\(b, currentNote\(\)\); return; \}/.test(appSrc) &&
+  (appSrc.match(/openNoteMore\(/g) || []).length === 3 &&
+  /* 首次打开没装 PWA 时的提示条压着工具条（89 > 61），详情页里让它躲开 */
+  /body\.sj-note-open \.pwa-tip \{/.test(styleSrc) &&
+  /* 编辑工具条的收藏仍走隐藏底栏那颗按钮的既有逻辑 */
+  /if \(a === 'more'\) \{ openNoteMore\(b, currentNote\(\)\); return; \}[\s\S]{0,220}const proxy = DETAIL/.test(appSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
