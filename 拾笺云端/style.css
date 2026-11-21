@@ -3421,12 +3421,9 @@ body.m-list .pwa-tip {
   body.sj-note-open.sj-style-open .app {
     bottom: var(--ss-h, 360px);
   }
-  /* 抬上去以后下方不再压着工具条，正文不用留那么大的空转余量 */
-  body.sj-note-edit.sj-style-open .rich-pane,
-  body.sj-note-edit.sj-style-open .preview-pane,
-  body.sj-note-edit.sj-style-open #mdInput {
-    padding-bottom: 48px;
-  }
+  /* 这里原来把正文的底部留白从 180px 收到 48px，打开面板时整块内容高度会瞬变
+     132px（滚动位置还容易被夹一下），和面板上滑叠在一起就是一次抖动。
+     留白保持不变——面板开着时它只是多点可滚余量，看不出来。 */
 
   /* 首次访问的安全提示条 z-index 9000，会盖住新的底部双 tab / 详情操作栏。
      手机端把它抬到栏上方，提示照看、导航照用。 */
@@ -3608,11 +3605,17 @@ body.m-list .pwa-tip {
     background: var(--surface-2);
     border-radius: 22px 22px 0 0;
     box-shadow: 0 -14px 44px -14px rgba(0, 0, 0, .28);
-    animation: sj-editor-up .18s var(--ease);
+    /* 只滑不淡：以前借 sj-editor-up，那一版从 opacity .4 起步，面板刚出来是半透明的，
+       下面的正文又在同时往上抬，透过去看就是一片「闪」（用户 2026-11-21 反馈）。*/
+    animation: sj-sheet-up .18s var(--ease);
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
   .sj-style-sheet.hidden { display: none; }
+  @keyframes sj-sheet-up {
+    from { transform: translateY(18px); }
+    to { transform: translateY(0); }
+  }
   /* 收起时先淡出 160ms 再 display:none：编辑区同时在回落，两者叠着走不露空档 */
   .sj-style-sheet.sj-ss-closing {
     opacity: 0;

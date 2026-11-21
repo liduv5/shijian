@@ -2235,15 +2235,25 @@
     setKbManual(true);
     const ae = document.activeElement;
     const hadPane = !!(ae && ae.id === 'richPane');
+    /* 先记住当前选区：blur 之后有的内核对折叠光标处理不一样，得原样还回去 */
+    let keep = null;
+    if (hadPane) {
+      const s0 = window.getSelection();
+      if (s0 && s0.rangeCount) {
+        try { keep = s0.getRangeAt(0).cloneRange(); } catch (_) {}
+      }
+    }
     if (ae && ae !== document.body && ae.blur) ae.blur();
-    if (!hadPane) return;
-    const pane = $('#richPane');
-    if (!pane) return;
-    /* 等一帧多再回焦：让系统先把键盘收走，避免刚 blur 就 focus 把输入法又拉起来 */
-    setTimeout(() => {
-      try { pane.focus({ preventScroll: true }); } catch (_) { pane.focus(); }
-      try { restoreRange(); } catch (_) {}
-    }, 50);
+    if (!keep) return;
+    /* 不再延迟回焦：blur 过一会儿又 focus，即便不弹键盘，个别内核也会顺手把
+       页面/正文再滚一次，和面板上滑叠在一起就是「闪一下」（用户 2026-11-21 反馈）。
+       光标交给自绘那根，选区在这里当场恢复就够。 */
+    try {
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(keep);
+      savedRange = keep;
+    } catch (_) {}
   }
 
   /* 真要打字了：先撤掉 manual 再重新聚焦。已经聚焦的元素不会再触发
@@ -2901,7 +2911,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-130';
+  const APP_BUILD = '2026-11-21-131';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -6177,6 +6187,10 @@
         STYLE_SHEET.classList.remove('sj-ss-closing');
       }, 180);
       cmSettle();
+      /* 收起后正文要是没焦点了（开面板收键盘时 blur 过），把焦点静默放回去：
+         没有焦点，系统连光标都不画，用户会觉得「光标没了」。 */
+      const rp = $('#richPane');
+      if (rp && document.activeElement !== rp) focusQuiet(rp);
     }
     /* 面板升降有 180ms 的高度过渡，期间布局一直在变，光标得多跟几帧 */
     function cmSettle() {
@@ -6312,13 +6326,21 @@
       clearTimeout(ssCloseTimer);
       STYLE_SHEET.classList.remove('sj-ss-closing');
       STYLE_SHEET.classList.remove('hidden');
+      /* 先量高度、再挂类：反过来会先用 var(--ss-h, 360px) 的默认值起步，
+         下一帧再改成实测值（≈378），两段跳看着就是抖一下（用户 2026-11-21 反馈）。 */
+      syncSheetHeight();
       document.body.classList.add('sj-style-open');
       const b = EDIT_BAR && EDIT_BAR.querySelector('[data-act="fmt"]');
       if (b) b.classList.add('on');
       syncStyleStates();
-      /* 先按上一帧的高度占位，再量真值兜一次；最后把正在调的位置滚进视野 */
-      syncSheetHeight();
-      requestAnimationFrame(() => { syncSheetHeight(); revealSelection(); refreshCaret(); });
+      requestAnimationFrame(() => { syncSheetHeight(); refreshCaret(); });
+      /* 把正在调的那一行滚进视野要等开启动画走完：动画开头就滚，正文会一边上抬
+         一边跳一下，用户看到的就是闪屏。 */
+      setTimeout(() => {
+        if (!styleSheetOpen()) return;
+        revealSelection();
+        refreshCaret();
+      }, 200);
       cmSettle();
     }
 

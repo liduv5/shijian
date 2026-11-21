@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-130 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-131 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-130';
+const BUILD = '2026-11-21-131';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -484,7 +484,7 @@ ok('输入法：格式操作静默聚焦不弹键盘，点正文才唤起输入�
   /pane\.setAttribute\('inputmode', 'none'\)/.test(appSrc) &&
   /pane\.removeAttribute\('inputmode'\)/.test(appSrc) &&
   /function focusQuiet\(pane\) \{[\s\S]{0,220}setKbManual\(true\)/.test(appSrc) &&
-  /function hideSoftKeyboard\(\) \{[\s\S]{0,300}\.blur\(\)/.test(appSrc) &&
+  /function hideSoftKeyboard\(\) \{[\s\S]{0,700}\.blur\(\)/.test(appSrc) &&
   /function focusTyping\(el\) \{[\s\S]{0,260}if \(wasManual && document\.activeElement === t\) t\.blur\(\)/.test(appSrc) &&
   /* 面板按钮走的四条命令链都用静默聚焦 */
   (appSrc.match(/focusQuiet\(pane\);/g) || []).length >= 5 &&
@@ -503,7 +503,8 @@ ok('输入法：格式操作静默聚焦不弹键盘，点正文才唤起输入�
 
 ok('样式面板不再遮挡正文：编辑区抬到面板上方、调完格式自动滚进视野',
   /body\.sj-note-open\.sj-style-open \.app \{[\s\S]{0,120}bottom: var\(--ss-h,/.test(styleSrc) &&
-  /body\.sj-note-edit\.sj-style-open \.rich-pane/.test(styleSrc) &&
+  /* 面板开着时不再改正文底部留白：一改就是 132px 的瞬变，打开面板会跟着抖 */
+  !/body\.sj-note-edit\.sj-style-open \.rich-pane \{/.test(styleSrc) &&
   /function syncSheetHeight\(\) \{[\s\S]{0,300}getBoundingClientRect\(\)\.height/.test(appSrc) &&
   /function syncSheetHeight\(\)[\s\S]{0,320}setProperty\('--ss-h'/.test(appSrc) &&
   /function openStyleSheet\(\) \{[\s\S]{0,700}classList\.add\('sj-style-open'\)/.test(appSrc) &&
@@ -515,8 +516,11 @@ ok('样式面板不再遮挡正文：编辑区抬到面板上方、调完格式�
   appSrc.indexOf("window.addEventListener('resize', () => { if (styleSheetOpen()) syncSheetHeight(); });") >= 0);
 
 ok('光标常驻 + 面板不误关：收键盘后焦点仍在正文，点正文只挪光标不收起面板',
-  /* 收键盘不能连光标一起收：blur 之后要把焦点静默放回正文 */
-  /function hideSoftKeyboard\(\) \{[\s\S]{0,420}hadPane[\s\S]{0,200}pane\.focus\(/.test(appSrc) &&
+  /* 收键盘不能连光标一起收：blur 前记下选区、blur 后当场还回去（不再延迟回焦，
+     回焦会让部分内核再滚一次页面，和面板上滑叠成闪屏） */
+  /function hideSoftKeyboard\(\) \{[\s\S]{0,400}keep = s0\.getRangeAt\(0\)\.cloneRange\(\)/.test(appSrc) &&
+  /function hideSoftKeyboard\(\) \{[\s\S]{0,900}savedRange = keep/.test(appSrc) &&
+  !/function hideSoftKeyboard\(\) \{[\s\S]{0,900}setTimeout\(/.test(appSrc) &&
   /function focusQuiet\(pane\) \{[\s\S]{0,220}setKbManual\(true\)[\s\S]{0,120}activeElement === el/.test(appSrc) &&
   /* 面板开着点正文：定位光标 + 滚进视野，直接 return，不走 typingFocus */
   /if \(styleSheetOpen\(\)\) \{[\s\S]{0,240}caretTo\(e\.clientX, e\.clientY\)[\s\S]{0,200}revealSelection\(\)[\s\S]{0,80}return;/.test(appSrc) &&
@@ -573,6 +577,16 @@ ok('自绘光标跟着字色变：改成紫字，光标就是紫的',
   /function cmColorAt\(r\) \{[\s\S]{0,420}getComputedStyle\(n\)\.color/.test(appSrc) &&
   /const col = cmColorAt\(r\);[\s\S]{0,80}el\.style\.background = col/.test(appSrc) &&
   /\.sj-caret-mark \{[\s\S]{0,220}background: var\(--text\)/.test(styleSrc));
+
+ok('点 A 打开面板不闪屏：面板不透明上滑、高度只量一次、滚进视野等动画走完',
+  /* 面板出场只滑不淡：opacity 从 .4 起步时，下面上抬的正文会透出来 */
+  /animation: sj-sheet-up \.18s/.test(styleSrc) &&
+  /@keyframes sj-sheet-up \{[\s\S]{0,90}translateY\(18px\)[\s\S]{0,90}translateY\(0\)/.test(styleSrc) &&
+  !/\.sj-style-sheet \{[\s\S]{0,900}animation: sj-editor-up/.test(styleSrc) &&
+  /* 先量高度再挂类：否则 .app 会先用 360px 默认值起步，下一帧再跳到实测值 */
+  /function openStyleSheet\(\) \{[\s\S]{0,700}classList\.remove\('hidden'\)[\s\S]{0,200}syncSheetHeight\(\)[\s\S]{0,200}classList\.add\('sj-style-open'\)/.test(appSrc) &&
+  /* 滚进视野推迟到开启动画之后，避免正文一边上抬一边跳 */
+  /setTimeout\(\(\) => \{[\s\S]{0,120}revealSelection\(\)/.test(appSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
