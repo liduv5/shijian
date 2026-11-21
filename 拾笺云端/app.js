@@ -3013,7 +3013,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-144';
+  const APP_BUILD = '2026-11-21-145';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -7362,14 +7362,18 @@
         if (ti) { ti.style.transform = ''; ti.style.opacity = ''; }
         return;
       }
-      /* 和首页标题一个方式：标题钉在顶栏里原地缩小，缩到位后一直定格。
-         分母取正文顶部那段（分类/日期）的高度——等它滑到顶栏背后，标题正好收满。 */
-      const heroH = READ_HERO && READ_HERO.offsetHeight ? READ_HERO.offsetHeight : 56;
-      lastReadHeroH = heroH;
-      const p = Math.min(1, Math.max(0, BODY_BOX.scrollTop / Math.max(40, heroH)));
-      if (ti) ti.style.transform = p > 0 ? 'scale(' + (1 - 0.35 * p).toFixed(3) + ')' : '';
-      /* 收起到位才出底边细线 */
-      document.body.classList.toggle('sj-head-solid', p > 0.9);
+      /* 阅读态持续缓存 hero 高度：进编辑态后 hero 变 display:none 读不到高度，
+         回阅读态换算滚动位置要靠它，否则正文会跳一下。 */
+      if (READ_HERO && READ_HERO.offsetHeight) lastReadHeroH = READ_HERO.offsetHeight;
+      /* 华为备忘录的方式：正文顶部的大标题跟着正文一起滚出屏幕，等它快到顶栏时，
+         顶栏返回箭头旁的小标题才淡入接管。按「大标题底边离顶栏底边还有多远」算，
+         标题一两行还是三行都对得上，两份标题也不会同时叠在屏幕上。 */
+      if (!NOTE_HEAD || !READ_TITLE) return;
+      const gap = READ_TITLE.getBoundingClientRect().bottom - NOTE_HEAD.getBoundingClientRect().bottom;
+      const p = Math.min(1, Math.max(0, (4 - gap) / 24));
+      if (ti) ti.style.opacity = p > 0.02 ? p.toFixed(2) : '';
+      /* 大标题滚过去后才给顶栏补实心背景遮住滚过的正文 */
+      document.body.classList.toggle('sj-head-solid', p > 0.95);
     }
     /* 形态切换、开新笔记、改分类之后由脚本主动调一次，不必等滚动事件 */
     function syncCollapse() { placeHome(); placeRead(); }

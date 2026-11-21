@@ -37,7 +37,7 @@
 | 全面代码审查规模   | 约 **1.2 万行**业务代码，健康度 B+，查出 2 个确凿存储型 XSS、4 条 P1、6 条 P2（XSS 与 CSP 已在后续版本修完，见交接文档） |
 | 手机端「卡住」    | 11-07 一天内连修 **9 轮**、连发 9 版，用户反馈「改了这么多次依然没有解决」；第 9 轮才找到真因                                       |
 | 速记 / 桌面入口  | 11-08 一天连发 **`-6` → `-12` 共 7 个版本**，其中多个是「修 A 引出 B」                                            |
-| 当前线上       | `2026-11-21-144`，正式链接 `https://wbapp-qlmdiie5vedhwtjpkrwebn.app.workbuddy.host/?sharecode=X4WPKTHLIN` |
+| 当前线上       | `2026-11-21-145`，正式链接 `https://wbapp-qlmdiie5vedhwtjpkrwebn.app.workbuddy.host/?sharecode=X4WPKTHLIN` |
 
 三个规律，值得记牢：
 
