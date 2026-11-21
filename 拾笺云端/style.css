@@ -2014,6 +2014,9 @@ html[data-theme="dark"] .sj-tip {
   #mdInput { padding: 14px 16px 120px; }
   .preview-pane { padding: 14px 16px 120px; }
   .rich-pane { padding: 14px 16px 120px; }
+  /* 样式面板升降会改正文区高度，浏览器默认的 scroll-anchor 会顺手挪一下
+     scrollTop，和面板动画叠在一起就是「抖一下」。正文滚到哪里由脚本自己算。 */
+  body.sj-note-open .rich-pane { overflow-anchor: none; }
   .note-card { padding: 13px 14px; }
 }
 
@@ -2407,7 +2410,9 @@ img.sj-img-picked {
 @media (max-width: 980px) {
   .pwa-tip {
     display: flex;
-    position: fixed; z-index: 92;
+    /* 92 起会和样式面板同层，DOM 里它排在后面 → 反过来盖住面板最后两行（色点/纸张）。
+       压到 89：面板开着时它躲到面板后面，收起后照常显示，也不会「凭空消失」再跳回来。 */
+    position: fixed; z-index: 89;
     left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
     width: min(430px, calc(100vw - 22px));
     align-items: center; gap: 10px;

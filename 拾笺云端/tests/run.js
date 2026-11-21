@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-134 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-135 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-134';
+const BUILD = '2026-11-21-135';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -509,11 +509,13 @@ ok('样式面板不再遮挡正文：编辑区抬到面板上方、调完格式�
   /function syncSheetHeight\(\)[\s\S]{0,320}setProperty\('--ss-h'/.test(appSrc) &&
   /function openStyleSheet\(\) \{[\s\S]{0,700}classList\.add\('sj-style-open'\)/.test(appSrc) &&
   /function closeStyleSheet\(\) \{[\s\S]{0,300}classList\.remove\('sj-style-open'\)/.test(appSrc) &&
-  /function revealSelection\(\) \{[\s\S]{0,560}getClientRects\(\)/.test(appSrc) &&
+  /function revealSelectionDelta\(\) \{[\s\S]{0,700}getClientRects\(\)/.test(appSrc) &&
+  /function revealSelection\(\) \{[\s\S]{0,240}revealSelectionDelta\(\)/.test(appSrc) &&
   (appSrc.match(/revealSelection\(\);/g) || []).length >= 5 &&
   /body\.sj-style-open \.pwd-tip \{ display: none; \}/.test(styleSrc) &&
   /max-height: min\(88vh, 470px\)/.test(styleSrc) &&
-  appSrc.indexOf("window.addEventListener('resize', () => { if (styleSheetOpen()) syncSheetHeight(); });") >= 0);
+  appSrc.indexOf("window.addEventListener('resize', () => {") >= 0 &&
+  /if \(!styleSheetOpen\(\)\) return;\s*syncSheetHeight\(\);\s*scheduleSheetReveal\(160\);/.test(appSrc));
 
 ok('光标常驻 + 面板不误关：收键盘后焦点仍在正文，点正文只挪光标不收起面板',
   /* 收键盘不能连光标一起收：blur 前记下选区、blur 后当场还回去（不再延迟回焦，
@@ -578,15 +580,25 @@ ok('自绘光标跟着字色变：改成紫字，光标就是紫的',
   /const col = cmColorAt\(r\);[\s\S]{0,80}el\.style\.background = col/.test(appSrc) &&
   /\.sj-caret-mark \{[\s\S]{0,220}background: var\(--text\)/.test(styleSrc));
 
-ok('点 A 打开面板不闪屏：面板不透明上滑、高度只量一次、滚进视野等动画走完',
+ok('点 A 打开面板不闪屏：面板不透明上滑、高度只量一次、光标行滑过去而不是跳过去',
   /* 面板出场只滑不淡：opacity 从 .4 起步时，下面上抬的正文会透出来 */
   /animation: sj-sheet-up \.18s/.test(styleSrc) &&
   /@keyframes sj-sheet-up \{[\s\S]{0,90}translateY\(18px\)[\s\S]{0,90}translateY\(0\)/.test(styleSrc) &&
   !/\.sj-style-sheet \{[\s\S]{0,900}animation: sj-editor-up/.test(styleSrc) &&
   /* 先量高度再挂类：否则 .app 会先用 360px 默认值起步，下一帧再跳到实测值 */
   /function openStyleSheet\(\) \{[\s\S]{0,700}classList\.remove\('hidden'\)[\s\S]{0,200}syncSheetHeight\(\)[\s\S]{0,200}classList\.add\('sj-style-open'\)/.test(appSrc) &&
-  /* 滚进视野推迟到开启动画之后，避免正文一边上抬一边跳 */
-  /setTimeout\(\(\) => \{[\s\S]{0,120}revealSelection\(\)/.test(appSrc));
+  /* 光标行不是「动画一结束就一把滚过去」：等视口安静，再缓动滑到位（首次点 A 闪屏的根因） */
+  /function openStyleSheet\(\) \{[\s\S]{0,1400}scheduleSheetReveal\(\)/.test(appSrc) &&
+  !/function openStyleSheet\(\) \{[\s\S]{0,1400}setTimeout\(\(\) => \{[\s\S]{0,140}revealSelection\(\)/.test(appSrc) &&
+  /function glideRevealSelection\([\s\S]{0,500}setInterval\(/.test(appSrc) &&
+  /function glideRevealSelection\([\s\S]{0,800}Math\.pow\(1 - k, 3\)/.test(appSrc) &&
+  /function scheduleSheetReveal\([\s\S]{0,260}glideRevealSelection\(200\)/.test(appSrc) &&
+  /* 收起面板时掐掉还没跑完的滑动，别在面板走了以后又滚一下 */
+  /function closeStyleSheet\(\) \{[\s\S]{0,200}stopSheetReveal\(\)/.test(appSrc) &&
+  /* 正文区的 scroll-anchor 会趁改高度顺手挪 scrollTop，位置由我们自己算 */
+  /body\.sj-note-open \.rich-pane \{ overflow-anchor: none; \}/.test(styleSrc) &&
+  /* 桌面安装提示条原本和面板同层、排在后面，会盖住面板最后两行 */
+  /\.pwa-tip \{[\s\S]{0,260}z-index: 89/.test(styleSrc));
 
 ok('插入图片先问「拍照 / 从相册选择 / 取消」：系统选择器没有取消，别把人困在里面',
   /id="sjImgSheet"/.test(indexSrc) &&

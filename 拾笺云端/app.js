@@ -2273,16 +2273,18 @@
   /* 把当前选区滚进正文的可视范围。
      样式面板打开后正文区被压缩，调完字号/颜色如果不滚一下，
      被调的那一行可能正好在视口外，看着像「没生效」。 */
-  function revealSelection() {
+  /* 光标那一行还差多少才露出来（正数 = 正文要往上滚，负数 = 往下滚）。
+     只算差值不改 scrollTop，好让调用方决定「立刻滚」还是「滑过去」。 */
+  function revealSelectionDelta() {
     const pane = $('#richPane');
-    if (!pane) return;
+    if (!pane) return 0;
     let r = null;
     const sel = window.getSelection();
     if (sel && sel.rangeCount) r = sel.getRangeAt(0);
     if ((!r || !pane.contains(r.startContainer)) && savedRange && pane.contains(savedRange.startContainer)) {
       r = savedRange;
     }
-    if (!r) return;
+    if (!r) return 0;
     let first = null, last = null;
     try {
       const rects = r.getClientRects();
@@ -2291,16 +2293,56 @@
     if (!first) {
       let el = r.startContainer;
       if (el.nodeType !== 1) el = el.parentElement;
-      if (!el || !pane.contains(el)) return;
+      if (!el || !pane.contains(el)) return 0;
       first = last = el.getBoundingClientRect();
     }
     const pr = pane.getBoundingClientRect();
-    if (!pr.height) return;
+    if (!pr.height) return 0;
     const pad = 20;
     /* 选区在视口上方 → 顶上对齐首行；否则把末行顶到可视区底部，
        整段（哪怕换了好几行）都能看全，不会只露第一行。 */
-    if (first.top < pr.top + pad) pane.scrollTop -= (pr.top + pad - first.top);
-    else if (last.bottom > pr.bottom - pad) pane.scrollTop += (last.bottom - (pr.bottom - pad));
+    if (first.top < pr.top + pad) return first.top - (pr.top + pad);
+    if (last.bottom > pr.bottom - pad) return last.bottom - (pr.bottom - pad);
+    return 0;
+  }
+  function revealSelection() {
+    const pane = $('#richPane');
+    if (!pane) return;
+    const d = revealSelectionDelta();
+    if (d) pane.scrollTop += d;
+  }
+
+  /* 面板开合时不能瞬跳着滚：一次 scrollTop 改动就是一百多像素的位移，
+     看着就是「闪一下」。这里按 16ms 补一小步、缓动到位。
+     用户 2026-11-21 反馈「首次点 A 会闪屏」——根子就是打开面板后 200ms
+     直接 revealSelection()，正文在面板停稳的瞬间跳了一大截；之后再打开
+     时光标行已经在可视区内，所以只有第一次看得到。 */
+  let glideRevealTimer = 0;
+  function stopGlideReveal() {
+    clearInterval(glideRevealTimer);
+    glideRevealTimer = 0;
+  }
+  function glideRevealSelection(ms) {
+    const pane = $('#richPane');
+    if (!pane) return;
+    const d = revealSelectionDelta();
+    if (!d || Math.abs(d) < 1) return;
+    const from = pane.scrollTop;
+    const to = Math.max(0, from + d);
+    if (Math.abs(to - from) < 1) return;
+    const dur = ms || 180;
+    const t0 = Date.now();
+    stopGlideReveal();
+    let set = from;
+    glideRevealTimer = setInterval(() => {
+      /* 用户自己滚了（手指一拨 scrollTop 就跑到我们没设过的位置）→ 立刻让位 */
+      if (Math.abs(pane.scrollTop - set) > 2) { stopGlideReveal(); return; }
+      const k = Math.min(1, (Date.now() - t0) / dur);
+      set = from + (to - from) * (1 - Math.pow(1 - k, 3));
+      pane.scrollTop = set;
+      refreshCaret();
+      if (k >= 1) stopGlideReveal();
+    }, 16);
   }
 
   /* 键盘弹起后，把光标那一行留出来。
@@ -2963,7 +3005,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-134';
+  const APP_BUILD = '2026-11-21-135';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -6265,6 +6307,8 @@
     let ssCloseTimer = 0;
     function closeStyleSheet() {
       if (!STYLE_SHEET) return;
+      /* 收起时把还没跑完的「滑到光标行」掐掉：面板已经走了，再滚一下就是多余的跳动 */
+      stopSheetReveal();
       /* 面板先淡出、编辑区同时回落，两个动作叠在一起，中间不会露出空白 */
       STYLE_SHEET.classList.add('sj-ss-closing');
       document.body.classList.remove('sj-style-open');
@@ -6360,8 +6404,12 @@
       const lh = parseFloat(window.getComputedStyle(pane).lineHeight) || 22;
       const h = Math.round(box.height || lh);
       const y = Math.round(box.top);
-      /* 滚出正文可视区就收起来（原生光标这时也不在可视区，不会两根打架） */
-      if (y + h < pr.top || y > pr.bottom) { cmHide(); return; }
+      /* 滚出正文可视区就收起来（原生光标这时也不在可视区，不会两根打架）。
+         面板开着时只看上边界：正文底边被抬起的过程中，光标行会短暂落到
+         「看不见的底边」以下，那时它其实躲在面板后面（面板 z-index 更高），
+         照样画着——不然这一百多毫秒里两根光标都没有，看着就是闪一下。 */
+      const sheetUp = styleSheetOpen();
+      if (y + h < pr.top || (!sheetUp && y > pr.bottom)) { cmHide(); return; }
       el.style.left = Math.round(box.left) + 'px';
       el.style.top = y + 'px';
       el.style.height = h + 'px';
@@ -6411,6 +6459,22 @@
       const h = Math.round(STYLE_SHEET.getBoundingClientRect().height);
       if (h > 0) document.documentElement.style.setProperty('--ss-h', h + 'px');
     }
+    /* 打开面板时键盘也在收，可视区还要再变一次；这时候算出来的「要不要滚」
+       不作数。每次视口变化就把这件事往后顺延，等它安静下来再滑过去。 */
+    let ssRevealTimer = 0;
+    function scheduleSheetReveal(delay) {
+      clearTimeout(ssRevealTimer);
+      ssRevealTimer = setTimeout(() => {
+        ssRevealTimer = 0;
+        if (!styleSheetOpen()) return;
+        glideRevealSelection(200);
+      }, delay || 240);
+    }
+    function stopSheetReveal() {
+      clearTimeout(ssRevealTimer);
+      ssRevealTimer = 0;
+      stopGlideReveal();
+    }
     function openStyleSheet() {
       if (!STYLE_SHEET) return;
       clearImgSel();
@@ -6428,13 +6492,10 @@
       if (b) b.classList.add('on');
       syncStyleStates();
       requestAnimationFrame(() => { syncSheetHeight(); refreshCaret(); });
-      /* 把正在调的那一行滚进视野要等开启动画走完：动画开头就滚，正文会一边上抬
-         一边跳一下，用户看到的就是闪屏。 */
-      setTimeout(() => {
-        if (!styleSheetOpen()) return;
-        revealSelection();
-        refreshCaret();
-      }, 200);
+      /* 把正在调的那一行带进视野：以前等 180ms 动画走完就一把 scrollTop 过去，
+         正文会在面板停稳的瞬间跳一大截（用户 2026-11-21 反馈「首次点 A 闪屏」）。
+         现在改成等视口也安静下来（键盘收完）再滑过去，自绘光标跟着走。 */
+      scheduleSheetReveal();
       cmSettle();
     }
 
@@ -6744,8 +6805,20 @@
         || t.closest('#richPane') || t.closest('#mdInput') || t.closest('.sj-note-head'))) return;
       closeStyleSheet();
     });
-    /* 转屏、键盘收起都会改变可视高度，面板高度跟着重算 */
-    window.addEventListener('resize', () => { if (styleSheetOpen()) syncSheetHeight(); });
+    /* 转屏、键盘收起都会改变可视高度：面板高度重算一次，光标行的位置也跟着重算；
+       视口一变就把「滑到光标行」往后顺延，别在视口还在动的时候抢着滚。 */
+    window.addEventListener('resize', () => {
+      if (!styleSheetOpen()) return;
+      syncSheetHeight();
+      scheduleSheetReveal(160);
+    });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', () => {
+        if (!styleSheetOpen()) return;
+        syncSheetHeight();
+        scheduleSheetReveal(160);
+      });
+    }
 
     /* 点正文进入编辑时，把光标落到手指点的那个字后面，而不是跳回开头 */
     function caretTo(x, y) {
