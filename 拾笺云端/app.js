@@ -3013,7 +3013,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-145';
+  const APP_BUILD = '2026-11-21-146';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -4513,7 +4513,12 @@
 
   function placeCtx(x, y, opts) {
     const o = opts || ctxOpts || {};
-    const rect = ctx.getBoundingClientRect();
+    /* 菜单弹出带 .13s 的 scale(.96) 动画，getBoundingClientRect() 会把缩放后的
+       宽度算进去（178.6 而非 186），弹出瞬间位置偏右，等 120ms 兜底重贴时又
+       跳回正确位置——看着就是「横跳一下」。offsetWidth/Height 是布局尺寸，
+       不受 transform 影响，每拍算出来的位置都一样。 */
+    const cw = ctx.offsetWidth;
+    const ch = ctx.offsetHeight;
     let ax = typeof x === 'number' ? x : (ctxPoint ? ctxPoint.x : 0);
     let ay = typeof y === 'number' ? y : (ctxPoint ? ctxPoint.y : 0);
     /* 有锚点就用锚点的实时位置：视口一变（输入法收起、旋转、分屏）按钮就挪了，
@@ -4521,15 +4526,15 @@
     if (ctxAnchor && ctxAnchor.isConnected) {
       const r = ctxAnchor.getBoundingClientRect();
       if (r.width || r.height) {
-        ax = r.right - rect.width;
+        ax = r.right - cw;
         ay = o.above ? r.top - 8 : r.bottom + 4;
       }
     }
     const vp = ctxViewport();
-    const px = Math.max(8, Math.min(ax, vp.w - rect.width - 8));
+    const px = Math.max(8, Math.min(ax, vp.w - cw - 8));
     /* above：ay 当作「菜单底边」看待，让菜单整个落在锚点上方（底栏/工具条那颗「更多」） */
-    const top = o.above ? ay - rect.height : ay;
-    const py = Math.max(8, Math.min(top, vp.h - rect.height - 8));
+    const top = o.above ? ay - ch : ay;
+    const py = Math.max(8, Math.min(top, vp.h - ch - 8));
     ctx.style.left = px + 'px';
     ctx.style.top = py + 'px';
   }
