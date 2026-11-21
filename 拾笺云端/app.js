@@ -2265,6 +2265,8 @@
     setKbManual(false);
     if (wasManual && document.activeElement === t) t.blur();
     t.focus({ preventScroll: true });
+    /* 键盘起来后把那行留出来（真打字才会走这里，静默聚焦不受影响） */
+    scheduleTypingReveal();
     return t;
   }
 
@@ -2300,6 +2302,56 @@
     if (first.top < pr.top + pad) pane.scrollTop -= (pr.top + pad - first.top);
     else if (last.bottom > pr.bottom - pad) pane.scrollTop += (last.bottom - (pr.bottom - pad));
   }
+
+  /* 键盘弹起后，把光标那一行留出来。
+     手机点正文会立刻弹出输入法，可视区被压掉一半，而正文区自己的高度
+     (interactive-widget=resizes-content) 跟着缩，原先那一行就可能落到
+     「看得见的底边」以下——用户看到的是键盘盖住了正在写的那一行。
+     这里按当前选区的最后一行算：超出可视区就把它顶到留白之上，已经在
+     里面就不动（不抢用户的手动滚动）。 */
+  function revealTypingCaret() {
+    const pane = $('#richPane');
+    if (!pane) return;
+    if (!window.matchMedia('(max-width: 980px)').matches) return;
+    if (!document.body.classList.contains('sj-note-edit')) return;
+    if (document.activeElement !== pane) return;
+    let r = null;
+    try {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount) {
+        const rr = sel.getRangeAt(0);
+        if (rr.collapsed && pane.contains(rr.startContainer)) r = rr;
+      }
+    } catch (_) {}
+    if (!r) return;
+    let line = null;
+    try {
+      const rects = r.getClientRects();
+      if (rects && rects.length) line = rects[rects.length - 1];
+    } catch (_) {}
+    if (!line || (!line.height && !line.width)) {
+      let n = r.startContainer;
+      if (n.nodeType !== 1) n = n.parentElement;
+      line = n && pane.contains(n) ? n.getBoundingClientRect() : null;
+    }
+    if (!line) return;
+    const pr = pane.getBoundingClientRect();
+    if (!pr.height) return;
+    const vv = window.visualViewport;
+    const visTop = Math.max(pr.top, vv ? vv.offsetTop : 0);
+    const visBottom = Math.min(pr.bottom, vv ? vv.offsetTop + vv.height : window.innerHeight);
+    const pad = 28;
+    /* 键盘底下那一截不算数：宁可多滚 28px，也别让字贴着键盘边 */
+    if (line.bottom > visBottom - pad) pane.scrollTop += line.bottom - (visBottom - pad);
+    else if (line.top < visTop + pad) pane.scrollTop -= (visTop + pad) - line.top;
+  }
+  /* 输入法不是一瞬间弹出来的（各家动画 200~400ms），只在 focus 后补几次；
+     期间每次 resize（含 visualViewport）也可以再校一次，都是「不越界就不动」。 */
+  function scheduleTypingReveal() {
+    [0, 90, 220, 400, 650].forEach((t) => setTimeout(revealTypingCaret, t));
+  }
+  window.addEventListener('resize', () => { revealTypingCaret(); });
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { revealTypingCaret(); });
 
   /* 光标只是一根竖线时，先把整段选中再套格式，否则字号/颜色看不见效果。
      选区优先取正文里当前的，取不到就退回 savedRange（点按钮后焦点会跑）。
@@ -2911,7 +2963,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-133';
+  const APP_BUILD = '2026-11-21-134';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
