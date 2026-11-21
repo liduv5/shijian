@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#2f6f5e">
-<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#f4f3ef" id="metaTheme">
+<meta name="color-scheme" content="light dark">
 <title>随手记</title>
 <link rel="manifest" href="/quick.webmanifest?sharecode=X4WPKTHLIN">
 <!-- 速记专用图标：绿色铅笔，和朱红「拾」字主图标区分开。
@@ -18,73 +18,177 @@
 <meta name="application-name" content="随手记">
 <meta name="format-detection" content="telephone=no">
 <style>
+  /* 与拾笺主程序共用同一套字体（本地嵌入，离线可用） */
+  @font-face {
+    font-family: "SJBrand";
+    src: url("sj-brand.woff2") format("woff2");
+    font-style: normal; font-weight: normal; font-display: swap;
+    unicode-range: U+62FE, U+7B3A;
+  }
+  @font-face {
+    font-family: "SJText";
+    src: url("SJText-400.woff2") format("woff2");
+    font-style: normal; font-weight: 400; font-display: swap;
+    unicode-range: U+0020-007E, U+00A0-00FF, U+2000-206F, U+20A0-20CF,
+      U+2100-214F, U+2190-21FF, U+2200-22FF, U+3000-303F, U+4E00-9FA5, U+FF00-FFEF;
+  }
+  @font-face {
+    font-family: "SJText";
+    src: url("SJText-500.woff2") format("woff2");
+    font-style: normal; font-weight: 500; font-display: swap;
+    unicode-range: U+0020-007E, U+00A0-00FF, U+2000-206F, U+20A0-20CF,
+      U+2100-214F, U+2190-21FF, U+2200-22FF, U+3000-303F, U+4E00-9FA5, U+FF00-FFEF;
+  }
+  @font-face {
+    font-family: "SJText";
+    src: url("SJText-700.woff2") format("woff2");
+    font-style: normal; font-weight: 700; font-display: swap;
+    unicode-range: U+0020-007E, U+00A0-00FF, U+2000-206F, U+20A0-20CF,
+      U+2100-214F, U+2190-21FF, U+2200-22FF, U+3000-303F, U+4E00-9FA5, U+FF00-FFEF;
+  }
+  :root {
+    --font-ui: "SJText", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", sans-serif;
+    --font-brand: "SJBrand", "STXingkai", "华文行楷", "KaiTi", "楷体", "STKaiti", "Kaiti SC", "Songti SC", "SimSun", serif;
+    --r-sm: 7px; --r-md: 10px; --r-lg: 14px;
+    --ease: cubic-bezier(.22, .61, .36, 1);
+  }
+  /* 与主程序逐字一致的明暗色卡 */
+  html[data-theme="light"] {
+    --bg: #f4f3ef; --surface: #fffefc; --surface-2: #eceae4; --surface-3: #e3e0d8;
+    --border: #e2dfd6; --border-strong: #d3cfc4;
+    --text: #22201c; --text-2: #6c675d; --text-3: #9c968a;
+    --accent: #2f6f5e; --accent-hover: #255a4c;
+    --accent-soft: rgba(47, 111, 94, .10); --accent-line: rgba(47, 111, 94, .28);
+    --star: #c8892a; --danger: #c0442f; --danger-soft: #fbecec; --danger-line: #ecd0d0; --danger-text: #8a4242;
+    --shadow-sm: 0 1px 2px rgba(34, 32, 28, .05);
+    --shadow-md: 0 8px 28px -10px rgba(34, 32, 28, .18);
+    --seal: #b04932; --desk-bg: #eef5f1; --desk-line: #cfe2d8; --desk-text: #3c5d51;
+    --desk-url-bg: #fff; --desk-url-line: #b9d3c6; --desk-url-text: #2b4a3f;
+  }
+  html[data-theme="dark"] {
+    --bg: #141618; --surface: #1b1e20; --surface-2: #23272a; --surface-3: #2c3134;
+    --border: #2c3134; --border-strong: #3a4044;
+    --text: #e9e6e0; --text-2: #a3a7a3; --text-3: #767c78;
+    --accent: #63b79d; --accent-hover: #7cc9b0;
+    --accent-soft: rgba(99, 183, 157, .12); --accent-line: rgba(99, 183, 157, .35);
+    --star: #d8a44a; --danger: #e07a63; --danger-soft: #2e1f1c; --danger-line: #57352d; --danger-text: #e7a08e;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .25);
+    --shadow-md: 0 8px 28px -10px rgba(0, 0, 0, .55);
+    --seal: #cf6549; --desk-bg: #1b2a26; --desk-line: #2f4a42; --desk-text: #a9cabd;
+    --desk-url-bg: #141a18; --desk-url-line: #3c5a50; --desk-url-text: #bcd8cd;
+  }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
-    margin: 0; min-height: 100vh; padding: 24px 18px;
-    background: #f4f3ef; color: #22201c;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    margin: 0; min-height: 100dvh; padding: 24px 18px;
+    background: var(--bg); color: var(--text);
+    font-family: var(--font-ui);
     display: flex; flex-direction: column; align-items: center; justify-content: center;
+    transition: background-color .2s var(--ease), color .2s var(--ease);
   }
   .card {
-    width: min(520px, 100%); background: #fffefc; border: 1px solid #e2dfd6;
-    border-radius: 14px; padding: 22px 20px; box-shadow: 0 8px 28px -10px rgba(34,32,28,.18);
+    width: min(520px, 100%); background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-lg); padding: 22px 20px; box-shadow: var(--shadow-md);
   }
-  .brand { font-size: 12px; letter-spacing: .2em; color: #2f6f5e; margin-bottom: 14px; }
-  h1 { margin: 0 0 8px; font-size: 19px; font-weight: 600; }
-  p { margin: 0 0 16px; font-size: 13px; line-height: 1.7; color: #6c675d; }
+  /* 品牌行：朱砂小印 + 「拾笺」行楷 + 朱点，和主程序同一套视觉 */
+  .brand { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; }
+  .brand-logo {
+    width: 28px; height: 28px; border-radius: 7px; flex: none;
+    background: linear-gradient(150deg, #c25b41, #a8412c); color: #fff;
+    display: grid; place-items: center; font-family: var(--font-brand);
+    font-size: 18px; line-height: 1; padding-bottom: 2px;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .38), 0 3px 10px -4px rgba(168, 65, 44, .7);
+  }
+  html[data-theme="dark"] .brand-logo { background: linear-gradient(150deg, #cd6a50, #ad4630); }
+  .brand-name {
+    display: flex; align-items: flex-start; gap: 5px;
+    font-family: var(--font-brand); font-size: 20px; font-weight: 600;
+    line-height: 1.2; letter-spacing: .16em; color: var(--text);
+  }
+  .brand-name .seal {
+    display: block; width: 5px; height: 5px; margin-top: 7px; border-radius: 1px;
+    background: var(--seal); transform: rotate(-10deg); opacity: .9; flex: none;
+  }
+  .brand-sub { margin-left: auto; font-size: 11px; letter-spacing: .2em; color: var(--text-3); }
+  h1 { margin: 0 0 8px; font-size: 19px; font-weight: 600; color: var(--text); }
+  p { margin: 0 0 16px; font-size: 13px; line-height: 1.7; color: var(--text-2); }
   .box {
-    background: #f4f3ef; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-md);
+    padding: 12px 14px; margin-bottom: 16px;
     font-size: 13px; line-height: 1.75; white-space: pre-wrap; word-break: break-word;
-    max-height: 260px; overflow: auto;
+    max-height: 260px; overflow: auto; color: var(--text);
   }
   textarea {
     width: 100%; min-height: 150px; padding: 12px 14px; margin-bottom: 14px;
-    border: 1px solid #d3cfc4; border-radius: 10px; background: #f4f3ef;
-    font: inherit; font-size: 14px; line-height: 1.7; color: #22201c; resize: vertical;
+    border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--bg);
+    font: inherit; font-size: 14px; line-height: 1.7; color: var(--text); resize: vertical;
   }
+  textarea::placeholder { color: var(--text-3); }
+  textarea:focus, .box:focus { outline: 2px solid var(--accent-line); outline-offset: -1px; border-color: var(--accent); }
   .row { display: flex; gap: 10px; }
   button, a.btn {
     flex: 1; display: inline-flex; align-items: center; justify-content: center;
-    height: 40px; padding: 0 16px; border-radius: 9px; font: inherit; font-size: 14px;
-    text-decoration: none; cursor: pointer; border: 1px solid #2f6f5e;
+    height: 40px; padding: 0 16px; border-radius: var(--r-md); font: inherit; font-size: 14px;
+    text-decoration: none; cursor: pointer; border: 1px solid var(--accent);
+    transition: background-color .15s var(--ease), color .15s var(--ease), filter .15s var(--ease);
   }
-  .primary { background: #2f6f5e; color: #fff; }
-  .ghost { background: transparent; color: #2f6f5e; }
-  .tip { margin-top: 16px; font-size: 11.5px; color: #9c968a; line-height: 1.6; }
-  .ok { color: #2f6f5e; font-size: 14px; margin-bottom: 12px; }
-  .desk { background: #eef5f1; border: 1px solid #cfe2d8; border-radius: 10px;
-    padding: 12px 14px; font-size: 12px; line-height: 1.7; color: #3c5d51; margin-bottom: 16px; }
+  .primary { background: var(--accent); color: #fff; }
+  .primary:hover { background: var(--accent-hover); }
+  .ghost { background: transparent; color: var(--accent); }
+  .ghost:hover { background: var(--accent-soft); }
+  .tip { margin-top: 16px; font-size: 11.5px; color: var(--text-3); line-height: 1.6; }
+  .ok { color: var(--accent); font-size: 14px; margin-bottom: 12px; }
+  .desk { background: var(--desk-bg); border: 1px solid var(--desk-line); border-radius: var(--r-md);
+    padding: 12px 14px; font-size: 12px; line-height: 1.7; color: var(--desk-text); margin-bottom: 16px; }
   .desk[hidden], .isolated[hidden] { display: none; }
-  .desk-h { font-weight: 600; font-size: 13px; margin-bottom: 6px; color: #2f6f5e; }
-  .desk-url { background: #fff; border: 1px dashed #b9d3c6; border-radius: 6px;
+  .desk-h { font-weight: 600; font-size: 13px; margin-bottom: 6px; color: var(--accent); }
+  .desk-url { background: var(--desk-url-bg); border: 1px dashed var(--desk-url-line); border-radius: var(--r-sm);
     padding: 8px 10px; margin: 8px 0; font-size: 11px; line-height: 1.55;
-    word-break: break-all; user-select: all; color: #2b4a3f; }
+    word-break: break-all; user-select: all; color: var(--desk-url-text); }
   .desk-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .desk-row button { flex: 0 0 auto; height: 32px; padding: 0 14px; font-size: 12px; }
-  .desk-state { font-size: 11px; color: #2f6f5e; margin-top: 6px; }
+  .desk-state { font-size: 11px; color: var(--accent); margin-top: 6px; }
   .desk-state:empty { display: none; }
-  .isolated { background: #fbecec; border: 1px solid #ecd0d0; color: #8a4242;
-    border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.7; margin-bottom: 16px; }
-  /* 华为风底部双 tab：与主程序同款，「笔记」回主程序（走 goMain 带 q 参数） */
+  .isolated { background: var(--danger-soft); border: 1px solid var(--danger-line); color: var(--danger-text);
+    border-radius: var(--r-md); padding: 10px 12px; font-size: 12px; line-height: 1.7; margin-bottom: 16px; }
+  /* 华为风底部双 tab：与主程序同款，「笔记」回主程序（走 goMain 带 q 参数）。
+     手机上贴边通栏；电脑宽屏上收进卡片宽度、做成圆角悬浮条，不再横贯整屏。 */
   .q-tabbar {
-    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
-    height: calc(58px + env(safe-area-inset-bottom, 0px));
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: #fffefc; border-top: 1px solid #e2dfd6;
+    display: flex; position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 30;
+    width: min(520px, calc(100% - 36px));
+    height: 56px; padding-bottom: 0;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-md); box-shadow: var(--shadow-md); overflow: hidden;
   }
   .q-tab {
     flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-    border: 0; background: transparent; font: inherit; font-size: 11px; color: #9c968a;
+    border: 0; background: transparent; font: inherit; font-size: 11px; color: var(--text-3);
     cursor: pointer; -webkit-tap-highlight-color: transparent;
   }
   .q-tab svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  .q-tab.active { color: #2f6f5e; }
-  body { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+  .q-tab.active { color: var(--accent); }
+  /* 手机窄屏：底栏贴底通栏，和主程序手机端一致 */
+  @media (max-width: 600px) {
+    .q-tabbar {
+      left: 0; right: 0; bottom: 0; transform: none;
+      width: 100%; height: calc(58px + env(safe-area-inset-bottom, 0px));
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      border: 0; border-top: 1px solid var(--border); border-radius: 0;
+      box-shadow: none;
+    }
+    body { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+  }
 </style>
 </head>
 <body>
 <div class="card">
-  <div class="brand">拾 笺 · 随手记</div>
+  <div class="brand">
+    <span class="brand-logo" aria-hidden="true">拾</span>
+    <span class="brand-name">拾笺<i class="seal" aria-hidden="true"></i></span>
+    <span class="brand-sub">随手记</span>
+  </div>
   <div id="view"></div>
   <div class="isolated" id="isolatedTip" hidden>这个图标被独立安装过，有自己的数据分区。请删掉它，改用主程序顶栏的「随手记」。</div>
   <div class="desk" id="deskTip" hidden>
@@ -110,6 +214,27 @@
 <script>
 (function () {
   'use strict';
+  /* 主题跟随主程序：读同一个 sj_theme，配色/字体/明暗整套和拾笺一致。
+     独立安装的随手记有隔离存储，读不到就跟随系统；同分区打开时若主程序
+     在另一个标签切了主题，storage 事件也会实时同步过来。 */
+  function applyTheme(t) {
+    var theme = t === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', theme);
+    var mt = document.getElementById('metaTheme');
+    if (mt) mt.setAttribute('content', theme === 'dark' ? '#141618' : '#f4f3ef');
+  }
+  var initTheme;
+  try { initTheme = localStorage.getItem('sj_theme'); } catch (_) {}
+  if (!initTheme) {
+    initTheme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  }
+  applyTheme(initTheme);
+  try {
+    window.addEventListener('storage', function (e) {
+      if (e.key === 'sj_theme') applyTheme(e.newValue);
+    });
+  } catch (_) {}
+
   /* 随手记不再持有本地库。独立安装的 PWA / 系统分享会拿到一套隔离的
      localStorage，往里面写笔记就永远进不了主程序。所以这里只把速记
      编进链接 / 共享队列，交给主程序落盘；旧版本遗留在本分区的笔记
@@ -378,7 +503,7 @@
    安装，每次打开主程序都触发 controllerchange → 整页自动刷新。 */
 (function () {
   if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
-  var SWV = '2026-11-21-148';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
+  var SWV = '2026-11-21-149';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
   var sc = new URLSearchParams(location.search).get('sharecode') || 'X4WPKTHLIN';
   var url = '/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SWV;
   navigator.serviceWorker.getRegistration().then(function (reg) {

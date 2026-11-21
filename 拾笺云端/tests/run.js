@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-148 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-149 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-148';
+const BUILD = '2026-11-21-149';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -175,6 +175,30 @@ ok('底部双 tab 已移除（随手记并入加号菜单）',
   indexSrc.indexOf('id="sjTabQuick"') < 0);
 ok('随手记页有底部「笔记」tab 且绑定 goMain（q 参数不丢）',
   quickSrc.indexOf('id="qTabNotes"') >= 0 && quickSrc.indexOf("bindGo('qTabNotes')") >= 0);
+ok('随手记页配色/字体/主题与拾笺主程序统一',
+  /* 同一套本地字体（SJText 正文 + SJBrand 品牌行楷） */
+  /@font-face \{\s*font-family: "SJBrand";/.test(quickSrc) &&
+  /@font-face \{\s*font-family: "SJText";/.test(quickSrc) &&
+  /--font-ui: "SJText"/.test(quickSrc) &&
+  /--font-brand: "SJBrand"/.test(quickSrc) &&
+  /* 明暗两套色卡与主程序同色值 */
+  /html\[data-theme="light"\] \{[\s\S]{0,200}--bg: #f4f3ef;[\s\S]{0,300}--accent: #2f6f5e;/.test(quickSrc) &&
+  /html\[data-theme="dark"\] \{[\s\S]{0,200}--bg: #141618;[\s\S]{0,300}--accent: #63b79d;/.test(quickSrc) &&
+  /* 组件全部走变量，不再硬编码主色 */
+  /background: var\(--accent\); color: #fff;/.test(quickSrc) &&
+  /background: var\(--bg\); color: var\(--text\);/.test(quickSrc) &&
+  /* 品牌行 + 朱砂印 + 行楷「拾笺」+ 朱点 */
+  /class="brand-logo"/.test(quickSrc) &&
+  /class="brand-name">拾笺<i class="seal"/.test(quickSrc) &&
+  /* 主题跟随：读 sj_theme + storage 同步 + 系统偏好兜底 */
+  /<html lang="zh-CN" data-theme="light">/.test(quickSrc) &&
+  /content="light dark"/.test(quickSrc) &&
+  /localStorage\.getItem\('sj_theme'\)/.test(quickSrc) &&
+  /prefers-color-scheme: dark/.test(quickSrc) &&
+  /e\.key === 'sj_theme'/.test(quickSrc) &&
+  /* 电脑宽屏底栏收进卡片宽度，不再横贯全屏 */
+  /@media \(max-width: 600px\)/.test(quickSrc) &&
+  /width: min\(520px, calc\(100% - 36px\)\);/.test(quickSrc));
 ok('详情页返回顶栏走 closeEditor（替代原底部笔记 tab）',
   appSrc.indexOf("a === 'nh-back'") >= 0 && appSrc.indexOf('closeEditor(); return;') >= 0);
 ok('分类面板复用现有伪节点 all/uncat/starred',
