@@ -3013,7 +3013,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-141';
+  const APP_BUILD = '2026-11-21-142';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -7338,13 +7338,17 @@
       if (!pane || !bar || !NARROW() || document.body.classList.contains('sj-note-open')) return;
       /* 回到列表就说明详情已经关了：把阅读态那条细线一并撤掉 */
       document.body.classList.remove('sj-head-solid');
-      const hh = head ? head.offsetHeight : 138;
+      /* 标题自己钉在顶部（CSS sticky），这里只负责「原地缩小」。
+         缩到位的距离 = 条数 / 搜索框那一整段的高度：等它们全滑到顶栏背后，
+         标题正好收到最终字号，之后一直贴着顶部不动。 */
+      const hh = head ? head.offsetHeight : 85;
       const y = pane.scrollTop;
-      const p = Math.min(1, Math.max(0, y / Math.max(40, hh - 44)));
-      if (title) title.style.transform = p > 0 ? 'scale(' + (1 - 0.26 * p).toFixed(3) + ')' : '';
-      /* 等大标题整块滚出去再淡入：半透明时底下还压着条数/搜索框，会叠出重影。
-         这里只切类名，透明度交给 CSS 过渡，滚到边界上不会忽明忽暗。 */
-      bar.classList.toggle('show', y >= hh - 54);
+      const p = Math.min(1, Math.max(0, y / Math.max(56, hh)));
+      if (title) title.style.transform = p > 0 ? 'scale(' + (1 - 0.34 * p).toFixed(3) + ')' : '';
+      /* 一开始滚动就给顶栏下沿补一条软过渡，切掉的残边不会变成一条硬灰线 */
+      bar.classList.toggle('scrolled', p > 0.02);
+      /* 收起到位才出底边细线 */
+      bar.classList.toggle('show', p > 0.9);
     }
     function placeRead() {
       readRaf = 0;
@@ -7379,11 +7383,6 @@
       if (pane) pane.addEventListener('scroll', () => { if (!homeRaf) homeRaf = requestAnimationFrame(placeHome); }, { passive: true });
       if (BODY_BOX) BODY_BOX.addEventListener('scroll', () => { if (!readRaf) readRaf = requestAnimationFrame(placeRead); }, { passive: true });
       window.addEventListener('resize', () => { placeHome(); placeRead(); });
-      const barBtn = $('#sjHomeBarBtn');
-      if (barBtn) barBtn.addEventListener('click', () => {
-        const t = $('#sjCatTitle');
-        if (t) t.click();
-      });
     }
 
     /* 首页大标题跟随列表标题与条数 */
@@ -7391,9 +7390,6 @@
       const t = $('#sjCatTitleText'), c = $('#sjHomeCount');
       if (t) t.textContent = ($('#listTitle').textContent || '全部笔记');
       if (c) c.textContent = $('#listCount').textContent ? ($('#listCount').textContent + '笔记') : '暂无笔记';
-      /* 收起态细栏里的标题跟大标题同一份文字 */
-      const bt = $('#sjHomeBarText');
-      if (bt) bt.textContent = ($('#listTitle').textContent || '全部笔记');
       const star = $('#starBtn');
       if (DETAIL && star) {
         const sb = DETAIL.querySelector('[data-act="star"]');

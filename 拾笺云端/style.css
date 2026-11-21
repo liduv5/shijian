@@ -2926,10 +2926,10 @@ body.sj-note-open .pwa-tip {
     --sel: rgba(77, 143, 255, .22);
   }
 
-  /* ---- 首页头部：大标题 + 条数 + 胶囊搜索 ---- */
+  /* ---- 首页头部两段：顶栏（大标题）+ 第二段（条数 + 胶囊搜索） ---- */
   .sj-home-head {
     display: block; flex: none;
-    padding: 18px 18px 8px;
+    padding: 0 18px 8px;
     background: var(--surface);
   }
   body.sj-note-open .sj-home-head { display: none; }
@@ -2968,9 +2968,10 @@ body.sj-note-open .pwa-tip {
   .sj-home-search input::placeholder { color: var(--text-3); }
 
   /* ---- 大标题随列表上滚收起 ----
-     把整条列表栏当滚动容器（原来是 .note-list 自己滚），大标题、条数、搜索框
-     跟着内容一起上滚，滚到顶就由下面那条细栏接管。全程只动 transform / opacity，
-     不改高度，所以不会出现「内容被挤一下就跳」的抖动。 */
+     把整条列表栏当滚动容器（原来是 .note-list 自己滚），条数、搜索框、卡片
+     都跟着内容上滚。顶栏是 sticky 的：标题一旦贴住顶部就再也不动，只原地缩到
+     最终字号，下面的一切从它背后滑过去——不存在「标题先飞出去、再由细栏接管」
+     的中间空档。全程只动 transform，不改高度，不会出现「内容被挤一下就跳」。 */
   body:not(.sj-note-open) .list-pane {
     overflow-y: auto;
     overflow-x: hidden;
@@ -2983,30 +2984,34 @@ body.sj-note-open .pwa-tip {
   }
   .sj-home-title { transform-origin: left top; will-change: transform; }
 
-  /* 收起态细栏：0 高度 sticky 壳钉在最上方，内容绝对定位在壳顶，
-     不占位、不参与布局，只在需要时淡入 */
+  /* 顶栏本体：钉在最上方的一条实心白条，标题就长在里面。
+     它的高度就是收起到位后的顶栏高度（安全区 + 18 + 标题行），所以缩到最终
+     字号时顶栏正好合身，不会有半截空白。 */
   .sj-home-bar { display: none; }
   body:not(.sj-note-open) .sj-home-bar {
     display: block;
     position: sticky; top: 0; left: 0; right: 0;
-    height: 0; z-index: 6;
-    opacity: 0;
-    transition: opacity .16s linear;
+    z-index: 6;
+    padding: calc(18px + env(safe-area-inset-top, 0px)) 18px 0;
+    background: var(--surface);
+  }
+  /* 底边细线：收起到位才浮现，用伪元素，不占高度、不触发重排 */
+  body:not(.sj-note-open) .sj-home-bar::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+    background: var(--border);
+    opacity: 0; transition: opacity .15s linear;
     pointer-events: none;
   }
-  body:not(.sj-note-open) .sj-home-bar.show { opacity: 1; pointer-events: auto; }
-  .sj-hb-inner {
-    position: absolute; left: 0; right: 0; top: 0;
-    display: flex; align-items: center;
-    height: calc(52px + env(safe-area-inset-top, 0px));
-    padding: env(safe-area-inset-top, 0px) 56px 0 18px;
-    border: 0; border-bottom: 1px solid var(--border);
-    background: var(--surface);
-    font-family: var(--font-ui); font-size: 17px; font-weight: 700;
-    color: var(--text); text-align: left;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  body:not(.sj-note-open) .sj-home-bar.show::after { opacity: 1; }
+  /* 细线下面再加一条 12px 的软过渡：条数/搜索框被顶栏切掉时不会留下一条
+     生硬的灰色残边，而是先淡再消失（只在开始滚动后出现，静止时不压条数） */
+  body:not(.sj-note-open) .sj-home-bar::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 12px;
+    background: linear-gradient(to bottom, var(--surface), transparent);
+    opacity: 0; transition: opacity .15s linear;
+    pointer-events: none;
   }
+  body:not(.sj-note-open) .sj-home-bar.scrolled::before { opacity: 1; }
 
   /* 首页用大标题，原来的小列表头收起（桌面仍显示） */
   .list-head { display: none; }
@@ -3076,8 +3081,9 @@ body.sj-note-open .pwa-tip {
   .sj-more-menu .sj-more-row + .sj-more-row { border-top: 1px solid var(--border); border-radius: 0; }
   .sj-more-menu .sj-more-row .sj-more-n { margin-left: auto; font-size: 11px; color: var(--text-3); }
 
-  /* 页面顶部留出状态栏安全区，避免大标题贴顶 */
-  .sj-home-head { padding-top: calc(18px + env(safe-area-inset-top, 0px)); }
+  /* 页面顶部留出状态栏安全区，避免大标题贴顶（安全区已由 sticky 顶栏让出，
+     这里只做兜底，正常情况为 0） */
+  .sj-home-head { padding-top: 0; }
 
   /* ---- 悬浮新建 ---- */
   .sj-fab {

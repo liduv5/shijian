@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-21-141';
+  var SWV = '2026-11-21-142';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -285,20 +285,18 @@
 
   <!-- ============ 笔记列表 ============ -->
   <section class="list-pane">
-    <!-- 手机端收起态顶栏：大标题随列表上滚消失后，这一条细栏接管（标题 + 底部分割线）。
-         高度为 0 的 sticky 壳，不占位、不改变列表布局；只做「浮在最上层」。
+    <!-- 手机端顶栏：大标题就长在这一条上（sticky 钉在最上方）。
+         它是唯一的标题，不存在「先飞出去再由细栏接管」的第二份：
+         滚动时标题原地缩小、始终贴着顶部不动，条数/搜索框从它下面滑走。
          桌面端整块 display:none。 -->
-    <div class="sj-home-bar" id="sjHomeBar" aria-hidden="true">
-      <button type="button" class="sj-hb-inner" id="sjHomeBarBtn" tabindex="-1">
-        <span id="sjHomeBarText">全部笔记</span>
-      </button>
-    </div>
-    <!-- 华为风手机首页专属头部：大标题（点开分类面板）+ 条数 + 胶囊搜索。
-         桌面端 display:none，沿用下面原来的 .list-head，功能一支不减。 -->
-    <div class="sj-home-head" id="sjHomeHead">
+    <div class="sj-home-bar" id="sjHomeBar">
       <button type="button" class="sj-home-title" id="sjCatTitle" aria-label="选择分类">
         <span id="sjCatTitleText">全部笔记</span><span class="sj-caret">▼</span>
       </button>
+    </div>
+    <!-- 华为风手机首页头部第二段：条数 + 胶囊搜索。跟内容一起上滚，滚到顶被上面那条盖住。
+         桌面端 display:none，沿用下面原来的 .list-head，功能一支不减。 -->
+    <div class="sj-home-head" id="sjHomeHead">
       <div class="sj-home-count" id="sjHomeCount"></div>
       <div class="sj-home-search">
         <svg viewBox="0 0 24 24" class="ico"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>

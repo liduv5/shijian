@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-141 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-142 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-141';
+const BUILD = '2026-11-21-142';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -377,7 +377,8 @@ ok('分类面板字号/行高/图标/系统字体按截图放大，分隔线从�
 ok('展开后标题行与首页完全一致：同字体/同字号/同字重/同间距/同缩进，只换三角方向',
   // 首页基准：18px 左 + 18px+safe 顶，26px/700，gap 7，条数 12px
   /\.sj-home-title \{[\s\S]{0,200}font-size: 26px; font-weight: 700;/.test(styleSrc) &&
-  styleSrc.indexOf('.sj-home-head { padding-top: calc(18px + env(safe-area-inset-top, 0px)); }') >= 0 &&
+  /* 首页基准（18px 左 + 18px+safe 顶）现在长在 sticky 顶栏上 */
+  /body:not\(\.sj-note-open\) \.sj-home-bar \{[\s\S]{0,300}padding: calc\(18px \+ env\(safe-area-inset-top, 0px\)\) 18px 0;/.test(styleSrc) &&
   // 展开态：容器 padding 与首页同值（面板自带 16px 横向留白，2px 补足 18px 左缩进）
   /\.sj-cat-hero \{\s*padding: calc\(18px \+ env\(safe-area-inset-top, 0px\)\) 2px 12px;/.test(styleSrc) &&
   /\.sj-cat-hero \.sj-home-title \{[\s\S]{0,200}gap: 7px;[\s\S]{0,140}font-family: var\(--font-ui\);[\s\S]{0,80}font-size: 26px; font-weight: 700; line-height: 1\.3;/.test(styleSrc) &&
@@ -717,17 +718,22 @@ ok('图标换新：暖橙「笔记」+ 墨绿「随手记」，12 个尺寸齐�
   /"purpose": "any"/.test(quickManifestSrc) && /"purpose": "maskable"/.test(quickManifestSrc) &&
   /'\/icons\/icon-192\.png'/.test(swSrc) && /'\/icons\/icon-512\.png'/.test(swSrc));
 
-ok('首页大标题随列表上翻收起：滚到顶换成一条细栏',
-  /* 整条列表栏变成滚动容器（原来只有 .note-list 自己滚），大标题、条数、搜索框
-     才能跟着列表一起上滚；滚到顶由那条 52px 的 sticky 细栏接管 */
+ok('首页大标题原地缩小并钉在顶部：不再「先飞出屏幕再由细栏接管」',
+  /* 大标题就在 sticky 顶栏里，是唯一的标题来源；条数/搜索框是后面一段，
+     跟着内容上滚、被顶栏盖住。没有第二份「收起态标题」需要淡入 */
   /id="sjHomeBar"/.test(indexSrc) &&
-  /id="sjHomeBarText"/.test(indexSrc) &&
+  /<div class="sj-home-bar" id="sjHomeBar">\s*<button type="button" class="sj-home-title" id="sjCatTitle"/.test(indexSrc) &&
+  !/id="sjHomeBarText"/.test(indexSrc) &&
+  /id="sjHomeCount"/.test(indexSrc) &&
   /body:not\(\.sj-note-open\) \.list-pane \{[\s\S]{0,200}overflow-y: auto/.test(styleSrc) &&
   /body:not\(\.sj-note-open\) \.note-list \{[\s\S]{0,120}overflow: visible/.test(styleSrc) &&
-  /body:not\(\.sj-note-open\) \.sj-home-bar \{[\s\S]{0,200}position: sticky; top: 0;/.test(styleSrc) &&
-  /* 大标题随滚动缩一点（只动 transform，不改高度，滚动里不会抖） */
+  /* 顶栏实心钉在最上方，自带高度：缩到最终字号时正好合身 */
+  /body:not\(\.sj-note-open\) \.sj-home-bar \{[\s\S]{0,240}position: sticky; top: 0;/.test(styleSrc) &&
+  /body:not\(\.sj-note-open\) \.sj-home-bar \{[\s\S]{0,400}background: var\(--surface\)/.test(styleSrc) &&
+  /* 大标题原地缩（只动 transform，不改高度、不改位置，滚动里不会抖） */
   /\.sj-home-title \{ transform-origin: left top/.test(styleSrc) &&
-  /function placeHome\(\)[\s\S]{0,700}scale\([\s\S]{0,300}classList\.toggle\('show', y >= hh - 54\)/.test(appSrc));
+  /* 缩到位的距离 = 条数+搜索那段的高度；到头才出细线；滚动时补软过渡 */
+  /function placeHome\(\)[\s\S]{0,900}head\.offsetHeight[\s\S]{0,300}scale\([\s\S]{0,400}classList\.toggle\('scrolled', p > 0\.02\)[\s\S]{0,200}classList\.toggle\('show', p > 0\.9\)/.test(appSrc));
 
 ok('阅读态大标题随正文上滚、缩进顶栏（和华为备忘录一致）',
   /* 标题 + 分类/日期放进正文顶部，跟着正文一起滚；滚动容器从 .rich-pane
