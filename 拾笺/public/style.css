@@ -350,10 +350,9 @@ html[data-theme="dark"] .rail-btn[data-tip]::after {
   padding: 2px 6px 10px;
 }
 
-/* 左上角品牌：手机端同款「便签＋笔」图标，淡蓝配色与「+ 新建笔记」按钮呼应 */
+/* 左上角品牌：手机端「便签＋笔」图标（去背景），与界面主色协调 */
 .logo {
-  width: 32px; height: 32px;
-  border-radius: 9px;
+  width: 34px; height: 34px;
   object-fit: contain;
   flex: none;
   user-select: none;
@@ -370,10 +369,10 @@ html[data-theme="dark"] .rail-btn[data-tip]::after {
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: .1em;
-  color: #1e5aa8;
+  color: var(--text);
   white-space: nowrap;
 }
-html[data-theme="dark"] .brand-text h1 { color: #bcd6f5; }
+html[data-theme="dark"] .brand-text h1 { color: var(--text); }
 /* 中性简约风：去朱点 */
 .brand-text h1 .seal { display: none; }
 .brand-text span {
