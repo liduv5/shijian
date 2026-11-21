@@ -350,40 +350,25 @@ html[data-theme="dark"] .rail-btn[data-tip]::after {
   padding: 2px 6px 10px;
 }
 
-/* 左上角品牌：手机端「便签＋笔」图标（去背景），与界面主色协调 */
+/* 左上角品牌：淡蓝便签＋淡粉笔图标（去背景），放大显示 */
 .logo {
-  width: 34px; height: 34px;
+  width: 44px; height: 44px;
   object-fit: contain;
   flex: none;
   user-select: none;
 }
 
 .brand-text { flex: 1; min-width: 0; }
-.brand-text h1 {
-  margin: 0;
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
+/* 统计两行：与图标垂直居中对齐 */
+.brand-stat { display: flex; flex-direction: column; gap: 3px; }
+.brand-stat span {
   font-family: var(--font-ui);
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: .1em;
+  font-size: 12.5px;
+  font-weight: 550;
+  line-height: 1.25;
+  letter-spacing: .02em;
   color: var(--text);
   white-space: nowrap;
-}
-html[data-theme="dark"] .brand-text h1 { color: var(--text); }
-/* 中性简约风：去朱点 */
-.brand-text h1 .seal { display: none; }
-.brand-text span {
-  display: block;
-  font-size: 10.5px;
-  color: var(--text-3);
-  margin-top: 4px;
-  letter-spacing: .1em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .icon-btn {
