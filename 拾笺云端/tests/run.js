@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-122 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-123 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-122';
+const BUILD = '2026-11-21-123';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -402,7 +402,7 @@ ok('打开笔记默认阅读态、点正文才进编辑态（draft 直接进编�
   appSrc.indexOf("document.body.classList.toggle('sj-note-edit', edit)") >= 0 &&
   appSrc.indexOf("setNoteMode(note === draftNote || id === String(DRAFT_ID) ? 'edit' : 'read'") >= 0 &&
   appSrc.indexOf('caretRangeFromPoint') >= 0 &&
-  /BODY_BOX\.addEventListener\('click'[\s\S]{0,900}setNoteMode\('edit'/.test(appSrc) &&
+  /BODY_BOX\.addEventListener\('click'[\s\S]{0,2000}setNoteMode\('edit'/.test(appSrc) &&
   appSrc.indexOf("if (a === 'nh-done') { setNoteMode('read'); return; }") >= 0);
 
 ok('手机端不再有 Markdown / 富文本切换，标题与返回箭头同一行、大字正文按截图',
@@ -442,10 +442,40 @@ ok('编辑态：紧凑头部、隐藏四宫格底栏、露出编辑工具条',
   /body\.sj-note-edit \.editor-head \{ display: none; \}/.test(styleSrc) &&
   /body\.sj-note-edit \.sj-detail-bar \{ display: none !important; \}/.test(styleSrc) &&
   /body\.sj-note-edit \.sj-edit-bar:not\(\.hidden\) \{ display: flex; \}/.test(styleSrc) &&
-  /body\.sj-note-edit\.sj-note-fmt \.toolbar \{ display: flex; \}/.test(styleSrc) &&
+  // 手机端不再借桌面那条窄工具条：A 按钮改成弹底部「样式」面板
+  !/body\.sj-note-edit\.sj-note-fmt \.toolbar \{ display: flex; \}/.test(styleSrc) &&
   /body\.sj-note-edit \.sj-note-head \.title-input \{[\s\S]{0,220}font-size: 17px; font-weight: 600/.test(styleSrc) &&
   appSrc.indexOf('function mountTitle()') >= 0 &&
   appSrc.indexOf('NOTE_HEAD.insertBefore(ti, NOTE_ACTIONS)') >= 0);
+
+ok('点底栏 A 按钮弹出「样式」面板：B/I/U、三种对齐、增减缩进、四种列表、字号滑杆',
+  indexSrc.indexOf('id="sjStyleSheet"') >= 0 &&
+  indexSrc.indexOf('class="sj-ss-title">样式<') >= 0 &&
+  // 三种对齐 + 增减缩进 + 四种列表，一个都不能少
+  ['al-left', 'al-center', 'al-right', 'outdent', 'indent',
+    'list-num', 'list-alpha', 'list-ul', 'list-task', 'bold', 'italic', 'underline']
+    .every((a) => indexSrc.indexOf('data-act="' + a + '"') >= 0) &&
+  indexSrc.indexOf('id="sjStyleSize"') >= 0 &&
+  // styleWithCSS=true 才不会被 DOMPurify 抹掉：对齐落 style、颜色落 span
+  /function cssCmd\(cmd, val\)[\s\S]{0,320}styleWithCSS', false, true/.test(appSrc) &&
+  appSrc.indexOf("if (styleSheetOpen()) closeStyleSheet();") >= 0 &&
+  /a === 'fmt'[\s\S]{0,240}openStyleSheet\(\);/.test(appSrc) &&
+  appSrc.indexOf('function styleList(kind)') >= 0 &&
+  appSrc.indexOf("el.style.listStyleType = 'lower-alpha'") >= 0 &&
+  appSrc.indexOf("el.classList.add('sj-task')") >= 0 &&
+  // 点方框打勾
+  /ul\.sj-task > li[\s\S]{0,220}classList\.toggle\('done'\)/.test(appSrc));
+
+ok('「样式」面板的颜色与纸张：7 颗色点、5 张纸、纸张记在本机',
+  indexSrc.indexOf('data-color="#d13b32"') >= 0 &&
+  indexSrc.indexOf('data-color="default"') >= 0 &&
+  (indexSrc.match(/class="sj-ss-dot/g) || []).length >= 7 &&
+  (indexSrc.match(/class="sj-ss-paper/g) || []).length >= 5 &&
+  appSrc.indexOf("const PAPER_KEY = 'sj_paper_v1';") >= 0 &&
+  /function applyPaper\(idx\)[\s\S]{0,220}document\.body\.dataset\.paper = v/.test(appSrc) &&
+  /body\.sj-note-open\[data-paper="2"\] \.editor-pane \{ background: #e9e1cd; \}/.test(styleSrc) &&
+  /\.sj-ss-range \{[\s\S]{0,260}appearance: none/.test(styleSrc) &&
+  /\.sj-style-sheet \{[\s\S]{0,220}position: fixed; z-index: 92/.test(styleSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

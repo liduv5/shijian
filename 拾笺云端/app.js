@@ -2759,7 +2759,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-122';
+  const APP_BUILD = '2026-11-21-123';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -6000,6 +6000,180 @@
     });
     /* 分类改名 / 合并后，标题下面这一行跟着变 */
     window.addEventListener('sj-categories-changed', () => { refreshNoteMetaLine(); });
+
+    /* ================= 「样式」面板（华为备忘录那一套文字格式） =================
+       编辑态点底栏最左边那个 A 按钮弹出：B/I/U、三种对齐、增减缩进、四种列表、
+       字号滑杆、文字颜色、纸张底色。全部只改正文富文本本身，不新增数据字段。
+       所有按钮都在 mousedown 时阻止默认，保住正文里的选区（savedRange 由
+       selectionchange 维护），点完面板还能接着在原来的位置调格式。 */
+    const STYLE_SHEET = $('#sjStyleSheet');
+    const SS_SIZE = $('#sjStyleSize');
+    const PAPER_KEY = 'sj_paper_v1';
+
+    function styleSheetOpen() {
+      return !!(STYLE_SHEET && !STYLE_SHEET.classList.contains('hidden'));
+    }
+    function closeStyleSheet() {
+      if (STYLE_SHEET) STYLE_SHEET.classList.add('hidden');
+      const b = EDIT_BAR && EDIT_BAR.querySelector('[data-act="fmt"]');
+      if (b) b.classList.remove('on');
+    }
+    function openStyleSheet() {
+      if (!STYLE_SHEET) return;
+      clearImgSel();
+      STYLE_SHEET.classList.remove('hidden');
+      const b = EDIT_BAR && EDIT_BAR.querySelector('[data-act="fmt"]');
+      if (b) b.classList.add('on');
+      syncStyleStates();
+    }
+
+    /* 对齐 / 缩进 / 颜色必须 styleWithCSS=true：否则浏览器会生成 align 属性或
+       <font color>，这两种写法在 DOMPurify 那一关会被抹掉，重开笔记就白调了。 */
+    function cssCmd(cmd, val) {
+      const pane = $('#richPane');
+      if (!pane) return false;
+      pane.focus();
+      restoreRange();
+      try { document.execCommand('styleWithCSS', false, true); } catch (_) {}
+      let ok = false;
+      try { ok = document.execCommand(cmd, false, val); } catch (_) {}
+      onRichInput();
+      syncStyleStates();
+      return ok;
+    }
+
+    /* 光标只是一根竖线时，先把整段选中再套格式，否则字号/颜色看不见效果。
+       选区优先取正文里当前的，取不到就退回 savedRange（点按钮后焦点会跑）。 */
+    function ensureBlockSel() {
+      const pane = $('#richPane');
+      if (!pane) return;
+      const sel = window.getSelection();
+      let r = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+      if (!r || !pane.contains(r.startContainer)) r = savedRange;
+      if (!r || !pane.contains(r.startContainer) || !r.collapsed) return;
+      let el = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+      while (el && el !== pane && !/^(P|DIV|LI|H1|H2|H3|BLOCKQUOTE|PRE)$/.test(el.tagName)) el = el.parentElement;
+      if (!el || el === pane) return;
+      const nr = document.createRange();
+      nr.selectNodeContents(el);
+      sel.removeAllRanges();
+      sel.addRange(nr);
+      savedRange = nr.cloneRange();
+    }
+
+    /* 列表：先插普通列表，再把符号换成字母或方框 */
+    function styleList(kind) {
+      const pane = $('#richPane');
+      if (!pane) return;
+      cssCmd(kind === 'list-alpha' ? 'insertOrderedList' : 'insertUnorderedList');
+      const sel = window.getSelection();
+      const node = sel && sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
+      let el = node && node.nodeType === 1 ? node : node && node.parentElement;
+      while (el && el !== pane && el.tagName !== 'UL' && el.tagName !== 'OL') el = el.parentElement;
+      if (!el || el === pane) return;
+      if (kind === 'list-alpha') el.style.listStyleType = 'lower-alpha';
+      else if (kind === 'list-task') el.classList.add('sj-task');
+      else if (kind === 'list-ul') el.style.listStyleType = '';
+      onRichInput();
+    }
+
+    /* 面板上的开关量与正文里的真实状态对齐（加粗的字段一点开就应该是蓝的） */
+    function syncStyleStates() {
+      if (!STYLE_SHEET || STYLE_SHEET.classList.contains('hidden')) return;
+      const map = {
+        bold: 'bold', italic: 'italic', underline: 'underline',
+        'al-left': 'justifyLeft', 'al-center': 'justifyCenter', 'al-right': 'justifyRight',
+      };
+      Object.keys(map).forEach((k) => {
+        const b = STYLE_SHEET.querySelector('[data-act="' + k + '"]');
+        if (!b) return;
+        let on = false;
+        try { on = document.queryCommandState(map[k]); } catch (_) {}
+        b.classList.toggle('on', on);
+      });
+    }
+    let ssTick = 0;
+    document.addEventListener('selectionchange', () => {
+      if (!styleSheetOpen() || ssTick) return;
+      ssTick = window.requestAnimationFrame(() => { ssTick = 0; syncStyleStates(); });
+    });
+
+    function applyTextColor(c) {
+      const pane = $('#richPane');
+      if (!pane) return;
+      ensureBlockSel();
+      /* 「默认」这颗不是写死黑色：取当前正文的实际文字色，深色主题下才不会变黑块 */
+      const color = c === 'default' ? getComputedStyle(pane).color : c;
+      cssCmd('foreColor', color);
+    }
+    function applyPaper(idx) {
+      const v = String(idx);
+      document.body.dataset.paper = v;
+      try { localStorage.setItem(PAPER_KEY, v); } catch (_) {}
+      if (STYLE_SHEET) STYLE_SHEET.querySelectorAll('[data-paper]').forEach((el) => {
+        el.classList.toggle('on', el.dataset.paper === v);
+      });
+    }
+    /* 纸张是外观偏好（和行距一样记在本机），打开应用时恢复上次选的那张 */
+    (function initPaper() {
+      let v = '0';
+      try { v = localStorage.getItem(PAPER_KEY) || '0'; } catch (_) {}
+      document.body.dataset.paper = v;
+      if (STYLE_SHEET) STYLE_SHEET.querySelectorAll('[data-paper]').forEach((el) => {
+        el.classList.toggle('on', el.dataset.paper === v);
+      });
+    })();
+
+    if (SS_SIZE) {
+      const paintSize = () => {
+        const min = Number(SS_SIZE.min) || 13;
+        const max = Number(SS_SIZE.max) || 30;
+        const p = ((Number(SS_SIZE.value) - min) / (max - min)) * 100;
+        SS_SIZE.style.setProperty('--p', p.toFixed(2) + '%');
+      };
+      SS_SIZE.addEventListener('input', paintSize);
+      /* 拖动过程中不改字（会碎成一堆 span），松手才落一次 */
+      SS_SIZE.addEventListener('change', () => {
+        ensureBlockSel();
+        execFontSize(SS_SIZE.value);
+      });
+      paintSize();
+    }
+
+    if (STYLE_SHEET) {
+      STYLE_SHEET.addEventListener('mousedown', (e) => {
+        if (e.target.closest('button')) e.preventDefault();
+      });
+      STYLE_SHEET.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-act], [data-color], [data-paper]');
+        if (!b) return;
+        e.preventDefault();
+        const act = b.dataset.act;
+        if (act === 'ss-close') { closeStyleSheet(); return; }
+        if (act === 'bold') { exec('bold'); syncStyleStates(); return; }
+        if (act === 'italic') { exec('italic'); syncStyleStates(); return; }
+        if (act === 'underline') { exec('underline'); syncStyleStates(); return; }
+        if (act === 'al-left') { cssCmd('justifyLeft'); return; }
+        if (act === 'al-center') { cssCmd('justifyCenter'); return; }
+        if (act === 'al-right') { cssCmd('justifyRight'); return; }
+        if (act === 'outdent') { cssCmd('outdent'); return; }
+        if (act === 'indent') { cssCmd('indent'); return; }
+        if (act === 'list-num' || act === 'list-alpha' || act === 'list-ul' || act === 'list-task') {
+          styleList(act);
+          return;
+        }
+        if (b.dataset.color) { applyTextColor(b.dataset.color); return; }
+        if (b.dataset.paper != null) { applyPaper(b.dataset.paper); }
+      });
+    }
+    /* 点正文或别处收回面板；点 A 按钮自己不算（它负责开关） */
+    document.addEventListener('click', (e) => {
+      if (!styleSheetOpen()) return;
+      if (STYLE_SHEET.contains(e.target)) return;
+      if (e.target.closest && e.target.closest('[data-act="fmt"]')) return;
+      closeStyleSheet();
+    });
+
     /* 点正文进入编辑时，把光标落到手指点的那个字后面，而不是跳回开头 */
     function caretTo(x, y) {
       const pane = $('#richPane');
@@ -6048,7 +6222,7 @@
       const edit = mode === 'edit';
       const doFocus = !opts || opts.focus !== false;
       document.body.classList.toggle('sj-note-edit', edit);
-      if (!edit) document.body.classList.remove('sj-note-fmt');
+      if (!edit) { document.body.classList.remove('sj-note-fmt'); closeStyleSheet(); }
       const ti = $('#titleInput');
       if (ti) ti.readOnly = !edit;
       const rp = $('#richPane');
@@ -6082,6 +6256,7 @@
       const note = currentNote();
       if (!note) {
         document.body.classList.remove('sj-note-edit', 'sj-note-fmt');
+        closeStyleSheet();
         noteModeId = null;
         if (EDIT_BAR) EDIT_BAR.classList.add('hidden');
         mountTitle();
@@ -6125,8 +6300,10 @@
       if (!b) return;
       const a = b.dataset.act;
       if (a === 'fmt') {
-        const on = document.body.classList.toggle('sj-note-fmt');
-        b.classList.toggle('on', on);
+        /* 最左边那个 A：开关底部「样式」面板（原来是切桌面那条窄工具条，
+           手机端那条太挤，照华为备忘录换成整块面板） */
+        if (styleSheetOpen()) closeStyleSheet();
+        else openStyleSheet();
         return;
       }
       if (a === 'img') { const el = $('#imgBtn'); if (el) el.click(); return; }
@@ -6141,6 +6318,17 @@
       if (!NARROW() || !currentNote()) return;
       const img = e.target.closest ? e.target.closest('#richPane img, #previewPane img') : null;
       if (document.body.classList.contains('sj-note-edit')) {
+        /* 待办列表：点左边那个方框打勾 / 取消勾，点文字仍然是正常放光标 */
+        const li = e.target.closest ? e.target.closest('#richPane ul.sj-task > li') : null;
+        if (li) {
+          const dx = e.clientX - li.getBoundingClientRect().left;
+          if (dx >= 0 && dx <= 26) {
+            e.preventDefault();
+            li.classList.toggle('done');
+            onRichInput();
+            return;
+          }
+        }
         const inRich = img && img.closest('#richPane') ? img : null;
         if (inRich) { e.preventDefault(); selectImg(inRich); } else clearImgSel();
         return;

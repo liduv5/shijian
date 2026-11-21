@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-21-122';
+  var SWV = '2026-11-21-123';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -540,6 +540,110 @@
       <button type="button" data-act="editor-close">取消</button>
       <button type="button" class="save" id="sjEditorSave">保存</button>
     </div>
+  </div>
+</div>
+
+<!-- 样式面板：编辑态点底栏最左边那个 A 按钮弹出，仿华为备忘录「样式」。
+     三行按钮（B/I/U + 三种对齐、增减缩进 + 四种列表、字号滑杆）+ 文字颜色 + 纸张底色。
+     只改富文本正文，不新增任何数据字段；body 直属，z-index 高于编辑工具条。 -->
+<div class="sj-style-sheet hidden" id="sjStyleSheet" role="dialog" aria-label="样式">
+  <div class="sj-ss-head">
+    <span class="sj-ss-title">样式</span>
+    <button type="button" class="sj-ss-close" data-act="ss-close" aria-label="关闭样式面板">
+      <svg viewBox="0 0 24 24" class="ico"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+
+  <div class="sj-ss-row">
+    <button type="button" class="sj-ss-btn" data-act="bold" aria-label="加粗">
+      <span class="sj-ss-glyph b">B</span>
+    </button>
+    <button type="button" class="sj-ss-btn" data-act="italic" aria-label="斜体">
+      <span class="sj-ss-glyph i">I</span>
+    </button>
+    <button type="button" class="sj-ss-btn" data-act="underline" aria-label="下划线">
+      <span class="sj-ss-glyph u">U</span>
+    </button>
+    <button type="button" class="sj-ss-btn" data-act="al-left" aria-label="左对齐">
+      <svg viewBox="0 0 24 24" class="ico"><path d="M4 6h16M4 11h11M4 16h14"/></svg>
+    </button>
+    <button type="button" class="sj-ss-btn" data-act="al-center" aria-label="居中对齐">
+      <svg viewBox="0 0 24 24" class="ico"><path d="M4 6h16M6.5 11h11M5 16h14"/></svg>
+    </button>
+    <button type="button" class="sj-ss-btn" data-act="al-right" aria-label="右对齐">
+      <svg viewBox="0 0 24 24" class="ico"><path d="M4 6h16M9 11h11M6 16h14"/></svg>
+    </button>
+  </div>
+
+  <div class="sj-ss-row">
+    <button type="button" class="sj-ss-btn" data-act="outdent" aria-label="减少缩进">
+      <svg viewBox="0 0 24 24" class="ico">
+        <path d="M4.4 5.6l4 3.4-4 3.4z" fill="currentColor" stroke="none"/>
+        <path d="M11 6h9M11 12.6h9M4 19h16"/>
+      </svg>
+    </button>
+    <button type="button" class="sj-ss-btn" data-act="indent" aria-label="增加缩进">
+      <svg viewBox="0 0 24 24" class="ico">
+        <path d="M19.6 5.6l-4 3.4 4 3.4z" fill="currentColor" stroke="none"/>
+        <path d="M4 6h9M4 12.6h9M4 19h16"/>
+      </svg>
+    </button>
+    <button type="button" class="sj-ss-btn" data-act="list-num" aria-label="有序列表">
+      <svg viewBox="0 0 24 24" class="ico">
+        <text x="1" y="8" font-size="6.4" font-weight="600" fill="currentColor" stroke="none">1</text>
+        <text x="1" y="15" font-size="6.4" font-weight="600" fill="currentColor" stroke="none">2</text>
+        <text x="1" y="22" font-size="6.4" font-weight="600" fill="currentColor" stroke="none">3</text>
+        <path d="M8 6h13M8 13h13M8 20h13"/>
+      </svg>
+    </button>
+    <button type="button" class="sj-ss-btn" data-act="list-alpha" aria-label="字母列表">
+      <svg viewBox="0 0 24 24" class="ico">
+        <text x="1" y="8" font-size="6.4" font-weight="600" fill="currentColor" stroke="none">a</text>
+        <text x="1" y="15" font-size="6.4" font-weight="600" fill="currentColor" stroke="none">b</text>
+        <text x="1" y="22" font-size="6.4" font-weight="600" fill="currentColor" stroke="none">c</text>
+        <path d="M8 6h13M8 13h13M8 20h13"/>
+      </svg>
+    </button>
+    <button type="button" class="sj-ss-btn" data-act="list-ul" aria-label="无序列表">
+      <svg viewBox="0 0 24 24" class="ico">
+        <circle cx="3.4" cy="6" r="1.7" fill="currentColor" stroke="none"/>
+        <circle cx="3.4" cy="13" r="1.7" fill="currentColor" stroke="none"/>
+        <circle cx="3.4" cy="20" r="1.7" fill="currentColor" stroke="none"/>
+        <path d="M8.6 6h12M8.6 13h12M8.6 20h12"/>
+      </svg>
+    </button>
+    <button type="button" class="sj-ss-btn" data-act="list-task" aria-label="待办列表">
+      <svg viewBox="0 0 24 24" class="ico">
+        <rect x="1.8" y="4.4" width="3.4" height="3.4" fill="currentColor" stroke="none"/>
+        <rect x="1.8" y="11.4" width="3.4" height="3.4" fill="currentColor" stroke="none"/>
+        <rect x="1.8" y="18.4" width="3.4" height="3.4" fill="currentColor" stroke="none"/>
+        <path d="M8.6 6h12M8.6 13h12M8.6 20h12"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="sj-ss-size-row">
+    <span class="sj-ss-aa sm">Aa</span>
+    <input type="range" class="sj-ss-range" id="sjStyleSize" min="13" max="30" step="1" value="19" aria-label="字号">
+    <span class="sj-ss-aa lg">Aa</span>
+  </div>
+
+  <div class="sj-ss-dots">
+    <button type="button" class="sj-ss-dot" data-color="#d13b32" style="--c:#d13b32" aria-label="红色"></button>
+    <button type="button" class="sj-ss-dot" data-color="#f2c53d" style="--c:#f2c53d" aria-label="黄色"></button>
+    <button type="button" class="sj-ss-dot" data-color="#63a95c" style="--c:#63a95c" aria-label="绿色"></button>
+    <button type="button" class="sj-ss-dot" data-color="#61b0d9" style="--c:#61b0d9" aria-label="蓝色"></button>
+    <button type="button" class="sj-ss-dot" data-color="#4b46d8" style="--c:#4b46d8" aria-label="靛蓝"></button>
+    <button type="button" class="sj-ss-dot" data-color="#a554cd" style="--c:#a554cd" aria-label="紫色"></button>
+    <button type="button" class="sj-ss-dot ring" data-color="default" aria-label="默认文字颜色"></button>
+  </div>
+
+  <div class="sj-ss-papers">
+    <button type="button" class="sj-ss-paper" data-paper="0" style="--p:#ffffff" aria-label="纯白纸"></button>
+    <button type="button" class="sj-ss-paper" data-paper="1" style="--p:#f1efea" aria-label="暖灰纸"></button>
+    <button type="button" class="sj-ss-paper" data-paper="2" style="--p:#e9e1cd" aria-label="卡其纸"></button>
+    <button type="button" class="sj-ss-paper dots" data-paper="3" style="--p:#ffffff" aria-label="点阵纸"></button>
+    <button type="button" class="sj-ss-paper" data-paper="4" style="--p:#f7f0dd" aria-label="米黄纸"></button>
   </div>
 </div>
 
