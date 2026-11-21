@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-139 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-140 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-139';
+const BUILD = '2026-11-21-140';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -654,9 +654,10 @@ ok('底栏「更多」点了有反应：菜单不被同一次点击关掉，锚�
   /ctxJustOpened = true;\s*setTimeout\(\(\) => \{ ctxJustOpened = false; \}, 0\);/.test(appSrc) &&
   /document\.addEventListener\('click', \(e\) => \{\s*if \(ctxJustOpened\) return;/.test(appSrc) &&
   /* 编辑态详情底栏是 display:none，拿它的 rect 全是 0，菜单会被钳到屏幕左上角 */
-  /function openNoteMore\(anchor, note\) \{[\s\S]{0,300}anchor\.getBoundingClientRect\(\)[\s\S]{0,700}同步到云端[\s\S]{0,200}\{ above: true \}/.test(appSrc) &&
-  /* above：y 当菜单底边算，整个菜单落在工具条上方，不压住那排图标 */
-  /function showCtx\(x, y, items, opts\) \{[\s\S]{0,900}opts && opts\.above \? y - rect\.height : y/.test(appSrc) &&
+  /function openNoteMore\(anchor, note\) \{[\s\S]{0,300}anchor\.getBoundingClientRect\(\)[\s\S]{0,700}同步到云端[\s\S]{0,200}\{ above: true, anchor \}/.test(appSrc) &&
+  /* above：ay 当菜单底边算，整个菜单落在工具条上方，不压住那排图标；
+     锚点在就每次按它的实时位置重算（输入法收起后底栏挪了，菜单得跟） */
+  /function placeCtx\(x, y, opts\) \{[\s\S]{0,900}ctxAnchor && ctxAnchor\.isConnected[\s\S]{0,420}o\.above \? ay - rect\.height : ay/.test(appSrc) &&
   /else if \(act === 'more'\) openNoteMore\(b, note\);/.test(appSrc) &&
   /if \(a === 'more'\) \{ openNoteMore\(b, currentNote\(\)\); return; \}/.test(appSrc) &&
   (appSrc.match(/openNoteMore\(/g) || []).length === 3 &&
@@ -664,6 +665,17 @@ ok('底栏「更多」点了有反应：菜单不被同一次点击关掉，锚�
   /body\.sj-note-open \.pwa-tip \{/.test(styleSrc) &&
   /* 编辑工具条的收藏仍走隐藏底栏那颗按钮的既有逻辑 */
   /if \(a === 'more'\) \{ openNoteMore\(b, currentNote\(\)\); return; \}[\s\S]{0,220}const proxy = DETAIL/.test(appSrc));
+
+ok('输入法收起后菜单跟着底栏回到底部，不再悬在半空',
+  /* 点「更多」会失焦、输入法收起，底栏整排往下挪；菜单是 fixed，只在弹出时算一次位置，
+     不重算就一直钉在半空中，离按钮几百像素 */
+  /let ctxAnchor = null;/.test(appSrc) &&
+  /function placeCtx\(x, y, opts\) \{[\s\S]{0,400}ctxAnchor && ctxAnchor\.isConnected[\s\S]{0,300}ax = r\.right - rect\.width/.test(appSrc) &&
+  /function ctxFollowOn\(\) \{[\s\S]{0,400}window\.addEventListener\('resize', ctxFollowSoon\)[\s\S]{0,300}visualViewport\.addEventListener\('resize', ctxFollowSoon\)/.test(appSrc) &&
+  /function hideCtx\(\) \{[\s\S]{0,260}ctxFollowOff\(\);/.test(appSrc) &&
+  /* 输入法收起有时不派发 resize，补几拍兜底重贴 */
+  /\[120, 320, 700\]\.forEach/.test(appSrc) &&
+  /同步到云端[\s\S]{0,160}\{ above: true, anchor \}/.test(appSrc));
 
 ok('手机端历史版本改上下结构：列表在上、预览在下，不再被挤成一条竖排字',
   /* 原来是 232px 固定列表 + 右侧预览，390 宽弹窗里预览只剩 100px，一个字一行 */

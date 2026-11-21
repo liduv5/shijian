@@ -3007,7 +3007,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-139';
+  const APP_BUILD = '2026-11-21-140';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -4486,6 +4486,71 @@
      「点别处关菜单」的 document 监听，会把刚弹出的菜单立刻关掉——表现就是点了没反应。
      这里立一个只活到本任务结束的守卫，把这一次冒泡挡掉；下次点击是新任务，守卫已清。 */
   let ctxJustOpened = false;
+  /* 菜单是 fixed 定位，位置只在弹出那一刻算一次。可手机上的「更多」常常是在输入法
+     开着的时候点的：这一点正文失焦、输入法开始收起，底栏和按钮整个往下挪，
+     菜单却钉在原来的位置不动——悬在半空中，离按钮几百像素。
+     所以记住锚点，视口每次变化就按锚点重新贴一遍。 */
+  let ctxAnchor = null;
+  let ctxPoint = null;
+  let ctxOpts = null;
+  let ctxRaf = 0;
+
+  function ctxViewport() {
+    const vv = window.visualViewport;
+    const w = vv ? Math.min(window.innerWidth, vv.width) : window.innerWidth;
+    const h = vv ? Math.min(window.innerHeight, vv.height + vv.offsetTop) : window.innerHeight;
+    return { w: w, h: h };
+  }
+
+  function placeCtx(x, y, opts) {
+    const o = opts || ctxOpts || {};
+    const rect = ctx.getBoundingClientRect();
+    let ax = typeof x === 'number' ? x : (ctxPoint ? ctxPoint.x : 0);
+    let ay = typeof y === 'number' ? y : (ctxPoint ? ctxPoint.y : 0);
+    /* 有锚点就用锚点的实时位置：视口一变（输入法收起、旋转、分屏）按钮就挪了，
+       菜单跟着走才不会悬空。锚点不在了/被隐藏（rect 全 0）才退回调用方给的点。 */
+    if (ctxAnchor && ctxAnchor.isConnected) {
+      const r = ctxAnchor.getBoundingClientRect();
+      if (r.width || r.height) {
+        ax = r.right - rect.width;
+        ay = o.above ? r.top - 8 : r.bottom + 4;
+      }
+    }
+    const vp = ctxViewport();
+    const px = Math.max(8, Math.min(ax, vp.w - rect.width - 8));
+    /* above：ay 当作「菜单底边」看待，让菜单整个落在锚点上方（底栏/工具条那颗「更多」） */
+    const top = o.above ? ay - rect.height : ay;
+    const py = Math.max(8, Math.min(top, vp.h - rect.height - 8));
+    ctx.style.left = px + 'px';
+    ctx.style.top = py + 'px';
+  }
+
+  function ctxFollowSoon() {
+    if (ctxRaf) return;
+    ctxRaf = requestAnimationFrame(() => {
+      ctxRaf = 0;
+      if (!ctx.classList.contains('hidden')) placeCtx();
+    });
+  }
+  function ctxFollowOff() {
+    window.removeEventListener('resize', ctxFollowSoon);
+    window.removeEventListener('orientationchange', ctxFollowSoon);
+    if (window.visualViewport) {
+      window.visualViewport.removeEventListener('resize', ctxFollowSoon);
+      window.visualViewport.removeEventListener('scroll', ctxFollowSoon);
+    }
+    if (ctxRaf) { cancelAnimationFrame(ctxRaf); ctxRaf = 0; }
+  }
+  function ctxFollowOn() {
+    ctxFollowOff();
+    window.addEventListener('resize', ctxFollowSoon);
+    window.addEventListener('orientationchange', ctxFollowSoon);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', ctxFollowSoon);
+      window.visualViewport.addEventListener('scroll', ctxFollowSoon);
+    }
+  }
+
   function showCtx(x, y, items, opts) {
     ctx.innerHTML = '';
     items.forEach((it) => {
@@ -4500,17 +4565,26 @@
       ctx.appendChild(el);
     });
     ctx.classList.remove('hidden');
-    const rect = ctx.getBoundingClientRect();
-    const px = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8));
-    /* above：y 当作「菜单底边」看待，让菜单整个落在锚点上方（底栏/工具条那颗「更多」） */
-    const top = opts && opts.above ? y - rect.height : y;
-    const py = Math.max(8, Math.min(top, window.innerHeight - rect.height - 8));
-    ctx.style.left = px + 'px';
-    ctx.style.top = py + 'px';
+    ctxOpts = opts || null;
+    ctxAnchor = (opts && opts.anchor) || null;
+    ctxPoint = { x: x, y: y };
+    placeCtx(x, y, opts);
+    ctxFollowOn();
+    /* 输入法收起偶尔是「一步到位」而且不派发 resize，补几拍兜底重贴 */
+    [120, 320, 700].forEach((ms) => {
+      setTimeout(() => { if (!ctx.classList.contains('hidden')) placeCtx(); }, ms);
+    });
     ctxJustOpened = true;
     setTimeout(() => { ctxJustOpened = false; }, 0);
   }
-  function hideCtx() { ctx.classList.add('hidden'); ctxJustOpened = false; }
+  function hideCtx() {
+    ctx.classList.add('hidden');
+    ctxJustOpened = false;
+    ctxAnchor = null;
+    ctxPoint = null;
+    ctxOpts = null;
+    ctxFollowOff();
+  }
 
   /* ---------------------------------------------------------- 笔记卡片操作菜单
      手机上没有 hover 也没有右键，编辑器那排按钮又会被横向裁掉，
@@ -6175,7 +6249,7 @@
         { label: '移动到分类', icon: I.folder, onClick: () => openCategoryPicker(note) },
         { sep: true },
         { label: '同步到云端', icon: I.download, onClick: () => { if (window.SJSync) window.SJSync.open(); } },
-      ], { above: true });
+      ], { above: true, anchor });
     }
 
     /* 详情页操作：全部指向现有按钮/菜单，不重复实现 */
