@@ -91,26 +91,6 @@
     width: min(520px, 100%); background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--r-lg); padding: 22px 20px; box-shadow: var(--shadow-md);
   }
-  /* 品牌行：朱砂小印 + 「拾笺」行楷 + 朱点，和主程序同一套视觉 */
-  .brand { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; }
-  .brand-logo {
-    width: 28px; height: 28px; border-radius: 7px; flex: none;
-    background: linear-gradient(150deg, #c25b41, #a8412c); color: #fff;
-    display: grid; place-items: center; font-family: var(--font-brand);
-    font-size: 18px; line-height: 1; padding-bottom: 2px;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .38), 0 3px 10px -4px rgba(168, 65, 44, .7);
-  }
-  html[data-theme="dark"] .brand-logo { background: linear-gradient(150deg, #cd6a50, #ad4630); }
-  .brand-name {
-    display: flex; align-items: flex-start; gap: 5px;
-    font-family: var(--font-brand); font-size: 20px; font-weight: 600;
-    line-height: 1.2; letter-spacing: .16em; color: var(--text);
-  }
-  .brand-name .seal {
-    display: block; width: 5px; height: 5px; margin-top: 7px; border-radius: 1px;
-    background: var(--seal); transform: rotate(-10deg); opacity: .9; flex: none;
-  }
-  .brand-sub { margin-left: auto; font-size: 11px; letter-spacing: .2em; color: var(--text-3); }
   h1 { margin: 0 0 8px; font-size: 19px; font-weight: 600; color: var(--text); }
   p { margin: 0 0 16px; font-size: 13px; line-height: 1.7; color: var(--text-2); }
   .box {
@@ -229,24 +209,11 @@
     }
     /* 深色下 accent 变浅，实心按钮换深色字才看得清 */
     html[data-theme="dark"] .primary { color: #1c1a17; }
-    /* 品牌区：去朱砂小印与朱点，行楷改无衬线纯文字 */
-    .brand-logo, .brand-name .seal { display: none; }
-    .brand-name {
-      font-family: var(--font-ui);
-      font-size: 20px;
-      font-weight: 700;
-      letter-spacing: .1em;
-    }
   }
 </style>
 </head>
 <body>
 <div class="card">
-  <div class="brand">
-    <span class="brand-logo" aria-hidden="true">拾</span>
-    <span class="brand-name">拾笺<i class="seal" aria-hidden="true"></i></span>
-    <span class="brand-sub">随手记</span>
-  </div>
   <div id="view"></div>
   <div class="isolated" id="isolatedTip" hidden>这个图标被独立安装过，有自己的数据分区。请删掉它，改用主程序顶栏的「随手记」。</div>
   <div class="desk" id="deskTip" hidden>
@@ -561,7 +528,7 @@
    安装，每次打开主程序都触发 controllerchange → 整页自动刷新。 */
 (function () {
   if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
-  var SWV = '2026-11-22-152';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
+  var SWV = '2026-11-22-153';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
   var sc = new URLSearchParams(location.search).get('sharecode') || 'X4WPKTHLIN';
   var url = '/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SWV;
   navigator.serviceWorker.getRegistration().then(function (reg) {
