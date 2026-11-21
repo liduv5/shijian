@@ -2182,6 +2182,13 @@
      不认这个属性的浏览器会直接忽略它，行为退化成改造前的样子，不会更糟。 */
   const KB_POLICY = 'virtualkeyboardpolicy';
   let kbManual = false;
+  /* 自绘光标的刷新钩子：由 mobileHomeUI 里的实现挂上来（那里能摸到面板状态）。
+     格式命令改完选区后调一下，光标位置立刻跟上。 */
+  let caretRefresh = null;
+  function refreshCaret() {
+    if (!caretRefresh) return;
+    try { caretRefresh(); } catch (_) {}
+  }
 
   /* 两道保险：
      ① virtualkeyboardpolicy=manual —— 认这个属性的内核（Chrome 94+）聚焦不弹键盘；
@@ -2315,7 +2322,7 @@
     try { document.execCommand('styleWithCSS', false, false); } catch (_) {}
     document.execCommand(cmd, false, value);
     onRichInput();
-    revealSelection();
+    revealSelection(); refreshCaret();
   }
 
   // 字体：styleWithCSS=true 让 fontName 生成 <span style="font-family:…">，
@@ -2341,7 +2348,7 @@
     const before = new Set(Array.from(pane.querySelectorAll('font')));
     document.execCommand('fontSize', false, '7');
     const made = Array.from(pane.querySelectorAll('font')).filter((f) => !before.has(f));
-    if (!made.length) { onRichInput(); revealSelection(); return; }
+    if (!made.length) { onRichInput(); revealSelection(); refreshCaret(); return; }
     const newSpans = [];
     made.forEach((f) => {
       const span = document.createElement('span');
@@ -2364,7 +2371,7 @@
       } catch (_) {}
     }
     onRichInput();
-    revealSelection();
+    revealSelection(); refreshCaret();
   }
 
   const BLOCK_TAGS = /^(P|DIV|LI|BLOCKQUOTE|PRE|H1|H2|H3|H4)$/;
@@ -2894,7 +2901,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-127';
+  const APP_BUILD = '2026-11-21-128';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -6158,7 +6165,89 @@
       if (b) b.classList.remove('on');
       /* 面板收起后恢复默认键盘策略：用户接下来点正文就该弹输入法了 */
       setKbManual(false);
+      cmHide();
     }
+
+    /* ---------------- 自绘光标 ----------------
+       手机内核在「正文有焦点、但键盘被压住」这种状态里，不保证一直画那根竖线：
+       面板开着上翻正文，原生光标就没了，得再点一次正文才回来（用户 2026-11-21 反馈）。
+       与其跟各家的聚焦/失焦行为较劲，不如自己画一根：位置每帧按选区算，
+       跟着正文滚、跟着格式变，只要面板开着就在。原生光标在面板开着时设成透明，
+       免得和自绘的两根打架。 */
+    let cmEl = null, cmRange = null;
+    function cmEnsure() {
+      if (cmEl) return cmEl;
+      cmEl = document.createElement('div');
+      cmEl.className = 'sj-caret-mark hidden';
+      cmEl.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(cmEl);
+      return cmEl;
+    }
+    function cmLiveRange() {
+      const pane = $('#richPane');
+      if (!pane) return null;
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount) {
+        const r = sel.getRangeAt(0);
+        if (r && pane.contains(r.startContainer)) return r;
+      }
+      if (cmRange && pane.contains(cmRange.startContainer)) return cmRange;
+      if (savedRange && pane.contains(savedRange.startContainer)) return savedRange;
+      return null;
+    }
+    function cmHide() { if (cmEl) cmEl.classList.add('hidden'); }
+    function cmPaint() {
+      const pane = $('#richPane');
+      if (!pane || !styleSheetOpen() || !document.body.classList.contains('sj-note-edit')) { cmHide(); return; }
+      const r = cmLiveRange();
+      if (!r) { cmHide(); return; }
+      let box = null;
+      try { const rs = r.getClientRects(); if (rs && rs.length) box = rs[rs.length - 1]; } catch (_) {}
+      if (!box) {
+        let el = r.startContainer;
+        if (el && el.nodeType !== 1) el = el.parentElement;
+        if (!el || !el.getBoundingClientRect) { cmHide(); return; }
+        const b = el.getBoundingClientRect();
+        box = { left: b.left, top: b.top, height: Math.min(b.height, 32) };
+      }
+      const pr = pane.getBoundingClientRect();
+      const el = cmEnsure();
+      const lh = parseFloat(window.getComputedStyle(pane).lineHeight) || 22;
+      const h = Math.round(box.height || lh);
+      const y = Math.round(box.top);
+      if (y + h < pr.top || y > pr.bottom) { el.classList.add('hidden'); return; }
+      el.style.left = Math.round(box.left) + 'px';
+      el.style.top = y + 'px';
+      el.style.height = h + 'px';
+      el.classList.remove('hidden');
+    }
+    /* 选区变了、滚动了、调完格式都走这里：位置重算一遍 */
+    function cmSync() {
+      const r = cmLiveRange();
+      cmRange = r ? r.cloneRange() : null;
+      cmPaint();
+    }
+    window.SJCaretRefresh = cmSync;
+    caretRefresh = cmSync;
+    (function () {
+      const pane = $('#richPane');
+      if (!pane) return;
+      /* 滚动时直接重画（按 16ms 节流）：不用 rAF——部分内核/后台标签页里 rAF
+         会被节流甚至不跑，光标就会停在旧位置，用户看到的就是「又没了」。 */
+      let last = 0;
+      pane.addEventListener('scroll', () => {
+        if (!styleSheetOpen()) return;
+        const now = Date.now();
+        if (now - last < 16) return;
+        last = now;
+        cmPaint();
+      }, { passive: true });
+      window.addEventListener('resize', () => { if (styleSheetOpen()) cmPaint(); });
+      if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { if (styleSheetOpen()) cmPaint(); });
+      /* 兜底：个别内核滚动时不派发 scroll（或被节流得很厉害），
+         面板开着就每 250ms 对一次位置，代价只有一次 getClientRects。 */
+      setInterval(() => { if (styleSheetOpen()) cmPaint(); }, 250);
+    })();
     /* 面板是 fixed 定位，量出真实高度交给 CSS，把编辑区整体抬到它上方 */
     function syncSheetHeight() {
       if (!STYLE_SHEET || STYLE_SHEET.classList.contains('hidden')) return;
@@ -6178,7 +6267,7 @@
       syncStyleStates();
       /* 先按上一帧的高度占位，再量真值兜一次；最后把正在调的位置滚进视野 */
       syncSheetHeight();
-      requestAnimationFrame(() => { syncSheetHeight(); revealSelection(); });
+      requestAnimationFrame(() => { syncSheetHeight(); revealSelection(); refreshCaret(); });
     }
 
     /* 对齐 / 缩进 / 颜色必须 styleWithCSS=true：否则浏览器会生成 align 属性或
@@ -6193,7 +6282,7 @@
       try { ok = document.execCommand(cmd, false, val); } catch (_) {}
       onRichInput();
       syncStyleStates();
-      revealSelection();
+      revealSelection(); refreshCaret();
       return ok;
     }
 
@@ -6213,7 +6302,7 @@
       else if (kind === 'list-task') el.classList.add('sj-task');
       else if (kind === 'list-ul') el.style.listStyleType = '';
       onRichInput();
-      revealSelection();
+      revealSelection(); refreshCaret();
     }
 
     /* 面板上的开关量与正文里的真实状态对齐（加粗的字段一点开就应该是蓝的） */
@@ -6505,7 +6594,7 @@
           if (rp) {
             focusQuiet(rp);
             caretTo(e.clientX, e.clientY);
-            revealSelection();
+            revealSelection(); refreshCaret();
           }
           return;
         }

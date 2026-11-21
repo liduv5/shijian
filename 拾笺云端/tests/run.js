@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-127 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-128 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-127';
+const BUILD = '2026-11-21-128';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -502,7 +502,7 @@ ok('样式面板不再遮挡正文：编辑区抬到面板上方、调完格式�
   /function syncSheetHeight\(\)[\s\S]{0,320}setProperty\('--ss-h'/.test(appSrc) &&
   /function openStyleSheet\(\) \{[\s\S]{0,700}classList\.add\('sj-style-open'\)/.test(appSrc) &&
   /function closeStyleSheet\(\) \{[\s\S]{0,300}classList\.remove\('sj-style-open'\)/.test(appSrc) &&
-  /function revealSelection\(\) \{[\s\S]{0,400}getClientRects\(\)/.test(appSrc) &&
+  /function revealSelection\(\) \{[\s\S]{0,560}getClientRects\(\)/.test(appSrc) &&
   (appSrc.match(/revealSelection\(\);/g) || []).length >= 5 &&
   /body\.sj-style-open \.pwd-tip \{ display: none; \}/.test(styleSrc) &&
   /max-height: min\(88vh, 470px\)/.test(styleSrc) &&
@@ -513,13 +513,22 @@ ok('光标常驻 + 面板不误关：收键盘后焦点仍在正文，点正文�
   /function hideSoftKeyboard\(\) \{[\s\S]{0,420}hadPane[\s\S]{0,200}pane\.focus\(/.test(appSrc) &&
   /function focusQuiet\(pane\) \{[\s\S]{0,220}setKbManual\(true\)[\s\S]{0,120}activeElement === el/.test(appSrc) &&
   /* 面板开着点正文：定位光标 + 滚进视野，直接 return，不走 typingFocus */
-  /if \(styleSheetOpen\(\)\) \{[\s\S]{0,240}caretTo\(e\.clientX, e\.clientY\)[\s\S]{0,200}revealSelection\(\)[\s\S]{0,40}return;/.test(appSrc) &&
+  /if \(styleSheetOpen\(\)\) \{[\s\S]{0,240}caretTo\(e\.clientX, e\.clientY\)[\s\S]{0,200}revealSelection\(\)[\s\S]{0,80}return;/.test(appSrc) &&
   /* 外部点击的自动收起要放过整块编辑区，只留 A / × */
   /t\.closest\('\.editor-pane'\)/.test(appSrc) &&
   /t\.closest\('#richPane'\)/.test(appSrc) &&
   /* 只有一根光标时点 B/I/U 也要有反馈：先选中所在段落再套格式 */
   /if \(NARROW\(\) && \/\^\(bold\|italic\|underline\)\$\//.test(appSrc) &&
-  (appSrc.match(/function ensureBlockSel\(/g) || []).length === 1);
+  (appSrc.match(/function ensureBlockSel\(/g) || []).length === 1 &&
+  /* 自绘光标：手机内核不保证聚焦时一直画原生光标，面板开着就自己画一根 */
+  /\.sj-caret-mark \{[\s\S]{0,220}position: fixed/.test(styleSrc) &&
+  /body\.sj-style-open \.rich-pane \{ caret-color: transparent; \}/.test(styleSrc) &&
+  /function cmPaint\(\) \{[\s\S]{0,1400}classList\.remove\('hidden'\)/.test(appSrc) &&
+  /caretRefresh = cmSync/.test(appSrc) &&
+  (appSrc.match(/refreshCaret\(\)/g) || []).length >= 6 &&
+  /pane\.addEventListener\('scroll'[\s\S]{0,200}cmPaint\(\)/.test(appSrc) &&
+  /* 滚动事件被节流/不派发时的兜底：面板开着每 250ms 对一次位置 */
+  /setInterval\(\(\) => \{ if \(styleSheetOpen\(\)\) cmPaint\(\); \}, 250\)/.test(appSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
