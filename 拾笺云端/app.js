@@ -2901,7 +2901,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-128';
+  const APP_BUILD = '2026-11-21-129';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -6196,6 +6196,19 @@
       return null;
     }
     function cmHide() { if (cmEl) cmEl.classList.add('hidden'); }
+    /* 光标跟着字色走：改成紫字，光标就该是紫的，不然在彩色行里找不到它在哪 */
+    function cmColorAt(r) {
+      try {
+        let n = r.startContainer;
+        if (n && n.nodeType === 1) {
+          const kids = n.childNodes;
+          n = kids[Math.min(r.startOffset, kids.length - 1)] || n;
+        }
+        if (n && n.nodeType !== 1) n = n.parentElement;
+        if (!n) return '';
+        return window.getComputedStyle(n).color || '';
+      } catch (_) { return ''; }
+    }
     function cmPaint() {
       const pane = $('#richPane');
       if (!pane || !styleSheetOpen() || !document.body.classList.contains('sj-note-edit')) { cmHide(); return; }
@@ -6219,6 +6232,8 @@
       el.style.left = Math.round(box.left) + 'px';
       el.style.top = y + 'px';
       el.style.height = h + 'px';
+      const col = cmColorAt(r);
+      if (col) el.style.background = col;
       el.classList.remove('hidden');
     }
     /* 选区变了、滚动了、调完格式都走这里：位置重算一遍 */
@@ -6289,18 +6304,189 @@
     /* 光标只是一根竖线时，先把整段选中再套格式（ensureBlockSel 在模块作用域，
        和 exec 系列共用一份） */
     /* 列表：先插普通列表，再把符号换成字母或方框 */
+    /* 找光标所在的那一层列表（就近的 UL/OL），没有就返回 null */
+    function listOf(node, pane) {
+      let el = node && node.nodeType === 1 ? node : (node && node.parentElement);
+      while (el && el !== pane) {
+        if (el.tagName === 'UL' || el.tagName === 'OL') return el;
+        el = el.parentElement;
+      }
+      return null;
+    }
+    function listKindOf(el) {
+      if (!el) return '';
+      if (el.classList.contains('sj-task')) return 'list-task';
+      if (el.tagName === 'OL') return el.style.listStyleType === 'lower-alpha' ? 'list-alpha' : 'list-num';
+      return 'list-ul';
+    }
+    /* 换列表类型只换外层标签，不重新 execCommand——那会把新列表套进旧列表里，
+       序号从 1 重新数，看着就像「没反应」。
+       换标签会把旧节点摘出文档，选区跟着悬空（下一次点格式就没反应了），
+       所以按子节点路径把光标原样搬到新树的同一位置。 */
+    function rangePathOf(root, r) {
+      const path = [];
+      let n = r.startContainer;
+      while (n && n !== root) {
+        path.unshift(Array.prototype.indexOf.call(n.parentNode.childNodes, n));
+        n = n.parentNode;
+      }
+      return n === root ? { path: path, offset: r.startOffset } : null;
+    }
+    function rangeFromPath(root, p) {
+      let n = root;
+      for (let i = 0; i < p.path.length; i++) {
+        n = n.childNodes[p.path[i]];
+        if (!n) return null;
+      }
+      const r = document.createRange();
+      const max = n.nodeType === 3 ? n.length : n.childNodes.length;
+      try { r.setStart(n, Math.min(p.offset, max)); } catch (_) { r.selectNodeContents(n); r.collapse(true); return r; }
+      r.collapse(true);
+      return r;
+    }
+    function retagList(list, tag) {
+      if (list.tagName === tag) return list;
+      const sel = window.getSelection();
+      const live = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+      const saved = live && list.contains(live.startContainer) ? rangePathOf(list, live) : null;
+      const nu = document.createElement(tag);
+      for (let i = 0; i < list.attributes.length; i++) {
+        const a = list.attributes[i];
+        try { nu.setAttribute(a.name, a.value); } catch (_) {}
+      }
+      while (list.firstChild) nu.appendChild(list.firstChild);
+      list.parentNode.replaceChild(nu, list);
+      if (saved) {
+        const nr = rangeFromPath(nu, saved);
+        if (nr) {
+          sel.removeAllRanges();
+          sel.addRange(nr);
+          savedRange = nr.cloneRange();
+        }
+      }
+      return nu;
+    }
+    /* 再点一次同一个列表按钮 = 取消列表：li 拆回段落，子列表留在原处不丢内容 */
+    function unwrapList(list) {
+      const sel = window.getSelection();
+      const live = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+      let liIdx = -1;
+      if (live && list.contains(live.startContainer)) {
+        let n = live.startContainer;
+        while (n && n.parentNode && n.parentNode !== list) n = n.parentNode;
+        liIdx = n && n.parentNode === list ? Array.prototype.indexOf.call(list.children, n) : -1;
+      }
+      const out = document.createDocumentFragment();
+      const made = [];
+      Array.prototype.slice.call(list.children).forEach((li) => {
+        const p = document.createElement('p');
+        const nested = [];
+        Array.prototype.slice.call(li.children).forEach((c) => {
+          if (c.tagName === 'UL' || c.tagName === 'OL') nested.push(c);
+        });
+        while (li.firstChild) p.appendChild(li.firstChild);
+        out.appendChild(p);
+        nested.forEach((n) => out.appendChild(n));
+        made.push(p);
+      });
+      list.parentNode.replaceChild(out, list);
+      /* 拆完把光标放回原来那一行的段尾，别让它悬空 */
+      if (liIdx >= 0 && made[liIdx] && sel) {
+        const nr = document.createRange();
+        nr.selectNodeContents(made[liIdx]);
+        nr.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(nr);
+        savedRange = nr.cloneRange();
+      }
+    }
+    /* Chrome 有时会把新列表塞进原来的 <p> 里（<p><ol>…</ol></p>），
+       存成 HTML 再读回来，浏览器会在列表前补一个空段落——把列表提出来 */
+    function liftList(list) {
+      const p = list.parentElement;
+      const pane = $('#richPane');
+      if (!p || !pane || p === pane) return;
+      if (!/^(P|DIV|H1|H2|H3|BLOCKQUOTE)$/.test(p.tagName)) return;
+      const extra = Array.prototype.filter.call(p.childNodes, (n) => {
+        if (n === list) return false;
+        if (n.nodeType === 3 && !n.textContent.trim()) return false;
+        return true;
+      });
+      if (!extra.length) p.parentNode.replaceChild(list, p);
+      else p.parentNode.insertBefore(list, p.nextSibling);
+    }
+    function paintListKind(el, kind) {
+      const ordered = kind === 'list-num' || kind === 'list-alpha';
+      const node = retagList(el, ordered ? 'OL' : 'UL');
+      node.classList.remove('sj-task');
+      node.style.listStyleType = kind === 'list-alpha' ? 'lower-alpha' : '';
+      if (kind === 'list-task') node.classList.add('sj-task');
+      liftList(node);
+      return node;
+    }
     function styleList(kind) {
       const pane = $('#richPane');
       if (!pane) return;
-      cssCmd(kind === 'list-alpha' ? 'insertOrderedList' : 'insertUnorderedList');
+      const ordered = kind === 'list-num' || kind === 'list-alpha';
       const sel = window.getSelection();
-      const node = sel && sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
-      let el = node && node.nodeType === 1 ? node : node && node.parentElement;
-      while (el && el !== pane && el.tagName !== 'UL' && el.tagName !== 'OL') el = el.parentElement;
-      if (!el || el === pane) return;
-      if (kind === 'list-alpha') el.style.listStyleType = 'lower-alpha';
-      else if (kind === 'list-task') el.classList.add('sj-task');
-      else if (kind === 'list-ul') el.style.listStyleType = '';
+      let node = sel && sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
+      /* 选区万一悬空（节点被替换过），退回上次记下的范围，别误判成「不在列表里」 */
+      if ((!node || !pane.contains(node)) && savedRange && pane.contains(savedRange.startContainer)) {
+        node = savedRange.startContainer;
+      }
+      const cur = listOf(node, pane);
+      if (cur && listKindOf(cur) === kind) {
+        /* 同一个按钮再点一次：取消列表 */
+        unwrapList(cur);
+        onRichInput();
+        revealSelection(); refreshCaret();
+        return;
+      }
+      if (cur) {
+        /* 已经在列表里：原地换类型（圆点 ↔ 1.2.3. ↔ a.b.c. ↔ 方框） */
+        paintListKind(cur, kind);
+        onRichInput();
+        revealSelection(); refreshCaret();
+        return;
+      }
+      /* 记下光标所在的整块文字，建好列表后把光标放回同一行（execCommand
+         建完列表时选区常常还挂在被替换掉的段落上，下一次点按钮就失灵） */
+      const startText = (function () {
+        let n = node && node.nodeType === 1 ? node : (node && node.parentElement);
+        while (n && n !== pane && !/^(P|DIV|LI|H1|H2|H3|BLOCKQUOTE)$/.test(n.tagName)) n = n.parentElement;
+        return n && n !== pane ? n.textContent.trim() : '';
+      })();
+      const before = Array.prototype.slice.call(pane.querySelectorAll('ul, ol'));
+      cssCmd(ordered ? 'insertOrderedList' : 'insertUnorderedList');
+      let made = null;
+      const sel2 = window.getSelection();
+      const n2 = sel2 && sel2.rangeCount ? sel2.getRangeAt(0).startContainer : null;
+      if (n2 && pane.contains(n2)) made = listOf(n2, pane);
+      if (!made) {
+        /* 选区跑丢了就按「新出现的那个列表」认 */
+        const fresh = Array.prototype.slice.call(pane.querySelectorAll('ul, ol'))
+          .filter((l) => before.indexOf(l) < 0);
+        made = fresh[0] || null;
+      }
+      if (!made) { onRichInput(); revealSelection(); refreshCaret(); return; }
+      made = paintListKind(made, kind);
+      const s3 = window.getSelection();
+      if (!(s3 && s3.rangeCount && made.contains(s3.getRangeAt(0).startContainer))) {
+        let li = null;
+        Array.prototype.some.call(made.querySelectorAll('li'), (x) => {
+          if (startText && x.textContent.trim() === startText) { li = x; return true; }
+          return false;
+        });
+        if (!li) li = made.querySelector('li');
+        if (li) {
+          const nr = document.createRange();
+          nr.selectNodeContents(li);
+          nr.collapse(false);
+          s3.removeAllRanges();
+          s3.addRange(nr);
+          savedRange = nr.cloneRange();
+        }
+      }
       onRichInput();
       revealSelection(); refreshCaret();
     }

@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-128 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-129 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-128';
+const BUILD = '2026-11-21-129';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -461,8 +461,8 @@ ok('点底栏 A 按钮弹出「样式」面板：B/I/U、三种对齐、增减�
   appSrc.indexOf("if (styleSheetOpen()) closeStyleSheet();") >= 0 &&
   /a === 'fmt'[\s\S]{0,240}openStyleSheet\(\);/.test(appSrc) &&
   appSrc.indexOf('function styleList(kind)') >= 0 &&
-  appSrc.indexOf("el.style.listStyleType = 'lower-alpha'") >= 0 &&
-  appSrc.indexOf("el.classList.add('sj-task')") >= 0 &&
+  appSrc.indexOf("node.style.listStyleType = kind === 'list-alpha' ? 'lower-alpha' : ''") >= 0 &&
+  appSrc.indexOf("if (kind === 'list-task') node.classList.add('sj-task')") >= 0 &&
   // 点方框打勾
   /ul\.sj-task > li[\s\S]{0,220}classList\.toggle\('done'\)/.test(appSrc));
 
@@ -529,6 +529,28 @@ ok('光标常驻 + 面板不误关：收键盘后焦点仍在正文，点正文�
   /pane\.addEventListener\('scroll'[\s\S]{0,200}cmPaint\(\)/.test(appSrc) &&
   /* 滚动事件被节流/不派发时的兜底：面板开着每 250ms 对一次位置 */
   /setInterval\(\(\) => \{ if \(styleSheetOpen\(\)\) cmPaint\(\); \}, 250\)/.test(appSrc));
+
+ok('列表：数字/字母/圆点/待办可互相换类型，数字列表真的是 <ol>',
+  /* 数字列表必须走 insertOrderedList，之前只判了 alpha，点数字出来是圆点 */
+  /const ordered = kind === 'list-num' \|\| kind === 'list-alpha';/.test(appSrc) &&
+  /cssCmd\(ordered \? 'insertOrderedList' : 'insertUnorderedList'\)/.test(appSrc) &&
+  /* 已在列表里时只换外层标签，不再 execCommand，否则会套成嵌套列表 */
+  /function retagList\(list, tag\) \{[\s\S]{0,1600}replaceChild\(nu, list\)/.test(appSrc) &&
+  /function paintListKind\(el, kind\) \{[\s\S]{0,420}listStyleType/.test(appSrc) &&
+  /* 换标签会摘掉旧节点、选区悬空，得按路径搬回新树 */
+  /function rangePathOf\(root, r\) \{[\s\S]{0,520}offset: r\.startOffset/.test(appSrc) &&
+  /function rangeFromPath\(root, p\) \{[\s\S]{0,600}createRange\(\)/.test(appSrc) &&
+  /if \(cur && listKindOf\(cur\) === kind\) \{[\s\S]{0,200}unwrapList\(cur\)/.test(appSrc) &&
+  /function unwrapList\(list\) \{[\s\S]{0,1600}replaceChild\(out, list\)/.test(appSrc) &&
+  /* Chrome 会把列表塞进 <p> 里，存盘后能多出一个空段落 */
+  /function liftList\(list\) \{[\s\S]{0,760}replaceChild\(list, p\)/.test(appSrc) &&
+  (appSrc.match(/function retagList\(/g) || []).length === 1 &&
+  (appSrc.match(/function unwrapList\(/g) || []).length === 1);
+
+ok('自绘光标跟着字色变：改成紫字，光标就是紫的',
+  /function cmColorAt\(r\) \{[\s\S]{0,420}getComputedStyle\(n\)\.color/.test(appSrc) &&
+  /const col = cmColorAt\(r\);[\s\S]{0,80}el\.style\.background = col/.test(appSrc) &&
+  /\.sj-caret-mark \{[\s\S]{0,220}background: var\(--text\)/.test(styleSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
