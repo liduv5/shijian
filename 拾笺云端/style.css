@@ -1744,6 +1744,48 @@ html[data-theme="dark"] .sj-tip {
 .hist-foot .btn { flex: none; }          /* 固定按钮宽度，不被左侧说明文字挤窄 */
 .hist-foot .btn:disabled { opacity: .45; cursor: not-allowed; }
 
+/* ---- 手机：历史版本改上下结构 ----
+   原来是「232px 固定列表 + 右边留给预览」，390 宽的手机弹窗只有 334px，
+   预览区被挤成 100px 一条，竖排一个字一行（用户 2026-11-21 截图反馈）。
+   窄屏改成列表在上、预览在下，列表项压成一行，两个区各自滚动。 */
+@media (max-width: 720px) {
+  .modal.wide {
+    width: calc(100vw - 20px);
+    max-height: min(84vh, 700px);
+  }
+  .hist-head { padding: 15px 16px 11px; }
+  .hist-head h3 { font-size: 15px; }
+  .hist-head p { font-size: 11.5px; }
+  .hist-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(92px, 44%) 1fr;
+    min-height: 0;
+  }
+  .hist-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 6px 8px;
+  }
+  .hist-item {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    padding: 6px 9px;
+  }
+  .hist-time { font-size: 13px; white-space: nowrap; }
+  .hist-sub { margin-top: 0; font-size: 11px; }
+  .hist-sub span:nth-child(2) { display: none; }   /* 那条间隔点在小屏多余 */
+  .hist-sub span:first-child { color: var(--text-2); }
+  .hist-preview { padding: 14px 16px; font-size: 13.5px; }
+  .hist-foot {
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+    flex-wrap: wrap;
+    gap: 8px 10px;
+  }
+  .hist-foot span { font-size: 11px; flex: 1 1 100%; }   /* 说明独占一行，按钮不被挤 */
+  .hist-foot .btn { margin-left: auto; }                  /* 按钮靠右，别贴着左边空一截 */
+}
+
 /* ============================================================ 打印 */
 .print-area { display: none; }
 

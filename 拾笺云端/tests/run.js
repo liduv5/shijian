@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-138 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-139 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-138';
+const BUILD = '2026-11-21-139';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -664,6 +664,46 @@ ok('底栏「更多」点了有反应：菜单不被同一次点击关掉，锚�
   /body\.sj-note-open \.pwa-tip \{/.test(styleSrc) &&
   /* 编辑工具条的收藏仍走隐藏底栏那颗按钮的既有逻辑 */
   /if \(a === 'more'\) \{ openNoteMore\(b, currentNote\(\)\); return; \}[\s\S]{0,220}const proxy = DETAIL/.test(appSrc));
+
+ok('手机端历史版本改上下结构：列表在上、预览在下，不再被挤成一条竖排字',
+  /* 原来是 232px 固定列表 + 右侧预览，390 宽弹窗里预览只剩 100px，一个字一行 */
+  /@media \(max-width: 720px\) \{[\s\S]{0,900}\.hist-body \{[\s\S]{0,240}grid-template-columns: 1fr;[\s\S]{0,140}grid-template-rows: minmax\(92px, 44%\) 1fr/.test(styleSrc) &&
+  /\.hist-list \{[\s\S]{0,180}border-right: 0;[\s\S]{0,90}border-bottom: 1px solid var\(--border\)/.test(styleSrc) &&
+  /* 列表项压成一行：时间 · 来源 · 字数，7 条一屏数得完 */
+  /\.hist-item \{[\s\S]{0,140}display: flex;[\s\S]{0,90}align-items: baseline/.test(styleSrc) &&
+  /* 窄屏弹窗贴边留 10px、最高 84vh，按钮靠右不挤说明文字 */
+  /\.modal\.wide \{\s*width: calc\(100vw - 20px\);\s*max-height: min\(84vh, 700px\)/.test(styleSrc) &&
+  /\.hist-foot \.btn \{ margin-left: auto; \}/.test(styleSrc) &&
+  /* 桌面端仍是左右两栏，别被顺手改掉 */
+  /\.hist-body \{\s*display: grid;\s*grid-template-columns: 232px 1fr;/.test(styleSrc));
+
+/* 图标：只读 PNG 头（宽高 + color type），不引第三方图像库。
+   color type 6 = RGBA（any 版要留透明圆角），2 = RGB（maskable/apple 必须满版不透明）。 */
+function pngInfo(file) {
+  const b = fs.readFileSync(file);
+  if (b.toString('ascii', 1, 4) !== 'PNG') return null;
+  return { w: b.readUInt32BE(16), h: b.readUInt32BE(20), color: b[25] };
+}
+const ICON_SET = [
+  ['icon-512.png', 512, 6], ['icon-192.png', 192, 6],
+  ['icon-maskable-512.png', 512, 2], ['icon-maskable-192.png', 192, 2],
+  ['icon-quick-512.png', 512, 6], ['icon-quick-192.png', 192, 6],
+  ['icon-quick-maskable-512.png', 512, 2], ['icon-quick-maskable-192.png', 192, 2],
+  ['apple-touch-icon.png', 180, 2], ['apple-touch-icon-quick.png', 180, 2],
+  ['favicon-32.png', 32, 6], ['favicon-quick-32.png', 32, 6],
+];
+const manifestSrc = fs.readFileSync(path.join(CLOUD, 'manifest.webmanifest'), 'utf8');
+const quickManifestSrc = fs.readFileSync(path.join(CLOUD, 'quick.webmanifest'), 'utf8');
+ok('图标换新：暖橙「笔记」+ 墨绿「随手记」，12 个尺寸齐全且透明/满版各就各位',
+  ICON_SET.every(([n, w, c]) => {
+    const p = path.join(CLOUD, 'icons', n);
+    if (!fs.existsSync(p)) return false;
+    const i = pngInfo(p);
+    return !!i && i.w === w && i.h === w && i.color === c;
+  }) &&
+  /"purpose": "any"/.test(manifestSrc) && /"purpose": "maskable"/.test(manifestSrc) &&
+  /"purpose": "any"/.test(quickManifestSrc) && /"purpose": "maskable"/.test(quickManifestSrc) &&
+  /'\/icons\/icon-192\.png'/.test(swSrc) && /'\/icons\/icon-512\.png'/.test(swSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
