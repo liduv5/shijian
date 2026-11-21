@@ -3007,7 +3007,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-136';
+  const APP_BUILD = '2026-11-21-137';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -6391,7 +6391,10 @@
          不会「先藏掉再等原生重绘」中间空一拍。宽屏仍用系统原生光标。 */
       const editing = document.body.classList.contains('sj-note-edit');
       const focused = document.activeElement === pane;
-      if (!NARROW() || !editing || !(focused || styleSheetOpen())) { cmHide(); return; }
+      /* 面板「已经弹出来」或「正在等键盘收完」都算在调格式：光标不能断。
+         等键盘的那 200~600ms 里正文刚 blur 过，系统不画光标，只能靠自绘这根顶上，
+         否则键盘往下走、光标也没了，看着同样像闪一下（用户 2026-11-21 反馈）。 */
+      if (!NARROW() || !editing || !(focused || styleSheetOpen() || styleSheetPending())) { cmHide(); return; }
       const r = cmLiveRange();
       if (!r || !r.collapsed) { cmHide(); return; }
       let box = null;

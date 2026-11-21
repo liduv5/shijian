@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-136 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-137 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-136';
+const BUILD = '2026-11-21-137';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -543,8 +543,9 @@ ok('光标常驻 + 面板不误关：收键盘后焦点仍在正文，点正文�
   /pane\.addEventListener\('scroll'[\s\S]{0,200}cmPaint\(\)/.test(appSrc) &&
   /* 兜底对位改成全局定时（cmPaint 自己判断该不该画） */
   /setInterval\(cmPaint, 250\)/.test(appSrc) &&
-  /* 窄屏编辑态就一直画，不是只在面板打开时：收起那一刻光标要连续 */
-  /!NARROW\(\) \|\| !editing \|\| !\(focused \|\| styleSheetOpen\(\)\)/.test(appSrc) &&
+  /* 窄屏编辑态就一直画，不是只在面板打开时：收起那一刻光标要连续；
+     「正在等键盘收完」也算在调格式，否则等待那几百毫秒里一根光标都没有 */
+  /!NARROW\(\) \|\| !editing \|\| !\(focused \|\| styleSheetOpen\(\) \|\| styleSheetPending\(\)\)/.test(appSrc) &&
   /document\.addEventListener\('selectionchange', cmPaint\)/.test(appSrc));
 
 ok('收起样式面板不闪屏：高度回落有过渡、键盘不抢着弹、光标不断',
@@ -590,6 +591,8 @@ ok('点 A 打开面板不闪屏：等键盘收完再弹、面板不透明上滑�
   /function whenViewportQuiet\([\s\S]{0,900}> 640/.test(appSrc) &&
   /* 等着的时候再点一下 A 算取消；收起面板也把等待掐掉 */
   /if \(styleSheetPending\(\)\) \{[\s\S]{0,200}stopViewportQuiet\(\)/.test(appSrc) &&
+  /* 等待期间正文已经 blur，系统不画光标；自绘这根要顶上，不能跟着消失 */
+  /function cmPaint\(\)[\s\S]{0,700}focused \|\| styleSheetOpen\(\) \|\| styleSheetPending\(\)/.test(appSrc) &&
   /function closeStyleSheet\(\) \{[\s\S]{0,200}stopViewportQuiet\(\)/.test(appSrc) &&
   /* 面板出场只滑不淡：opacity 从 .4 起步时，下面上抬的正文会透出来 */
   /animation: sj-sheet-up \.18s/.test(styleSrc) &&
