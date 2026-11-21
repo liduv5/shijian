@@ -814,6 +814,35 @@ async function importAll(req, res, query) {
   pruneBackups();
 
   const catIds = new Set(db.categories.map((c) => c.id));
+  /* 云端 / 备份里的分类 id 和本地不一定相同（两端各自生成 id），只按 id 去重
+     会让同名分类每次同步都被当成新类别追加，侧栏就出现好几份「学习素材」。
+     这里先按「父链名称路径」建立映射：路径相同就复用本地 id，并把传入 id
+     映射到本地 id，笔记的 categoryId 也一起换，避免笔记挂到空壳上。 */
+  const normName = (s) => String(s || '').trim().toLowerCase();
+  const incomingById = new Map(cats.filter((c) => c && typeof c.id === 'string').map((c) => [c.id, c]));
+  const incomingPath = (c) => {
+    const seg = []; let cur = c, guard = 0;
+    while (cur && guard++ < 32) {
+      seg.unshift(normName(cur.name));
+      cur = cur.parentId ? (incomingById.get(cur.parentId) || findCategory(cur.parentId)) : null;
+    }
+    return seg.join('\u0000');
+  };
+  const localPath = (c) => {
+    const seg = []; let cur = c, guard = 0;
+    while (cur && guard++ < 32) {
+      seg.unshift(normName(cur.name));
+      cur = cur.parentId ? findCategory(cur.parentId) : null;
+    }
+    return seg.join('\u0000');
+  };
+  const localByPath = new Map();
+  for (const c of db.categories) {
+    const k = localPath(c);
+    if (!localByPath.has(k)) localByPath.set(k, c);
+  }
+  const alias = new Map(); // 传入 id -> 实际落地的本地 id
+  for (const c of cats) if (c && typeof c.id === 'string' && catIds.has(c.id)) alias.set(c.id, c.id);
   let catAdded = 0;
 
   // 先处理父级已就位的，循环几轮把多层结构补齐
@@ -822,15 +851,22 @@ async function importAll(req, res, query) {
     const rest = [];
     for (const c of pending) {
       if (catIds.has(c.id)) continue;
-      if (c.parentId && !catIds.has(c.parentId)) { rest.push(c); continue; }
-      db.categories.push({
+      if (c.parentId && !catIds.has(c.parentId) && !alias.has(c.parentId)) { rest.push(c); continue; }
+      const k = incomingPath(c);
+      const same = localByPath.get(k);
+      if (same) { alias.set(c.id, same.id); continue; } // 同名同路径：复用，不再新增
+      const parentId = c.parentId ? (alias.get(c.parentId) || c.parentId) : null;
+      const cat = {
         id: c.id,
         name: String(c.name || '未命名类别').slice(0, 60),
-        parentId: c.parentId || null,
+        parentId: catIds.has(parentId) ? parentId : null,
         createdAt: c.createdAt || now(),
         ...(Number.isInteger(c.color) && c.color >= 0 && c.color <= 7 ? { color: c.color } : {}),
-      });
+      };
+      db.categories.push(cat);
       catIds.add(c.id);
+      localByPath.set(k, cat);
+      alias.set(c.id, c.id);
       catAdded++;
     }
     if (rest.length === pending.length) break;
@@ -839,13 +875,19 @@ async function importAll(req, res, query) {
   // 父级彻底找不到的，挂到顶层而不是丢弃
   for (const c of pending) {
     if (catIds.has(c.id)) continue;
-    db.categories.push({
+    const k = incomingPath(c);
+    const same = localByPath.get(k);
+    if (same) { alias.set(c.id, same.id); continue; }
+    const cat = {
       id: c.id,
       name: String(c.name || '未命名类别').slice(0, 60),
       parentId: null,
       createdAt: c.createdAt || now(),
-    });
+    };
+    db.categories.push(cat);
     catIds.add(c.id);
+    localByPath.set(k, cat);
+    alias.set(c.id, c.id);
     catAdded++;
   }
 
@@ -874,7 +916,7 @@ async function importAll(req, res, query) {
       title: String(n.title || '无标题笔记').slice(0, 200),
       content: String(n.content || ''),
       format: n.format === 'rich' ? 'rich' : 'md',
-      categoryId: catIds.has(n.categoryId) ? n.categoryId : null,
+      categoryId: alias.get(n.categoryId) || (catIds.has(n.categoryId) ? n.categoryId : null),
       starred: !!n.starred,
       tags: Array.isArray(n.tags) ? n.tags.map(String).slice(0, 10) : [],
       attachments: finalAtt,
