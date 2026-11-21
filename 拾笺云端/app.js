@@ -2183,6 +2183,12 @@
   const KB_POLICY = 'virtualkeyboardpolicy';
   let kbManual = false;
 
+  /* 两道保险：
+     ① virtualkeyboardpolicy=manual —— 认这个属性的内核（Chrome 94+）聚焦不弹键盘；
+     ② inputmode=none —— 不认①的华为/国产内核靠它压住输入法（Android Chrome、
+        WebView、iOS 12.2+ 都认）。
+     用户 2026-11-21 反馈：只靠①，在手机上弹面板后点正文仍会冒出输入法、把面板顶到
+     半屏，所以②必须一起上。 */
   function setKbManual(on) {
     /* 桌面端没有软键盘这回事，一律保持 auto，别留下状态 */
     if (!NARROW()) { kbManual = false; return; }
@@ -2190,8 +2196,13 @@
     const pane = $('#richPane');
     if (!pane) return;
     try {
-      if (on) pane.setAttribute(KB_POLICY, 'manual');
-      else pane.removeAttribute(KB_POLICY);
+      if (on) {
+        pane.setAttribute(KB_POLICY, 'manual');
+        pane.setAttribute('inputmode', 'none');
+      } else {
+        pane.removeAttribute(KB_POLICY);
+        pane.removeAttribute('inputmode');
+      }
     } catch (_) {}
   }
 
@@ -2210,8 +2221,9 @@
 
   /* 收起输入法但保住选区（打开样式面板时用，面板不该被键盘顶到半屏）。
      2026-11-21 补：光 blur 会让正文失焦，光标那根竖线随之消失，
-     用户看不出自己在编辑哪一行。所以收完键盘要把焦点静默放回正文——
-     manual 策略下聚焦只画光标、不弹键盘，正好。 */
+     用户看不出自己在编辑哪一行。所以收完键盘要把焦点放回正文——
+     此时 manual + inputmode=none 都在，聚焦只画光标、不弹键盘（正好是用户
+     要的「面板一弹就不出现输入法，但光标还在原处」）。 */
   function hideSoftKeyboard() {
     setKbManual(true);
     const ae = document.activeElement;
@@ -2220,8 +2232,11 @@
     if (!hadPane) return;
     const pane = $('#richPane');
     if (!pane) return;
-    try { pane.focus({ preventScroll: true }); } catch (_) { pane.focus(); }
-    try { restoreRange(); } catch (_) {}
+    /* 等一帧多再回焦：让系统先把键盘收走，避免刚 blur 就 focus 把输入法又拉起来 */
+    setTimeout(() => {
+      try { pane.focus({ preventScroll: true }); } catch (_) { pane.focus(); }
+      try { restoreRange(); } catch (_) {}
+    }, 50);
   }
 
   /* 真要打字了：先撤掉 manual 再重新聚焦。已经聚焦的元素不会再触发
@@ -2879,7 +2894,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-126';
+  const APP_BUILD = '2026-11-21-127';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
