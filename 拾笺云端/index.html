@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-21-140';
+  var SWV = '2026-11-21-141';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -285,6 +285,14 @@
 
   <!-- ============ 笔记列表 ============ -->
   <section class="list-pane">
+    <!-- 手机端收起态顶栏：大标题随列表上滚消失后，这一条细栏接管（标题 + 底部分割线）。
+         高度为 0 的 sticky 壳，不占位、不改变列表布局；只做「浮在最上层」。
+         桌面端整块 display:none。 -->
+    <div class="sj-home-bar" id="sjHomeBar" aria-hidden="true">
+      <button type="button" class="sj-hb-inner" id="sjHomeBarBtn" tabindex="-1">
+        <span id="sjHomeBarText">全部笔记</span>
+      </button>
+    </div>
     <!-- 华为风手机首页专属头部：大标题（点开分类面板）+ 条数 + 胶囊搜索。
          桌面端 display:none，沿用下面原来的 .list-head，功能一支不减。 -->
     <div class="sj-home-head" id="sjHomeHead">
@@ -405,6 +413,12 @@
       <div class="toolbar" id="toolbar"></div>
 
       <div class="editor-body" id="editorBody">
+        <!-- 手机端阅读态的大标题（华为备忘录那种）：标题 + 分类/日期放在正文顶部，
+             跟着正文一起上滚；滚到顶栏下方时，顶栏里的小标题浮现。桌面端与编辑态都不显示。 -->
+        <div class="sj-read-hero" id="sjReadHero">
+          <h1 class="sj-rh-title" id="sjReadTitle"></h1>
+          <div class="sj-rh-meta" id="sjRhMeta"></div>
+        </div>
         <div class="md-pane" id="mdPane">
           <textarea id="mdInput" spellcheck="false" placeholder="用 Markdown 记录点什么…"></textarea>
         </div>

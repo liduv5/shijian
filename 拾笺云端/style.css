@@ -2888,7 +2888,8 @@ body.sj-note-open .pwa-tip {
 /* 桌面端默认隐藏：下面的 @media 里才按首页/详情页分别放开 */
 .sj-home-head, .sj-fab, .sj-tabbar, .sj-detail-bar,
 .sj-cat-mgr, .sj-manage-menu, .sj-more-btn, .sj-more-menu,
-.sj-cat-editor, .sj-note-head, .sj-edit-bar, .sj-meta-cat { display: none; }
+.sj-cat-editor, .sj-note-head, .sj-edit-bar, .sj-meta-cat,
+.sj-home-bar, .sj-read-hero { display: none; }
 .sj-meta-date, .sj-img-bar, .sj-style-sheet, .sj-pick-mask, .sj-pick-sheet { display: none; }
 
 @media (max-width: 980px) {
@@ -2965,6 +2966,47 @@ body.sj-note-open .pwa-tip {
     font-family: var(--font-ui); font-size: 14px; color: var(--text);
   }
   .sj-home-search input::placeholder { color: var(--text-3); }
+
+  /* ---- 大标题随列表上滚收起 ----
+     把整条列表栏当滚动容器（原来是 .note-list 自己滚），大标题、条数、搜索框
+     跟着内容一起上滚，滚到顶就由下面那条细栏接管。全程只动 transform / opacity，
+     不改高度，所以不会出现「内容被挤一下就跳」的抖动。 */
+  body:not(.sj-note-open) .list-pane {
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+  body:not(.sj-note-open) .note-list {
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+  .sj-home-title { transform-origin: left top; will-change: transform; }
+
+  /* 收起态细栏：0 高度 sticky 壳钉在最上方，内容绝对定位在壳顶，
+     不占位、不参与布局，只在需要时淡入 */
+  .sj-home-bar { display: none; }
+  body:not(.sj-note-open) .sj-home-bar {
+    display: block;
+    position: sticky; top: 0; left: 0; right: 0;
+    height: 0; z-index: 6;
+    opacity: 0;
+    transition: opacity .16s linear;
+    pointer-events: none;
+  }
+  body:not(.sj-note-open) .sj-home-bar.show { opacity: 1; pointer-events: auto; }
+  .sj-hb-inner {
+    position: absolute; left: 0; right: 0; top: 0;
+    display: flex; align-items: center;
+    height: calc(52px + env(safe-area-inset-top, 0px));
+    padding: env(safe-area-inset-top, 0px) 56px 0 18px;
+    border: 0; border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    font-family: var(--font-ui); font-size: 17px; font-weight: 700;
+    color: var(--text); text-align: left;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
 
   /* 首页用大标题，原来的小列表头收起（桌面仍显示） */
   .list-head { display: none; }
@@ -3576,11 +3618,53 @@ body.sj-note-open .pwa-tip {
   .sj-img-bar button .ico { width: 17px; height: 17px; }
   .sj-img-bar button[data-act="img-del"] { color: #d93b3b; }
 
-  /* ---- 阅读态：标题已在顶栏，正文上移 ---- */
+  /* ---- 阅读态：大标题放回正文里，随正文上滚；顶栏平时只留返回箭头 ----
+     和华为备忘录一致：标题是内容的一部分，滚过去之后小标题才浮到顶栏。 */
   body.sj-note-open:not(.sj-note-edit) .editor-head { display: none; }
   body.sj-note-open:not(.sj-note-edit) .editor-actions { display: none; }
-  body.sj-note-open:not(.sj-note-edit) .meta-row {
-    padding: 6px 20px 8px; font-size: 12.5px; gap: 7px;
+  /* 阅读态整块正文当滚动容器（原来是 .rich-pane 自己滚），大标题才能和正文一起滚 */
+  body.sj-note-open:not(.sj-note-edit) .editor-body {
+    display: block;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    overflow-anchor: none;
+  }
+  body.sj-note-open:not(.sj-note-edit) .rich-pane {
+    overflow: visible;
+    max-width: none;
+    margin: 0;
+  }
+  .sj-read-hero { display: none; }
+  body.sj-note-open:not(.sj-note-edit) .sj-read-hero {
+    display: block;
+    padding: 2px 20px 12px;
+  }
+  .sj-rh-title {
+    margin: 0;
+    font-family: var(--font-ui);
+    font-size: 27px; line-height: 1.34; font-weight: 700;
+    color: var(--text); word-break: break-word;
+  }
+  .sj-rh-title:empty { display: none; }
+  .sj-rh-meta {
+    display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+    margin-top: 9px;
+  }
+  .sj-rh-meta:empty { display: none; }
+  /* 分类/日期搬进大标题下方后，原来那一行只剩空壳 */
+  body.sj-note-open:not(.sj-note-edit) .meta-row { display: none; }
+  /* 顶栏小标题：静止时藏起来，大标题滚过去后浮现（透明度由脚本按滚动位置写） */
+  body.sj-note-open:not(.sj-note-edit) .sj-note-head .title-input {
+    opacity: 0;
+    transition: opacity .14s linear;
+  }
+  body.sj-note-open:not(.sj-note-edit) .sj-note-head { position: relative; }
+  /* 滚动后顶栏下面补一条细线（伪元素，不占高度，不会让整页跳一下） */
+  body.sj-note-open:not(.sj-note-edit).sj-head-solid .sj-note-head::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0;
+    height: 1px; background: var(--border);
   }
   body.sj-note-open:not(.sj-note-edit) .meta-dot,
   body.sj-note-open:not(.sj-note-edit) #saveState,

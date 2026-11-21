@@ -1018,6 +1018,12 @@
     $('#listCount').textContent = list.length ? `${list.length} 篇` : '';
     syncBarTitle();
     if (window.SJSyncHomeHead) window.SJSyncHomeHead();
+    /* 首页整条列表栏现在是滚动容器（大标题要跟着内容滚），
+       换类别 / 搜索后回到顶部，和以前清空 innerHTML 的效果一致 */
+    if (NARROW() && !document.body.classList.contains('sj-note-open')) {
+      const pane = document.querySelector('.list-pane');
+      if (pane && pane.scrollTop) pane.scrollTop = 0;
+    }
     if (window.SJSyncHome) window.SJSyncHome();
 
     if (!list.length) {
@@ -3007,7 +3013,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-140';
+  const APP_BUILD = '2026-11-21-141';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -4287,6 +4293,9 @@
     if (tl) tl.innerHTML = '';
     $('#editorWrap').classList.add('hidden');
     $('#emptyState').classList.remove('hidden');
+    /* 阅读态的「顶栏加线 + 小标题」是滚动状态，离开详情时一并复位 */
+    if (window.SJSyncCollapse) window.SJSyncCollapse();
+    document.body.classList.remove('sj-head-solid');
     renderList();
   }
 
@@ -4993,6 +5002,7 @@
     if (!now) closeDrawer();
     if (now !== wasNarrow) {
       wasNarrow = now;
+      if (window.SJRemount) window.SJRemount();
       const note = currentNote();
       if (note) { applyFormat(viewFormat); renderToolbar(); }
     }
@@ -6274,6 +6284,8 @@
        不改任何数据格式，桌面端完全不受影响（样式都在 ≤980px 内）。 */
     const NOTE_HEAD = $('#sjNoteHead'), NOTE_ACTIONS = NOTE_HEAD && NOTE_HEAD.querySelector('.sj-nh-acts');
     const META_CAT = $('#sjMetaCat'), EDIT_BAR = $('#sjEditBar'), BODY_BOX = $('#editorBody');
+    const META_ROW = META_CAT && META_CAT.parentElement;
+    const READ_HERO = $('#sjReadHero'), READ_TITLE = $('#sjReadTitle'), READ_META = $('#sjRhMeta');
     const IMG_BAR = $('#sjImgBar');
     const HEAD_BAR = document.querySelector('.editor-head');
     let noteModeId = null;
@@ -6305,6 +6317,28 @@
         d.textContent = note ? '创建于 ' + fmtDate(note.createdAt) : '';
         d.classList.toggle('hidden', !note);
       }
+      /* 正文顶部的大标题（阅读态）跟着同一条笔记走 */
+      if (READ_TITLE) {
+        const t = note ? String(note.title || '').trim() : '';
+        READ_TITLE.textContent = t || '无标题笔记';
+      }
+    }
+    /* 分类 + 日期：阅读态搬进正文大标题下方（跟着正文一起上滚），
+       编辑态搬回顶栏下那一行。节点搬动不会丢事件监听。 */
+    function mountMeta() {
+      if (!META_CAT || !META_ROW) return;
+      const d = $('#sjMetaDate');
+      const toHero = NARROW() && READ_META
+        && document.body.classList.contains('sj-note-open')
+        && !document.body.classList.contains('sj-note-edit');
+      if (toHero) {
+        if (META_CAT.parentElement !== READ_META) { READ_META.appendChild(META_CAT); if (d) READ_META.appendChild(d); }
+        return;
+      }
+      if (META_CAT.parentElement === META_ROW) return;
+      const dot = META_ROW.querySelector('.meta-dot');
+      META_ROW.insertBefore(META_CAT, dot || META_ROW.firstChild);
+      if (d) META_ROW.insertBefore(d, dot || META_ROW.firstChild);
     }
     /* 别处改了分类（管理页改名、换类、合并）后，把这一行刷新回来 */
     function refreshNoteMetaLine() {
@@ -7017,13 +7051,34 @@
       if (!note) return;
       const edit = mode === 'edit';
       const doFocus = !opts || opts.focus !== false;
+      /* 两种形态的滚动容器不是同一个：阅读态滚 .editor-body（大标题 + 正文一起），
+         编辑态滚 .rich-pane。切之前先把位置量下来，切完换算过去，
+         否则点一下正文，正文会跳回顶部（大标题正好顶上 90 多像素）。 */
+      const wasEdit = document.body.classList.contains('sj-note-edit');
+      const rpEl = $('#richPane');
+      const heroEl = $('#sjReadHero');
+      const heroH = heroEl && heroEl.offsetHeight ? heroEl.offsetHeight : 0;
+      const bodyY = BODY_BOX ? BODY_BOX.scrollTop : 0;
+      const rpY = rpEl ? rpEl.scrollTop : 0;
       document.body.classList.toggle('sj-note-edit', edit);
+      if (edit && !wasEdit && rpEl) rpEl.scrollTop = Math.max(0, bodyY - heroH);
+      if (!edit && wasEdit) {
+        document.body.classList.remove('sj-head-solid');
+        if (BODY_BOX) BODY_BOX.scrollTop = rpY + heroH;
+      }
       if (!edit) { document.body.classList.remove('sj-note-fmt'); closeStyleSheet(); }
       const ti = $('#titleInput');
-      if (ti) ti.readOnly = !edit;
+      if (ti) {
+        ti.readOnly = !edit;
+        /* 阅读态由滚动位置决定小标题透明度，编辑态一律显示 */
+        if (edit) ti.style.opacity = '';
+      }
       const rp = $('#richPane');
       if (rp) rp.setAttribute('contenteditable', edit ? 'true' : 'false');
       if (EDIT_BAR) EDIT_BAR.classList.toggle('hidden', !edit);
+      /* 分类/日期：阅读态搬进正文大标题下方，编辑态搬回原来那一行 */
+      mountMeta();
+      syncCollapse();
       if (edit) {
         toRichEditor();
         mountTitle();
@@ -7066,13 +7121,14 @@
         return;
       }
       updateMetaCat(note);
+      mountMeta();
       const ebStar = EDIT_BAR && EDIT_BAR.querySelector('[data-act="star"]');
       if (ebStar) ebStar.classList.toggle('on', !!note.starred);
       /* 桌面端沿用原来的双栏编辑界面，不进这套形态 */
       if (!NARROW()) {
         setKbManual(false);
         document.body.classList.remove('sj-note-edit', 'sj-note-fmt');
-        const ti = $('#titleInput'); if (ti) ti.readOnly = false;
+        const ti = $('#titleInput'); if (ti) { ti.readOnly = false; ti.style.opacity = ''; }
         const rp = $('#richPane'); if (rp) rp.setAttribute('contenteditable', 'true');
         if (EDIT_BAR) EDIT_BAR.classList.add('hidden');
         mountTitle();
@@ -7082,10 +7138,16 @@
       const id = String(note.id);
       if (id !== noteModeId) {
         noteModeId = id;
+        /* 换了一条笔记：阅读态正文回到顶部，大标题重新露出来 */
+        document.body.classList.remove('sj-head-solid');
+        if (BODY_BOX) BODY_BOX.scrollTop = 0;
+        const ti0 = $('#titleInput');
+        if (ti0) ti0.style.opacity = '';
         /* 新建的草稿直接进编辑（要马上写字，标题由 openNote 聚焦）；
            已有笔记先进阅读态，不主动抢焦点。 */
         setNoteMode(note === draftNote || id === String(DRAFT_ID) ? 'edit' : 'read', null, { focus: false });
       }
+      syncCollapse();
     }
     if (NOTE_HEAD) NOTE_HEAD.addEventListener('click', (e) => {
       const b = e.target.closest('[data-act]');
@@ -7263,11 +7325,75 @@
       hideMoreMenu();
     }, true);
 
+    /* ---- 大标题随内容上滚收起（首页 + 阅读态） ----
+       首页：整条列表栏是滚动容器，大标题/条数/搜索框跟着列表一起滚走；
+       滚到顶之后那条 52px 的细栏淡入接管，标题顺带缩一点（scale，纯合成不动布局）。
+       阅读态：正文顶部的大标题滚过去以后，顶栏的小标题淡入、下面补一条细线。
+       两处都只改 transform / opacity，滚动里不会有任何重排。 */
+    let homeRaf = 0, readRaf = 0;
+    function placeHome() {
+      homeRaf = 0;
+      const pane = document.querySelector('.list-pane');
+      const bar = $('#sjHomeBar'), title = $('#sjCatTitle'), head = $('#sjHomeHead');
+      if (!pane || !bar || !NARROW() || document.body.classList.contains('sj-note-open')) return;
+      /* 回到列表就说明详情已经关了：把阅读态那条细线一并撤掉 */
+      document.body.classList.remove('sj-head-solid');
+      const hh = head ? head.offsetHeight : 138;
+      const y = pane.scrollTop;
+      const p = Math.min(1, Math.max(0, y / Math.max(40, hh - 44)));
+      if (title) title.style.transform = p > 0 ? 'scale(' + (1 - 0.26 * p).toFixed(3) + ')' : '';
+      /* 等大标题整块滚出去再淡入：半透明时底下还压着条数/搜索框，会叠出重影。
+         这里只切类名，透明度交给 CSS 过渡，滚到边界上不会忽明忽暗。 */
+      bar.classList.toggle('show', y >= hh - 54);
+    }
+    function placeRead() {
+      readRaf = 0;
+      const read = NARROW() && BODY_BOX
+        && document.body.classList.contains('sj-note-open')
+        && !document.body.classList.contains('sj-note-edit');
+      if (!read) { document.body.classList.remove('sj-head-solid'); return; }
+      /* 按「大标题底边离顶栏还有多远」算，而不是按滚动距离：
+         标题一两行还是三行都能对上，两个标题也不会同时叠在屏幕上。 */
+      if (!NOTE_HEAD || !READ_TITLE) return;
+      const gap = READ_TITLE.getBoundingClientRect().bottom - NOTE_HEAD.getBoundingClientRect().bottom;
+      const p = Math.min(1, Math.max(0, (4 - gap) / 24));
+      const ti = $('#titleInput');
+      if (ti) ti.style.opacity = p > 0.02 ? p.toFixed(2) : '';
+      document.body.classList.toggle('sj-head-solid', p > 0.95);
+    }
+    /* 形态切换、开新笔记、改分类之后由脚本主动调一次，不必等滚动事件 */
+    function syncCollapse() { placeHome(); placeRead(); }
+    function initCollapse() {
+      window.SJSyncCollapse = syncCollapse;
+      /* 跨 980px 边界时把只在窄屏存在的东西重新归位：
+         标题输入框、分类/日期、大标题收起状态、阅读态顶栏细线 */
+      window.SJRemount = () => {
+        mountTitle();
+        mountMeta();
+        document.body.classList.remove('sj-head-solid');
+        const ti = $('#titleInput');
+        if (ti && !NARROW()) ti.style.opacity = '';
+        syncCollapse();
+      };
+      const pane = document.querySelector('.list-pane');
+      if (pane) pane.addEventListener('scroll', () => { if (!homeRaf) homeRaf = requestAnimationFrame(placeHome); }, { passive: true });
+      if (BODY_BOX) BODY_BOX.addEventListener('scroll', () => { if (!readRaf) readRaf = requestAnimationFrame(placeRead); }, { passive: true });
+      window.addEventListener('resize', () => { placeHome(); placeRead(); });
+      const barBtn = $('#sjHomeBarBtn');
+      if (barBtn) barBtn.addEventListener('click', () => {
+        const t = $('#sjCatTitle');
+        if (t) t.click();
+      });
+    }
+
     /* 首页大标题跟随列表标题与条数 */
     function syncHomeHead() {
       const t = $('#sjCatTitleText'), c = $('#sjHomeCount');
       if (t) t.textContent = ($('#listTitle').textContent || '全部笔记');
       if (c) c.textContent = $('#listCount').textContent ? ($('#listCount').textContent + '笔记') : '暂无笔记';
+      /* 收起态细栏里的标题跟大标题同一份文字 */
+      const bt = $('#sjHomeBarText');
+      if (bt) bt.textContent = ($('#listTitle').textContent || '全部笔记');
       const star = $('#starBtn');
       if (DETAIL && star) {
         const sb = DETAIL.querySelector('[data-act="star"]');
@@ -7275,6 +7401,7 @@
       }
     }
     window.SJSyncHomeHead = syncHomeHead;
+    initCollapse();
     syncHome();
   })();
 

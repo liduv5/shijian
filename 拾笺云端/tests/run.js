@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-140 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-141 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-140';
+const BUILD = '2026-11-21-141';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -177,7 +177,7 @@ ok('分类面板复用现有伪节点 all/uncat/starred',
 ok('首页搜索与侧栏搜索共享 state.search',
   appSrc.indexOf('state.search = e.target.value;') >= 0);
 ok('桌面端默认隐藏新增 UI（只在 ≤980px 放开）',
-  /\.sj-home-head, \.sj-fab, \.sj-tabbar, \.sj-detail-bar,[\s\S]{0,100}\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu,[\s\S]{0,60}\.sj-cat-editor, \.sj-note-head, \.sj-edit-bar, \.sj-meta-cat \{ display: none; \}/.test(styleSrc) &&
+  /\.sj-home-head, \.sj-fab, \.sj-tabbar, \.sj-detail-bar,[\s\S]{0,100}\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu,[\s\S]{0,60}\.sj-cat-editor, \.sj-note-head, \.sj-edit-bar, \.sj-meta-cat,[\s\S]{0,80}\{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('@media (max-width: 980px)') >= 0);
 ok('手机端顶栏收起、--m-bar-total 归零（顶端无菜单）',
   /@media \(max-width: 980px\)[\s\S]{0,400}\.m-bar \{ display: none !important; \}/.test(styleSrc) &&
@@ -222,7 +222,7 @@ ok('管理页支持拖动排序并回写 category.order',
   appSrc.indexOf('body: { order: i }') >= 0 &&
   appSrc.indexOf('pointermove') >= 0);
 ok('分类管理页样式仅窄屏放开，桌面默认隐藏',
-  /\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu,[\s\S]{0,60}\.sj-cat-editor, \.sj-note-head, \.sj-edit-bar, \.sj-meta-cat \{ display: none; \}/.test(styleSrc) &&
+  /\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu,[\s\S]{0,60}\.sj-cat-editor, \.sj-note-head, \.sj-edit-bar, \.sj-meta-cat,[\s\S]{0,80}\{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('.sj-cat-mgr {') >= 0 &&
   styleSrc.indexOf('.sj-mgr-card') >= 0 &&
   styleSrc.indexOf('body.sj-cat-mgr-open .pwd-tip') >= 0);
@@ -284,7 +284,7 @@ ok('后端两个分类 PATCH 都保存 color 字段（含 null 清除）',
   localSrc.indexOf('c.color } : {}') >= 0 &&
   serverSrc.indexOf('c.color } : {}') >= 0);
 ok('编辑弹窗样式仅窄屏放开、桌面默认隐藏',
-  /\.sj-cat-editor, \.sj-note-head, \.sj-edit-bar, \.sj-meta-cat \{ display: none; \}/.test(styleSrc) &&
+  /\.sj-cat-editor, \.sj-note-head, \.sj-edit-bar, \.sj-meta-cat,[\s\S]{0,80}\{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('.sj-editor-sheet') >= 0 &&
   styleSrc.indexOf('.sj-editor-swatch.on::after') >= 0);
 ok('编辑弹窗字体与布局按华为图二：标题 22px 粗、输入 17px、取消保存平分带竖线',
@@ -429,7 +429,7 @@ ok('标题下面只留一份分类且可点：分类胶囊可点换类、右边�
 ok('写正文时图片保持图片：手机端进编辑先转富文本，不再露出 data URI 长串',
   appSrc.indexOf('function toRichEditor()') >= 0 &&
   /function toRichEditor\(\)[\s\S]{0,420}renderMarkdown/.test(appSrc) &&
-  /setNoteMode[\s\S]{0,700}toRichEditor\(\);/.test(appSrc) &&
+  /setNoteMode[\s\S]{0,2200}toRichEditor\(\);/.test(appSrc) &&
   appSrc.indexOf('if (NARROW()) return;') >= 0 &&
   indexSrc.indexOf('id="sjImgBar"') >= 0 &&
   appSrc.indexOf('function selectImg(img)') >= 0 &&
@@ -716,6 +716,33 @@ ok('图标换新：暖橙「笔记」+ 墨绿「随手记」，12 个尺寸齐�
   /"purpose": "any"/.test(manifestSrc) && /"purpose": "maskable"/.test(manifestSrc) &&
   /"purpose": "any"/.test(quickManifestSrc) && /"purpose": "maskable"/.test(quickManifestSrc) &&
   /'\/icons\/icon-192\.png'/.test(swSrc) && /'\/icons\/icon-512\.png'/.test(swSrc));
+
+ok('首页大标题随列表上翻收起：滚到顶换成一条细栏',
+  /* 整条列表栏变成滚动容器（原来只有 .note-list 自己滚），大标题、条数、搜索框
+     才能跟着列表一起上滚；滚到顶由那条 52px 的 sticky 细栏接管 */
+  /id="sjHomeBar"/.test(indexSrc) &&
+  /id="sjHomeBarText"/.test(indexSrc) &&
+  /body:not\(\.sj-note-open\) \.list-pane \{[\s\S]{0,200}overflow-y: auto/.test(styleSrc) &&
+  /body:not\(\.sj-note-open\) \.note-list \{[\s\S]{0,120}overflow: visible/.test(styleSrc) &&
+  /body:not\(\.sj-note-open\) \.sj-home-bar \{[\s\S]{0,200}position: sticky; top: 0;/.test(styleSrc) &&
+  /* 大标题随滚动缩一点（只动 transform，不改高度，滚动里不会抖） */
+  /\.sj-home-title \{ transform-origin: left top/.test(styleSrc) &&
+  /function placeHome\(\)[\s\S]{0,700}scale\([\s\S]{0,300}classList\.toggle\('show', y >= hh - 54\)/.test(appSrc));
+
+ok('阅读态大标题随正文上滚、缩进顶栏（和华为备忘录一致）',
+  /* 标题 + 分类/日期放进正文顶部，跟着正文一起滚；滚动容器从 .rich-pane
+     换成整块 .editor-body，标题才滚得走 */
+  /id="sjReadHero"/.test(indexSrc) &&
+  /id="sjReadTitle"/.test(indexSrc) &&
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.editor-body \{[\s\S]{0,220}overflow-y: auto/.test(styleSrc) &&
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-read-hero \{[\s\S]{0,80}display: block/.test(styleSrc) &&
+  /* 静止时顶栏只留返回箭头，小标题等大标题滚过去再浮现 */
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \.title-input \{[\s\S]{0,140}opacity: 0/.test(styleSrc) &&
+  /function mountMeta\(\)[\s\S]{0,700}READ_META\.appendChild\(META_CAT\)/.test(appSrc) &&
+  /* 两种形态的滚动容器不同，切换时要换算位置，否则点一下正文会跳回顶部 */
+  /rpEl\.scrollTop = Math\.max\(0, bodyY - heroH\)/.test(appSrc) &&
+  /BODY_BOX\.scrollTop = rpY \+ heroH/.test(appSrc) &&
+  /function placeRead\(\)[\s\S]{0,700}ti\.style\.opacity/.test(appSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
