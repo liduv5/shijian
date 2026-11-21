@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-135 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-136 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-135';
+const BUILD = '2026-11-21-136';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -459,7 +459,7 @@ ok('点底栏 A 按钮弹出「样式」面板：B/I/U、三种对齐、增减�
   // styleWithCSS=true 才不会被 DOMPurify 抹掉：对齐落 style、颜色落 span
   /function cssCmd\(cmd, val\)[\s\S]{0,320}styleWithCSS', false, true/.test(appSrc) &&
   appSrc.indexOf("if (styleSheetOpen()) closeStyleSheet();") >= 0 &&
-  /a === 'fmt'[\s\S]{0,240}openStyleSheet\(\);/.test(appSrc) &&
+  /a === 'fmt'[\s\S]{0,700}openStyleSheet\(\);/.test(appSrc) &&
   appSrc.indexOf('function styleList(kind)') >= 0 &&
   appSrc.indexOf("node.style.listStyleType = kind === 'list-alpha' ? 'lower-alpha' : ''") >= 0 &&
   appSrc.indexOf("if (kind === 'list-task') node.classList.add('sj-task')") >= 0 &&
@@ -507,7 +507,7 @@ ok('样式面板不再遮挡正文：编辑区抬到面板上方、调完格式�
   !/body\.sj-note-edit\.sj-style-open \.rich-pane \{/.test(styleSrc) &&
   /function syncSheetHeight\(\) \{[\s\S]{0,300}getBoundingClientRect\(\)\.height/.test(appSrc) &&
   /function syncSheetHeight\(\)[\s\S]{0,320}setProperty\('--ss-h'/.test(appSrc) &&
-  /function openStyleSheet\(\) \{[\s\S]{0,700}classList\.add\('sj-style-open'\)/.test(appSrc) &&
+  /function openSheetNow\(\) \{[\s\S]{0,700}classList\.add\('sj-style-open'\)/.test(appSrc) &&
   /function closeStyleSheet\(\) \{[\s\S]{0,300}classList\.remove\('sj-style-open'\)/.test(appSrc) &&
   /function revealSelectionDelta\(\) \{[\s\S]{0,700}getClientRects\(\)/.test(appSrc) &&
   /function revealSelection\(\) \{[\s\S]{0,240}revealSelectionDelta\(\)/.test(appSrc) &&
@@ -556,7 +556,7 @@ ok('收起样式面板不闪屏：高度回落有过渡、键盘不抢着弹、�
   /\.sj-style-sheet\.sj-ss-closing \{[\s\S]{0,160}opacity: 0/.test(styleSrc) &&
   /clearTimeout\(ssCloseTimer\)/.test(appSrc) &&
   /STYLE_SHEET\.classList\.add\('sj-ss-closing'\)/.test(appSrc) &&
-  /function openStyleSheet\(\) \{[\s\S]{0,900}cmSettle\(\)/.test(appSrc));
+  /function openSheetNow\(\) \{[\s\S]{0,900}cmSettle\(\)/.test(appSrc));
 
 ok('列表：数字/字母/圆点/待办可互相换类型，数字列表真的是 <ol>',
   /* 数字列表必须走 insertOrderedList，之前只判了 alpha，点数字出来是圆点 */
@@ -580,16 +580,26 @@ ok('自绘光标跟着字色变：改成紫字，光标就是紫的',
   /const col = cmColorAt\(r\);[\s\S]{0,80}el\.style\.background = col/.test(appSrc) &&
   /\.sj-caret-mark \{[\s\S]{0,220}background: var\(--text\)/.test(styleSrc));
 
-ok('点 A 打开面板不闪屏：面板不透明上滑、高度只量一次、光标行滑过去而不是跳过去',
+ok('点 A 打开面板不闪屏：等键盘收完再弹、面板不透明上滑、高度只量一次、光标行滑过去而不是跳过去',
+  /* 面板要占 378px 底边：可视区只剩「键盘那么点高」时先别弹，
+     否则正文被压成一条、键盘收完又长回来（首次点 A 闪屏的真正根因） */
+  /function sheetRoom\(\) \{[\s\S]{0,420}--ss-h/.test(appSrc) &&
+  /function openStyleSheet\(\) \{[\s\S]{0,900}if \(sheetRoom\(\) < 300\) \{ whenViewportQuiet\(openSheetNow\); return; \}/.test(appSrc) &&
+  /* 静默判定：可视高度连三拍不变才动手，另有 640ms 上限兜底 */
+  /function whenViewportQuiet\([\s\S]{0,700}vqSame >= 3/.test(appSrc) &&
+  /function whenViewportQuiet\([\s\S]{0,900}> 640/.test(appSrc) &&
+  /* 等着的时候再点一下 A 算取消；收起面板也把等待掐掉 */
+  /if \(styleSheetPending\(\)\) \{[\s\S]{0,200}stopViewportQuiet\(\)/.test(appSrc) &&
+  /function closeStyleSheet\(\) \{[\s\S]{0,200}stopViewportQuiet\(\)/.test(appSrc) &&
   /* 面板出场只滑不淡：opacity 从 .4 起步时，下面上抬的正文会透出来 */
   /animation: sj-sheet-up \.18s/.test(styleSrc) &&
   /@keyframes sj-sheet-up \{[\s\S]{0,90}translateY\(18px\)[\s\S]{0,90}translateY\(0\)/.test(styleSrc) &&
   !/\.sj-style-sheet \{[\s\S]{0,900}animation: sj-editor-up/.test(styleSrc) &&
   /* 先量高度再挂类：否则 .app 会先用 360px 默认值起步，下一帧再跳到实测值 */
-  /function openStyleSheet\(\) \{[\s\S]{0,700}classList\.remove\('hidden'\)[\s\S]{0,200}syncSheetHeight\(\)[\s\S]{0,200}classList\.add\('sj-style-open'\)/.test(appSrc) &&
+  /function openSheetNow\(\) \{[\s\S]{0,700}classList\.remove\('hidden'\)[\s\S]{0,200}syncSheetHeight\(\)[\s\S]{0,200}classList\.add\('sj-style-open'\)/.test(appSrc) &&
   /* 光标行不是「动画一结束就一把滚过去」：等视口安静，再缓动滑到位（首次点 A 闪屏的根因） */
-  /function openStyleSheet\(\) \{[\s\S]{0,1400}scheduleSheetReveal\(\)/.test(appSrc) &&
-  !/function openStyleSheet\(\) \{[\s\S]{0,1400}setTimeout\(\(\) => \{[\s\S]{0,140}revealSelection\(\)/.test(appSrc) &&
+  /function openSheetNow\(\) \{[\s\S]{0,1400}scheduleSheetReveal\(\)/.test(appSrc) &&
+  !/function openSheetNow\(\) \{[\s\S]{0,1400}setTimeout\(\(\) => \{[\s\S]{0,140}revealSelection\(\)/.test(appSrc) &&
   /function glideRevealSelection\([\s\S]{0,500}setInterval\(/.test(appSrc) &&
   /function glideRevealSelection\([\s\S]{0,800}Math\.pow\(1 - k, 3\)/.test(appSrc) &&
   /function scheduleSheetReveal\([\s\S]{0,260}glideRevealSelection\(200\)/.test(appSrc) &&

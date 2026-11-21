@@ -2244,7 +2244,8 @@
       }
     }
     if (ae && ae !== document.body && ae.blur) ae.blur();
-    if (!keep) return;
+    /* 返回「刚才键盘是不是开着」：开面板要据此决定是立刻弹还是等键盘收完 */
+    if (!keep) return hadPane;
     /* 不再延迟回焦：blur 过一会儿又 focus，即便不弹键盘，个别内核也会顺手把
        页面/正文再滚一次，和面板上滑叠在一起就是「闪一下」（用户 2026-11-21 反馈）。
        光标交给自绘那根，选区在这里当场恢复就够。 */
@@ -2254,6 +2255,7 @@
       sel.addRange(keep);
       savedRange = keep;
     } catch (_) {}
+    return hadPane;
   }
 
   /* 真要打字了：先撤掉 manual 再重新聚焦。已经聚焦的元素不会再触发
@@ -3005,7 +3007,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-135';
+  const APP_BUILD = '2026-11-21-136';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -6307,6 +6309,8 @@
     let ssCloseTimer = 0;
     function closeStyleSheet() {
       if (!STYLE_SHEET) return;
+      /* 还在等键盘收完的那种「半开」状态，一并撤掉 */
+      stopViewportQuiet();
       /* 收起时把还没跑完的「滑到光标行」掐掉：面板已经走了，再滚一下就是多余的跳动 */
       stopSheetReveal();
       /* 面板先淡出、编辑区同时回落，两个动作叠在一起，中间不会露出空白 */
@@ -6475,12 +6479,66 @@
       ssRevealTimer = 0;
       stopGlideReveal();
     }
+    /* 键盘往下收的这 200~300ms 里，可视区是从「键盘高度」长回全屏的。
+       这会儿就把面板弹出来，面板会先按自己的 378px 占掉底边，而可视区还只有
+       键盘那么点高 —— 正文被压成一条，等键盘收完再长回来，看着就是「首次点 A
+       闪一下」（用户 2026-11-21 反馈）。所以先等可视高度连续几拍不再变化，
+       再量高度、再弹面板：那时 844-378 正好够正文用，一点都不用挤。 */
+    let vqTimer = 0, vqLast = -1, vqSame = 0, vqCb = null, vqT0 = 0;
+    function whenViewportQuiet(cb) {
+      stopViewportQuiet();
+      vqCb = cb; vqLast = -1; vqSame = 0; vqT0 = Date.now();
+      const tick = () => {
+        if (!vqCb) return;
+        const h = Math.round((window.visualViewport && window.visualViewport.height) || window.innerHeight || 0);
+        vqSame = (h === vqLast) ? vqSame + 1 : 0;
+        vqLast = h;
+        /* 连三拍（≈120ms）不变就算安静；个别内核 resize 一直不断，最多等 640ms */
+        if (vqSame >= 3 || Date.now() - vqT0 > 640) {
+          const f = vqCb;
+          stopViewportQuiet();
+          if (f) f();
+          return;
+        }
+        vqTimer = setTimeout(tick, 40);
+      };
+      vqTimer = setTimeout(tick, 40);
+    }
+    function stopViewportQuiet() {
+      clearTimeout(vqTimer);
+      vqTimer = 0;
+      vqCb = null;
+      vqSame = 0;
+      vqLast = -1;
+    }
+    function styleSheetPending() { return !!vqCb; }
+
+    /* 面板要占掉约 378px 底边。要是这会儿可视区只剩「键盘顶起来那么点高」，
+       立刻弹面板会把正文压成一条，等键盘收完又长回来 —— 看着就是「闪一下」
+       （用户 2026-11-21 反馈）。所以按「剩下的高度够不够正文用」来判断：
+       够就立刻弹，不够就等可视高度安静下来（键盘收完）再弹。 */
+    function sheetRoom() {
+      const h0 = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ss-h'));
+      const sh = h0 > 0 ? h0 : 380;
+      const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight || 0;
+      return Math.round(vh - sh);
+    }
     function openStyleSheet() {
       if (!STYLE_SHEET) return;
       clearImgSel();
       /* 调格式不需要输入法：面板弹起时顺手把键盘收掉，
          否则键盘会把面板顶到半屏（用户 2026-11-21 反馈） */
       hideSoftKeyboard();
+      /* 按钮先亮，别让这一下点击「没反应」等在那儿 */
+      const fb = EDIT_BAR && EDIT_BAR.querySelector('[data-act="fmt"]');
+      if (fb) fb.classList.add('on');
+      if (sheetRoom() < 300) { whenViewportQuiet(openSheetNow); return; }
+      stopViewportQuiet();
+      openSheetNow();
+    }
+
+    function openSheetNow() {
+      if (!STYLE_SHEET) return;
       clearTimeout(ssCloseTimer);
       STYLE_SHEET.classList.remove('sj-ss-closing');
       STYLE_SHEET.classList.remove('hidden');
@@ -6958,6 +7016,13 @@
       if (a === 'fmt') {
         /* 最左边那个 A：开关底部「样式」面板（原来是切桌面那条窄工具条，
            手机端那条太挤，照华为备忘录换成整块面板） */
+        /* 还在等键盘收完（面板还没露头）：再点一下按取消算，别让它待会儿自己冒出来 */
+        if (styleSheetPending()) {
+          stopViewportQuiet();
+          const fbtn = EDIT_BAR && EDIT_BAR.querySelector('[data-act="fmt"]');
+          if (fbtn) fbtn.classList.remove('on');
+          return;
+        }
         if (styleSheetOpen()) closeStyleSheet();
         else openStyleSheet();
         return;
