@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-143 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-144 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-143';
+const BUILD = '2026-11-21-144';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -751,6 +751,16 @@ ok('阅读态标题也原地缩小钉在顶栏：不再先滚出屏幕再浮回�
   /BODY_BOX\.scrollTop = rpY \+ heroH/.test(appSrc) &&
   /function placeRead\(\)[\s\S]{0,800}heroH[\s\S]{0,300}ti\.style\.transform = p > 0 \? 'scale\('/.test(appSrc) &&
   /function placeRead\(\)[\s\S]{0,900}classList\.toggle\('sj-head-solid', p > 0\.9\)/.test(appSrc));
+
+ok('顶栏不出现标题框下边框线（首页和笔记页都去掉）',
+  /* 首页：show 到位不再给 .sj-home-bar::after 上边框 */
+  !/\.sj-home-bar\.show::after\s*\{/.test(styleSrc) &&
+  !/body:not\(\.sj-note-open\) \.sj-home-bar::after\s*\{/.test(styleSrc) &&
+  /* 笔记页：sj-head-solid 不再给 .sj-note-head::after 上边框 */
+  !/sj-head-solid \.sj-note-head::after\s*\{/.test(styleSrc) &&
+  /* 顶栏实心背景与软过渡仍在，缩放钉住逻辑不变 */
+  /body:not\(\.sj-note-open\) \.sj-home-bar\.scrolled::before\s*\{ opacity: 1; \}/.test(styleSrc) &&
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \{[\s\S]{0,160}background: var\(--surface\)/.test(styleSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

@@ -2995,16 +2995,9 @@ body.sj-note-open .pwa-tip {
     padding: calc(18px + env(safe-area-inset-top, 0px)) 18px 0;
     background: var(--surface);
   }
-  /* 底边细线：收起到位才浮现，用伪元素，不占高度、不触发重排 */
-  body:not(.sj-note-open) .sj-home-bar::after {
-    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
-    background: var(--border);
-    opacity: 0; transition: opacity .15s linear;
-    pointer-events: none;
-  }
-  body:not(.sj-note-open) .sj-home-bar.show::after { opacity: 1; }
-  /* 细线下面再加一条 12px 的软过渡：条数/搜索框被顶栏切掉时不会留下一条
-     生硬的灰色残边，而是先淡再消失（只在开始滚动后出现，静止时不压条数） */
+  /* 顶栏下方不加边框线（2026-11-21 用户要求）。
+     只在开始滚动后补一条 12px 的软过渡：条数/搜索框被顶栏切掉时不会留下一条
+     生硬的灰色残边，而是先淡再消失（静止时不压条数） */
   body:not(.sj-note-open) .sj-home-bar::before {
     content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 12px;
     background: linear-gradient(to bottom, var(--surface), transparent);
@@ -3663,11 +3656,7 @@ body.sj-note-open .pwa-tip {
     position: relative; z-index: 6;
     background: var(--surface);
   }
-  /* 滚动后顶栏下面补一条细线（伪元素，不占高度，不会让整页跳一下） */
-  body.sj-note-open:not(.sj-note-edit).sj-head-solid .sj-note-head::after {
-    content: ''; position: absolute; left: 0; right: 0; bottom: 0;
-    height: 1px; background: var(--border);
-  }
+  /* 顶栏下方不加边框线（2026-11-21 用户要求），实心背景只用于遮住滚到背后的正文 */
   body.sj-note-open:not(.sj-note-edit) .meta-dot,
   body.sj-note-open:not(.sj-note-edit) #saveState,
   body.sj-note-open:not(.sj-note-edit) .word-count { display: none; }
