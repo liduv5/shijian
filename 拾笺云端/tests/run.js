@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-131 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-132 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-131';
+const BUILD = '2026-11-21-132';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -587,6 +587,25 @@ ok('点 A 打开面板不闪屏：面板不透明上滑、高度只量一次、�
   /function openStyleSheet\(\) \{[\s\S]{0,700}classList\.remove\('hidden'\)[\s\S]{0,200}syncSheetHeight\(\)[\s\S]{0,200}classList\.add\('sj-style-open'\)/.test(appSrc) &&
   /* 滚进视野推迟到开启动画之后，避免正文一边上抬一边跳 */
   /setTimeout\(\(\) => \{[\s\S]{0,120}revealSelection\(\)/.test(appSrc));
+
+ok('插入图片先问「拍照 / 从相册选择 / 取消」：系统选择器没有取消，别把人困在里面',
+  /id="sjImgSheet"/.test(indexSrc) &&
+  /data-act="pk-camera"/.test(indexSrc) &&
+  /data-act="pk-gallery"/.test(indexSrc) &&
+  /class="sj-pick-cancel" data-act="pk-close">取消</.test(indexSrc) &&
+  /* 弹面板先收键盘，免得选择条被输入法顶掉半截 */
+  /function openImgSheet\(\) \{[\s\S]{0,160}hideSoftKeyboard\(\)/.test(appSrc) &&
+  /* 点了拍照/相册才真正去点 input，且必须在同一次手势里同步触发 */
+  /function pickImage\(mode\) \{[\s\S]{0,400}fi\.dataset\.insert = '1'[\s\S]{0,140}fi\.click\(\)/.test(appSrc) &&
+  /if \(NARROW\(\) && IMG_SHEET\)/.test(appSrc) &&
+  /IMG_MASK\) IMG_MASK\.addEventListener\('click', closeImgSheet\)/.test(appSrc) &&
+  /* 首次访问的绿色提示条在 z-index 9000，会正好盖住「从相册选择」 */
+  /document\.body\.classList\.add\('sj-pick-open'\)/.test(appSrc) &&
+  /body\.sj-pick-open \.pwd-tip \{ display: none; \}/.test(styleSrc) &&
+  /e\.key !== 'Escape'/.test(appSrc) &&
+  /e\.target\.removeAttribute\('capture'\)/.test(appSrc) &&
+  /\.sj-pick-sheet \{[\s\S]{0,300}position: fixed; z-index: 94/.test(styleSrc) &&
+  /\.sj-pick-cancel:active \{ background: var\(--surface-3\); \}/.test(styleSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

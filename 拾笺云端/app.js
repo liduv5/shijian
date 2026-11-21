@@ -2911,7 +2911,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-131';
+  const APP_BUILD = '2026-11-21-132';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -4940,13 +4940,54 @@
     }
   });
 
-  /* 插入图片：专门入口，选中图片后自动插入正文（手机端文件选择器直接指向相册/相机） */
-  $('#imgBtn').addEventListener('click', () => {
-    if (!currentNote()) { toast('请先新建或选择一篇笔记'); return; }
+  /* 插入图片：手机端先弹本应用的「拍照 / 从相册选择 / 取消」。
+     以前点图片按钮直接跳系统选择器，那个页面只有「完成」、没有取消或返回，
+     选不到图就出不来（用户 2026-11-21 反馈）。桌面端的文件框自带取消，照旧直开。 */
+  const IMG_SHEET = $('#sjImgSheet'), IMG_MASK = $('#sjImgMask');
+  function closeImgSheet() {
+    if (IMG_SHEET) IMG_SHEET.classList.add('hidden');
+    if (IMG_MASK) IMG_MASK.classList.add('hidden');
+    document.body.classList.remove('sj-pick-open');
+  }
+  function openImgSheet() {
+    if (!IMG_SHEET) return;
+    hideSoftKeyboard();
+    if (IMG_MASK) IMG_MASK.classList.remove('hidden');
+    IMG_SHEET.classList.remove('hidden');
+    /* 首次访问的绿色提示条（z-index 9000）会正好压住「从相册选择」，先让它让位 */
+    document.body.classList.add('sj-pick-open');
+  }
+  function pickImage(mode) {
+    closeImgSheet();
     const fi = $('#fileInput');
+    if (!fi) return;
     fi.accept = 'image/*';
+    if (mode === 'camera') fi.setAttribute('capture', 'environment');
+    else fi.removeAttribute('capture');
     fi.dataset.insert = '1';
+    /* 必须在这一下点击的手势里同步触发，晚一拍会被内核当成「非用户操作」拦掉 */
     fi.click();
+  }
+  if (IMG_SHEET) IMG_SHEET.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    e.preventDefault();
+    const a = b.dataset.act;
+    if (a === 'pk-close') closeImgSheet();
+    else if (a === 'pk-camera') pickImage('camera');
+    else if (a === 'pk-gallery') pickImage('gallery');
+  });
+  if (IMG_MASK) IMG_MASK.addEventListener('click', closeImgSheet);
+  /* Esc 也能退（桌面端顺手） */
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !IMG_SHEET || IMG_SHEET.classList.contains('hidden')) return;
+    e.preventDefault();
+    closeImgSheet();
+  });
+  $('#imgBtn').addEventListener('click', (e) => {
+    if (!currentNote()) { toast('请先新建或选择一篇笔记'); return; }
+    if (NARROW() && IMG_SHEET) { e.preventDefault(); openImgSheet(); return; }
+    pickImage('gallery');
   });
   /* 点正文里的图片 → 弹尺寸工具条 */
   bindImgResize($('#richPane'), 'rich');
@@ -4977,6 +5018,7 @@
     e.target.value = '';
     e.target.dataset.insert = '';
     e.target.accept = '';
+    e.target.removeAttribute('capture');
     if (files.length) await uploadFiles(files, { insert: doInsert });
   });
 
