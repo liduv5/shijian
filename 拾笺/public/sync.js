@@ -342,7 +342,7 @@
       '<div id="spMsg" class="e2ee-msg"></div></div>');
     m.classList.add('pwd-box');
     m.querySelector('[data-act="close"]').addEventListener('click', window.closeModal);
-    const msg = (t, ok) => { const e = m.querySelector('#spMsg'); e.textContent = t; e.style.color = ok ? '#2f6f5e' : '#c0392b'; };
+    const msg = (t, ok) => { const e = m.querySelector('#spMsg'); e.textContent = t; e.style.color = ok ? '#5f5a53' : '#8a4242'; };
     m.querySelector('#spCode').addEventListener('click', async () => {
       const em = m.querySelector('#spEmail').value.trim();
       if (!em || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return msg('请填写正确的邮箱');
