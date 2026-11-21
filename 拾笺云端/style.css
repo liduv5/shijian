@@ -3673,6 +3673,12 @@ body.m-list .pwa-tip {
     touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
   .sj-pick-cancel:active { background: var(--surface-3); }
+  /* 系统相册页是手机/宿主自己的界面，我们插不进按钮；至少告诉用户怎么退出来 */
+  .sj-pick-hint {
+    margin: 8px 2px 0;
+    font-family: var(--font-ui); font-size: 12.5px; line-height: 1.4;
+    color: var(--text-3); text-align: center;
+  }
 
   /* ---- 自绘光标：面板开着、键盘压着时，手机内核不保证一直画原生光标。
      这里在正文上方画一根自己的，跟着文字滚（位置由脚本按选区算）。

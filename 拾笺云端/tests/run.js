@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-132 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-133 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-132';
+const BUILD = '2026-11-21-133';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -605,7 +605,10 @@ ok('插入图片先问「拍照 / 从相册选择 / 取消」：系统选择器�
   /e\.key !== 'Escape'/.test(appSrc) &&
   /e\.target\.removeAttribute\('capture'\)/.test(appSrc) &&
   /\.sj-pick-sheet \{[\s\S]{0,300}position: fixed; z-index: 94/.test(styleSrc) &&
-  /\.sj-pick-cancel:active \{ background: var\(--surface-3\); \}/.test(styleSrc));
+  /\.sj-pick-cancel:active \{ background: var\(--surface-3\); \}/.test(styleSrc) &&
+  /* 系统相册页插不进按钮，至少把「用返回手势退出」写在面板里 */
+  /class="sj-pick-hint">系统相册页没有返回键时，用手机的返回手势退出</.test(indexSrc) &&
+  /\.sj-pick-hint \{[\s\S]{0,200}color: var\(--text-3\)/.test(styleSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
