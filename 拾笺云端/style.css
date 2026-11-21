@@ -3412,11 +3412,27 @@ body.m-list .pwa-tip {
     padding-bottom: calc(180px + env(safe-area-inset-bottom, 0px));
   }
 
+  /* 样式面板打开时把整个编辑区抬到面板上方（--ss-h 由脚本量出来的面板高度）。
+     以前面板是 fixed 直接盖在正文上，正文下半截被吃掉、也滚不出来，
+     调完格式根本看不见效果。抬上去之后正文在自己的可视区里正常滚动。 */
+  body.sj-note-open.sj-style-open .app {
+    bottom: var(--ss-h, 360px);
+    transition: bottom .18s var(--ease);
+  }
+  /* 抬上去以后下方不再压着工具条，正文不用留那么大的空转余量 */
+  body.sj-note-edit.sj-style-open .rich-pane,
+  body.sj-note-edit.sj-style-open .preview-pane,
+  body.sj-note-edit.sj-style-open #mdInput {
+    padding-bottom: 48px;
+  }
+
   /* 首次访问的安全提示条 z-index 9000，会盖住新的底部双 tab / 详情操作栏。
      手机端把它抬到栏上方，提示照看、导航照用。 */
   body .pwd-tip {
     bottom: calc(58px + env(safe-area-inset-bottom, 0px));
   }
+  /* 它同样会浮在样式面板上、压住色点和纸张两行；面板开着时先让位，收起后照常显示 */
+  body.sj-style-open .pwd-tip { display: none; }
 
   /* ============================================================
      华为风笔记详情：阅读态（默认）/ 编辑态（点正文进入）
@@ -3584,7 +3600,8 @@ body.m-list .pwa-tip {
     display: block;
     position: fixed; z-index: 92;
     left: 0; right: 0; bottom: 0;
-    max-height: 88vh; overflow-y: auto;
+    /* 面板最多占 470px：小屏上 88vh 会把正文挤得只剩一条缝 */
+    max-height: min(88vh, 470px); overflow-y: auto;
     padding: 12px 16px calc(14px + env(safe-area-inset-bottom, 0px));
     background: var(--surface-2);
     border-radius: 22px 22px 0 0;

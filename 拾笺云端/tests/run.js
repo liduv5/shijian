@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-124 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-125 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-124';
+const BUILD = '2026-11-21-125';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -485,12 +485,25 @@ ok('输入法：格式操作静默聚焦不弹键盘，点正文才唤起输入�
   /function focusTyping\(el\) \{[\s\S]{0,260}if \(wasManual && document\.activeElement === t\) t\.blur\(\)/.test(appSrc) &&
   /* 面板按钮走的四条命令链都用静默聚焦 */
   (appSrc.match(/focusQuiet\(pane\);/g) || []).length >= 5 &&
-  /function openStyleSheet\(\) \{[\s\S]{0,320}hideSoftKeyboard\(\)/.test(appSrc) &&
-  /function closeStyleSheet\(\) \{[\s\S]{0,240}setKbManual\(false\)/.test(appSrc) &&
+  /function openStyleSheet\(\) \{[\s\S]{0,420}hideSoftKeyboard\(\)/.test(appSrc) &&
+  /function closeStyleSheet\(\) \{[\s\S]{0,420}setKbManual\(false\)/.test(appSrc) &&
   /* 编辑态点正文（非图片、非待办框）才唤起输入法 */
   /function typingFocus\(point\) \{[\s\S]{0,200}focusTyping\(rp\)/.test(appSrc) &&
   /typingFocus\(\{ x: e\.clientX, y: e\.clientY \}\)/.test(appSrc) &&
   appSrc.indexOf('pane.focus();\n      restoreRange();') < 0);
+
+ok('样式面板不再遮挡正文：编辑区抬到面板上方、调完格式自动滚进视野',
+  /body\.sj-note-open\.sj-style-open \.app \{[\s\S]{0,120}bottom: var\(--ss-h,/.test(styleSrc) &&
+  /body\.sj-note-edit\.sj-style-open \.rich-pane/.test(styleSrc) &&
+  /function syncSheetHeight\(\) \{[\s\S]{0,300}getBoundingClientRect\(\)\.height/.test(appSrc) &&
+  /function syncSheetHeight\(\)[\s\S]{0,320}setProperty\('--ss-h'/.test(appSrc) &&
+  /function openStyleSheet\(\) \{[\s\S]{0,700}classList\.add\('sj-style-open'\)/.test(appSrc) &&
+  /function closeStyleSheet\(\) \{[\s\S]{0,300}classList\.remove\('sj-style-open'\)/.test(appSrc) &&
+  /function revealSelection\(\) \{[\s\S]{0,400}getClientRects\(\)/.test(appSrc) &&
+  (appSrc.match(/revealSelection\(\);/g) || []).length >= 5 &&
+  /body\.sj-style-open \.pwd-tip \{ display: none; \}/.test(styleSrc) &&
+  /max-height: min\(88vh, 470px\)/.test(styleSrc) &&
+  appSrc.indexOf("window.addEventListener('resize', () => { if (styleSheetOpen()) syncSheetHeight(); });") >= 0);
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

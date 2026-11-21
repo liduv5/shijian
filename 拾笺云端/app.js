@@ -2225,6 +2225,39 @@
     return t;
   }
 
+  /* 把当前选区滚进正文的可视范围。
+     样式面板打开后正文区被压缩，调完字号/颜色如果不滚一下，
+     被调的那一行可能正好在视口外，看着像「没生效」。 */
+  function revealSelection() {
+    const pane = $('#richPane');
+    if (!pane) return;
+    let r = null;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount) r = sel.getRangeAt(0);
+    if ((!r || !pane.contains(r.startContainer)) && savedRange && pane.contains(savedRange.startContainer)) {
+      r = savedRange;
+    }
+    if (!r) return;
+    let first = null, last = null;
+    try {
+      const rects = r.getClientRects();
+      if (rects && rects.length) { first = rects[0]; last = rects[rects.length - 1]; }
+    } catch (_) {}
+    if (!first) {
+      let el = r.startContainer;
+      if (el.nodeType !== 1) el = el.parentElement;
+      if (!el || !pane.contains(el)) return;
+      first = last = el.getBoundingClientRect();
+    }
+    const pr = pane.getBoundingClientRect();
+    if (!pr.height) return;
+    const pad = 20;
+    /* 选区在视口上方 → 顶上对齐首行；否则把末行顶到可视区底部，
+       整段（哪怕换了好几行）都能看全，不会只露第一行。 */
+    if (first.top < pr.top + pad) pane.scrollTop -= (pr.top + pad - first.top);
+    else if (last.bottom > pr.bottom - pad) pane.scrollTop += (last.bottom - (pr.bottom - pad));
+  }
+
   function exec(cmd, value) {
     const pane = $('#richPane');
     focusQuiet(pane);
@@ -2232,6 +2265,7 @@
     try { document.execCommand('styleWithCSS', false, false); } catch (_) {}
     document.execCommand(cmd, false, value);
     onRichInput();
+    revealSelection();
   }
 
   // 字体：styleWithCSS=true 让 fontName 生成 <span style="font-family:…">，
@@ -2257,7 +2291,7 @@
     const before = new Set(Array.from(pane.querySelectorAll('font')));
     document.execCommand('fontSize', false, '7');
     const made = Array.from(pane.querySelectorAll('font')).filter((f) => !before.has(f));
-    if (!made.length) { onRichInput(); return; }
+    if (!made.length) { onRichInput(); revealSelection(); return; }
     const newSpans = [];
     made.forEach((f) => {
       const span = document.createElement('span');
@@ -2280,6 +2314,7 @@
       } catch (_) {}
     }
     onRichInput();
+    revealSelection();
   }
 
   const BLOCK_TAGS = /^(P|DIV|LI|BLOCKQUOTE|PRE|H1|H2|H3|H4)$/;
@@ -2809,7 +2844,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-124';
+  const APP_BUILD = '2026-11-21-125';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -6067,10 +6102,18 @@
     }
     function closeStyleSheet() {
       if (STYLE_SHEET) STYLE_SHEET.classList.add('hidden');
+      document.body.classList.remove('sj-style-open');
+      document.documentElement.style.removeProperty('--ss-h');
       const b = EDIT_BAR && EDIT_BAR.querySelector('[data-act="fmt"]');
       if (b) b.classList.remove('on');
       /* 面板收起后恢复默认键盘策略：用户接下来点正文就该弹输入法了 */
       setKbManual(false);
+    }
+    /* 面板是 fixed 定位，量出真实高度交给 CSS，把编辑区整体抬到它上方 */
+    function syncSheetHeight() {
+      if (!STYLE_SHEET || STYLE_SHEET.classList.contains('hidden')) return;
+      const h = Math.round(STYLE_SHEET.getBoundingClientRect().height);
+      if (h > 0) document.documentElement.style.setProperty('--ss-h', h + 'px');
     }
     function openStyleSheet() {
       if (!STYLE_SHEET) return;
@@ -6079,9 +6122,13 @@
          否则键盘会把面板顶到半屏（用户 2026-11-21 反馈） */
       hideSoftKeyboard();
       STYLE_SHEET.classList.remove('hidden');
+      document.body.classList.add('sj-style-open');
       const b = EDIT_BAR && EDIT_BAR.querySelector('[data-act="fmt"]');
       if (b) b.classList.add('on');
       syncStyleStates();
+      /* 先按上一帧的高度占位，再量真值兜一次；最后把正在调的位置滚进视野 */
+      syncSheetHeight();
+      requestAnimationFrame(() => { syncSheetHeight(); revealSelection(); });
     }
 
     /* 对齐 / 缩进 / 颜色必须 styleWithCSS=true：否则浏览器会生成 align 属性或
@@ -6096,6 +6143,7 @@
       try { ok = document.execCommand(cmd, false, val); } catch (_) {}
       onRichInput();
       syncStyleStates();
+      revealSelection();
       return ok;
     }
 
@@ -6132,6 +6180,7 @@
       else if (kind === 'list-task') el.classList.add('sj-task');
       else if (kind === 'list-ul') el.style.listStyleType = '';
       onRichInput();
+      revealSelection();
     }
 
     /* 面板上的开关量与正文里的真实状态对齐（加粗的字段一点开就应该是蓝的） */
@@ -6230,6 +6279,8 @@
       if (e.target.closest && e.target.closest('[data-act="fmt"]')) return;
       closeStyleSheet();
     });
+    /* 转屏、键盘收起都会改变可视高度，面板高度跟着重算 */
+    window.addEventListener('resize', () => { if (styleSheetOpen()) syncSheetHeight(); });
 
     /* 点正文进入编辑时，把光标落到手指点的那个字后面，而不是跳回开头 */
     function caretTo(x, y) {
