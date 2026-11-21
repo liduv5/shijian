@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-147 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-21-148 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-21-147';
+const BUILD = '2026-11-21-148';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -166,7 +166,7 @@ ok('华为桌面兼容：随手记打开拾笺走同窗口导航（无 window.op
 /* 华为风手机首页：DOM / 逻辑 / CSS 三处齐全，且入口不丢 */
 const indexSrc = fs.readFileSync(path.join(CLOUD, 'index.html'), 'utf8');
 const styleSrc = fs.readFileSync(path.join(CLOUD, 'style.css'), 'utf8');
-for (const id of ['sjHomeHead', 'sjCatTitle', 'sjHomeSearch', 'sjCatSheet', 'sjFab', 'sjDetailBar']) {
+for (const id of ['sjHomeHead', 'sjCatTitle', 'sjHomeSearch', 'sjCatSheet', 'sjFab', 'sjFabMenu', 'sjDetailBar']) {
   ok('首页 DOM 节点存在：#' + id, indexSrc.indexOf('id="' + id + '"') >= 0);
 }
 ok('底部双 tab 已移除（随手记并入加号菜单）',
@@ -182,7 +182,7 @@ ok('分类面板复用现有伪节点 all/uncat/starred',
 ok('首页搜索与侧栏搜索共享 state.search',
   appSrc.indexOf('state.search = e.target.value;') >= 0);
 ok('桌面端默认隐藏新增 UI（只在 ≤980px 放开）',
-  /\.sj-home-head, \.sj-fab, \.sj-detail-bar,[\s\S]{0,100}\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu,[\s\S]{0,60}\.sj-cat-editor, \.sj-note-head, \.sj-edit-bar, \.sj-meta-cat,[\s\S]{0,80}\{ display: none; \}/.test(styleSrc) &&
+  /\.sj-home-head, \.sj-fab, \.sj-fab-menu, \.sj-detail-bar,[\s\S]{0,100}\.sj-cat-mgr, \.sj-manage-menu, \.sj-more-btn, \.sj-more-menu,[\s\S]{0,60}\.sj-cat-editor, \.sj-note-head, \.sj-edit-bar, \.sj-meta-cat,[\s\S]{0,80}\{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('@media (max-width: 980px)') >= 0);
 ok('手机端顶栏收起、--m-bar-total 归零（顶端无菜单）',
   /@media \(max-width: 980px\)[\s\S]{0,400}\.m-bar \{ display: none !important; \}/.test(styleSrc) &&
@@ -778,13 +778,26 @@ ok('顶栏不出现标题框下边框线（首页和笔记页都去掉）',
   /body:not\(\.sj-note-open\) \.sj-home-bar\.scrolled::before\s*\{ opacity: 1; \}/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \{ position: relative; \}/.test(styleSrc));
 
-ok('右下加号弹出「新建笔记 / 随手记」菜单，替代底部 tab',
-  /* 加号不再直接 createNote，而是复用 ctxMenu 弹两项菜单 */
-  /function openFabMenu\(\)/.test(appSrc) &&
-  /\{ label: '新建笔记', icon: ICON_NEW_NOTE, onClick: \(\) => createNote\(\) \}/.test(appSrc) &&
-  /\{ label: '随手记', icon: ICON_QUICK, onClick: \(\) => \{ hideCatSheet\(\); openQuick\(\); \} \}/.test(appSrc) &&
-  /FAB\.addEventListener\('click', openFabMenu\)/.test(appSrc) &&
-  /showCtx\(r\.right - 200, r\.top \+ 4, \[[\s\S]{0,200}\{ above: true, anchor: FAB \}\)/.test(appSrc) &&
+ok('右下加号径向散开「新建笔记 / 随手记」菜单，替代底部 tab',
+  /* 独立径向菜单 DOM：两项圆形按钮 */
+  /id="sjFabMenu"/.test(indexSrc) &&
+  /class="sj-fab-item" data-act="new"/.test(indexSrc) &&
+  /class="sj-fab-item" data-act="quick"/.test(indexSrc) &&
+  /class="sj-fab-item-txt">新建笔记</.test(indexSrc) &&
+  /class="sj-fab-item-txt">随手记</.test(indexSrc) &&
+  /* 从加号中心沿圆弧散开的 transform 动画（--dx/--dy 分别定义两个角度） */
+  /\.sj-fab-item \{[\s\S]{0,260}transform: translate\(-50%, -50%\) scale\(\.35\)/.test(styleSrc) &&
+  /body\.sj-fab-open \.sj-fab-item \{[\s\S]{0,200}translate\(calc\(-50% \+ var\(--dx\)\), calc\(-50% \+ var\(--dy\)\)\)/.test(styleSrc) &&
+  /\.sj-fab-item\[data-act="new"\] \{ --dx: -\d+px; --dy: -\d+px;/.test(styleSrc) &&
+  /\.sj-fab-item\[data-act="quick"\] \{ --dx: -\d+px; --dy: -\d+px;/.test(styleSrc) &&
+  /body\.sj-fab-open \.sj-fab \.ico \{ transform: rotate\(45deg\); \}/.test(styleSrc) &&
+  /* 锚到加号中心 + 三项点击行为 */
+  /FABMENU\.style\.left = \(r\.left \+ r\.width \/ 2\)/.test(appSrc) &&
+  /function toggleFabMenu\(\) \{ if \(fabOpen\) hideFabMenu\(\); else openFabMenu\(\); \}/.test(appSrc) &&
+  /FAB\.addEventListener\('click', toggleFabMenu\)/.test(appSrc) &&
+  /if \(!fabOpen \|\| fabJustOpened\) return;/.test(appSrc) &&
+  /if \(FABMENU && FABMENU\.contains\(e\.target\)\) return;/.test(appSrc) &&
+  /const act = el\.dataset\.act;[\s\S]{0,120}if \(act === 'new'\) createNote\(\);[\s\S]{0,80}act === 'quick'/.test(appSrc) &&
   /* guard 用加号而非已删的 tabbar，否则整块首页逻辑不执行 */
   /const FAB = \$\('#sjFab'\), DETAIL = \$\('#sjDetailBar'\);[\s\S]{0,80}if \(!FAB\) return;/.test(appSrc));
 

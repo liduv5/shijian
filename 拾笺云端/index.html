@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-21-147';
+  var SWV = '2026-11-21-148';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -319,9 +319,20 @@
     </header>
     <div class="note-list" id="noteList"></div>
     <!-- 右下悬浮 + ：单击弹出「新建笔记 / 随手记」小菜单（替代原底部双 tab） -->
-    <button type="button" class="sj-fab" id="sjFab" aria-label="新建笔记或随手记" title="新建 / 随手记">
+    <button type="button" class="sj-fab" id="sjFab" aria-label="新建笔记或随手记" title="新建 / 随手记" aria-expanded="false">
       <svg viewBox="0 0 24 24" class="ico"><path d="M12 5v14M5 12h14"/></svg>
     </button>
+    <!-- 右下加号的径向菜单：两项从加号中心沿圆弧平滑散开，收起时退回中心 -->
+    <div class="sj-fab-menu" id="sjFabMenu" aria-hidden="true">
+      <button type="button" class="sj-fab-item" data-act="new" aria-label="新建笔记">
+        <span class="sj-fab-item-ico"><svg viewBox="0 0 24 24" class="ico"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg></span>
+        <span class="sj-fab-item-txt">新建笔记</span>
+      </button>
+      <button type="button" class="sj-fab-item" data-act="quick" aria-label="随手记">
+        <span class="sj-fab-item-ico"><svg viewBox="0 0 24 24" class="ico"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M13.5 6.5l3 3"/></svg></span>
+        <span class="sj-fab-item-txt">随手记</span>
+      </button>
+    </div>
   </section>
 
   <!-- ============ 编辑区 ============ -->

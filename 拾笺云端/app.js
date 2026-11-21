@@ -3013,7 +3013,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-21-147';
+  const APP_BUILD = '2026-11-21-148';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -5672,21 +5672,63 @@
       const el = $(sel); if (el) el.addEventListener('click', () => setTimeout(syncHome, 0));
     });
 
-    /* 右下角加号：单击弹「新建笔记 / 随手记」两项菜单，替代原底部双 tab。
-       复用 ctxMenu：它有同一次 click 守卫、锚点跟随和弹出不横跳，样式与别处菜单一致。
-       anchor 用真按钮、above 让菜单浮在加号上方，不压住底部提示条。 */
-    const ICON_NEW_NOTE = '<svg viewBox="0 0 24 24" class="ico"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h7"/></svg>';
-    const ICON_QUICK = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M13.5 6.5l3 3"/></svg>';
-    function openFabMenu() {
-      if (!FAB || FAB.classList.contains('hidden')) return;
+    /* 右下角加号：径向菜单——两项从加号中心沿圆弧平滑散开，替代原底部双 tab。
+       再点加号收起、点空白也收起；加号位置会随提示条/旋转变化，菜单实时贴中心。 */
+    const FABMENU = $('#sjFabMenu');
+    let fabOpen = false;
+    let fabJustOpened = false;
+
+    function placeFabMenu() {
+      if (!FABMENU || !FAB) return;
       const r = FAB.getBoundingClientRect();
-      showCtx(r.right - 200, r.top + 4, [
-        { label: '新建笔记', icon: ICON_NEW_NOTE, onClick: () => createNote() },
-        { label: '随手记', icon: ICON_QUICK, onClick: () => { hideCatSheet(); openQuick(); } },
-      ], { above: true, anchor: FAB });
+      FABMENU.style.left = (r.left + r.width / 2) + 'px';
+      FABMENU.style.top = (r.top + r.height / 2) + 'px';
     }
-    function hideFabMenu() { if (typeof hideCtx === 'function') hideCtx(); }
-    if (FAB) FAB.addEventListener('click', openFabMenu);
+    function openFabMenu() {
+      if (!FAB || FAB.classList.contains('hidden') || fabOpen) return;
+      placeFabMenu();
+      fabOpen = true;
+      document.body.classList.add('sj-fab-open');
+      if (FAB) FAB.setAttribute('aria-expanded', 'true');
+      if (FABMENU) FABMENU.setAttribute('aria-hidden', 'false');
+      /* 打开时这一次 click 会冒泡到下面的「点空白收起」，挡掉它，否则刚开就关 */
+      fabJustOpened = true;
+      setTimeout(() => { fabJustOpened = false; }, 0);
+    }
+    function hideFabMenu() {
+      if (!fabOpen) return;
+      fabOpen = false;
+      document.body.classList.remove('sj-fab-open');
+      if (FAB) FAB.setAttribute('aria-expanded', 'false');
+      if (FABMENU) FABMENU.setAttribute('aria-hidden', 'true');
+    }
+    function toggleFabMenu() { if (fabOpen) hideFabMenu(); else openFabMenu(); }
+    if (FAB) FAB.addEventListener('click', toggleFabMenu);
+
+    /* 点空白收起：同一次打开的 click 有守卫；点菜单项/加号本身不算空白 */
+    document.addEventListener('click', (e) => {
+      if (!fabOpen || fabJustOpened) return;
+      if (FABMENU && FABMENU.contains(e.target)) return;
+      if (FAB && FAB.contains(e.target)) return;
+      hideFabMenu();
+    });
+    /* 加号位置会随首次安装提示条上移、旋转、分屏而变，菜单跟着重新贴中心 */
+    ['resize', 'orientationchange'].forEach((t) => {
+      window.addEventListener(t, () => { if (fabOpen) placeFabMenu(); });
+    });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', () => { if (fabOpen) placeFabMenu(); });
+    }
+
+    /* 菜单项：新建笔记 / 随手记，执行动作后收起 */
+    if (FABMENU) FABMENU.querySelectorAll('.sj-fab-item').forEach((el) => {
+      el.addEventListener('click', () => {
+        const act = el.dataset.act;
+        hideFabMenu();
+        if (act === 'new') createNote();
+        else if (act === 'quick') { hideCatSheet(); openQuick(); }
+      });
+    });
 
     /* ---- 分类面板 ---- */
     function folderCount(id) {
