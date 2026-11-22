@@ -1061,6 +1061,13 @@ body.sj-note-read .read-aa-btn:hover,
 body.sj-note-read .read-aa-btn.on { background: var(--surface-2); color: var(--text); }
 .read-aa-glyph { font-family: var(--font-ui); font-size: 13px; font-weight: 650; letter-spacing: .01em; }
 
+/* 阅读态不是「写」的场合：插入图片、添加附件都是往正文里写东西，
+   正文这时 contenteditable=false，点了要么没反应要么把图塞进只读区。
+   隐藏掉（2026-11-22 用户指出）。附件本身仍在下方附件面板里照常显示，
+   想加/删附件进编辑态即可。 */
+body.sj-note-read #imgBtn,
+body.sj-note-read #attachBtn { display: none; }
+
 .read-aa-pop {
   position: fixed; z-index: 220;
   top: 66px; right: 26px;

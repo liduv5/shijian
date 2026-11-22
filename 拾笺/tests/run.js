@@ -202,6 +202,15 @@ ok('编辑态把布局还给 flex（否则源码和预览会上下叠一起）',
 ok('编辑态照常显示工具条（不再隐藏）', !/body\.sj-note-edit \.toolbar \{ display: none; \}/.test(css));
 ok('编辑态顶栏的插图/附件/收藏不再被收起',
   !/body\.sj-note-edit #imgBtn,[\s\S]{0,120}#attachBtn,[\s\S]{0,120}#starBtn \{ display: none; \}/.test(css));
+/* 阅读态正文 contenteditable=false，插入图片/添加附件属于「写」，点了没意义 */
+ok('阅读态隐藏插入图片与添加附件',
+  /body\.sj-note-read #imgBtn,\s*body\.sj-note-read #attachBtn \{ display: none; \}/.test(css)
+  && !/body\.sj-note-edit #imgBtn/.test(css));
+ok('阅读态仍留着收藏、历史版本、导出、删除',
+  !/body\.sj-note-read #starBtn/.test(css)
+  && !/body\.sj-note-read #historyBtn/.test(css)
+  && !/body\.sj-note-read #exportBtn2/.test(css)
+  && !/body\.sj-note-read #deleteNoteBtn/.test(css));
 ok('顶栏小标题默认透明', /body\.sj-note-read \.title-input \{[\s\S]{0,160}opacity: 0;/.test(css));
 ok('接管后恢复不透明', /body\.sj-note-read\.sj-head-solid \.title-input \{ opacity: 1;/.test(css));
 ok('阅读态正文保持适眼行宽', /body\.sj-note-read \.rich-pane \{[\s\S]{0,120}max-width: 760px;/.test(css));
