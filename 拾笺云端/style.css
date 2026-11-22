@@ -933,11 +933,38 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
 .tb-text { font-weight: 700; font-size: 12.5px; letter-spacing: -.02em; }
 /* 字体 / 字号下拉：吞掉原生箭头自带的那一大块留白，改自绘小箭头。
    宽度按内容走（field-sizing）+ 一条保底宽度，太窄会像个裸文字。 */
+/* 字体 / 字号 / 行距：左边一个小字母标（T / Z / H）。字号和行距都只显示
+   一个数字，光看数字 + 箭头分不清谁是谁。label 包着 select，点字母也能展开。 */
+.tb-pick {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 27px;
+  margin: 0 3px;
+  padding-left: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color .14s;
+}
+.tb-pick-tag {
+  flex: none;
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: .02em;
+  color: var(--text-3);
+  user-select: none;
+}
+.tb-pick:hover { background-color: var(--surface-2); }
+.tb-pick .tb-select { margin: 0; padding-left: 4px; }
+.tb-pick .tb-select:hover,
+.tb-pick .tb-select:focus-visible { background-color: transparent; }
+
 .tb-select {
   height: 27px;
   width: auto;
-  min-width: 64px;
-  margin: 0 3px;
+  min-width: 52px;
   field-sizing: content;
   padding: 0 18px 0 8px;
   border: 1px solid transparent;
@@ -957,8 +984,8 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   outline: none;
   transition: background-color .14s, color .14s;
 }
-.tb-select.is-size { min-width: 48px; }
-.tb-select.is-lh { min-width: 52px; }
+.tb-select.is-size { min-width: 40px; }
+.tb-select.is-lh { min-width: 42px; }
 html[data-theme="dark"] .tb-select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238f948f' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E");
 }

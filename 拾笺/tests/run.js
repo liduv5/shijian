@@ -137,7 +137,8 @@ ok('下拉宽度跟着当前值走，不再按最长选项撑出空白',
   && !/\.tb-select \{[\s\S]{0,400}min-width: 58px/.test(css));
 ok('下拉吞掉原生箭头留白，改自绘小箭头（箭头紧贴文字）',
   (function () {
-    const a = css.indexOf('.tb-select {');
+    // 行首要锚住：`.tb-pick .tb-select { ... }` 里也含 `.tb-select {`
+    const a = css.search(/^\.tb-select \{/m);
     const b = a >= 0 ? css.indexOf('}', a) : -1;
     const block = a >= 0 && b > a ? css.slice(a, b) : '';
     return /appearance: none/.test(block) && /-webkit-appearance: none/.test(block)
@@ -145,10 +146,16 @@ ok('下拉吞掉原生箭头留白，改自绘小箭头（箭头紧贴文字）'
       && /padding: 0 18px 0 8px/.test(block);
   })());
 ok('下拉有保底宽度，不至于窄成一行裸文字',
-  /\.tb-select \{[\s\S]{0,300}min-width: 64px/.test(css)
-  && /\.tb-select\.is-size \{ min-width: 48px; \}/.test(css)
+  /\.tb-select \{[\s\S]{0,300}min-width: 52px/.test(css)
+  && /\.tb-select\.is-size \{ min-width: 40px; \}/.test(css)
   && /s\.className = 'tb-select' \+ \(cls \? ' ' \+ cls : ''\)/.test(js)
-  && /execFontSize\(v\), 'is-size'\)/.test(js));
+  && /execFontSize\(v\), 'is-size', 'Z'\)/.test(js));
+/* 字号和行距都只显示一个数字，光看「28 + 箭头」分不出谁是谁 → 前面挂字母标。 */
+ok('字体/字号/行距各自带字母标 T / Z / H',
+  /execFont\('fontName', v\), '', 'T'\)/.test(js)
+  && /'is-size', 'Z'\)/.test(js) && /'is-lh', 'H'\)/.test(js)
+  && /\.tb-pick-tag \{[\s\S]{0,300}font-size: 10\.5px/.test(css)
+  && /\.tb-pick:hover \{ background-color: var\(--surface-2\); \}/.test(css));
 ok('点开下拉不描黑框（键盘聚焦改用底色提示）',
   /\.tb-select:focus \{ outline: none; \}/.test(css)
   && /\.tb-select:focus-visible \{ outline: none;/.test(css)

@@ -2109,7 +2109,14 @@
     };
     /* 字体 / 字号下拉：选完不回占位文字 —— syncFontPickers 会把光标处
        真实的字体和大小重新算出来显示，下拉里「选中的那条」就是当前值。 */
-    const sel = (title, opts, onChange, cls) => {
+    /* 下拉左侧挂一个字母标（T 字体 / Z 字号 / H 行距）：字号和行距都只显示
+       一个数字，没标分不出哪个是哪个。用 label 包住，点字母也能展开下拉。 */
+    const sel = (title, opts, onChange, cls, tag) => {
+      const wrap = document.createElement('label');
+      wrap.className = 'tb-pick';
+      const tg = document.createElement('span');
+      tg.className = 'tb-pick-tag';
+      tg.textContent = tag || '';
       const s = document.createElement('select');
       s.className = 'tb-select' + (cls ? ' ' + cls : '');
       s.title = title;
@@ -2119,7 +2126,9 @@
         if (v) onChange(v);
         else syncFontPickers();
       });
-      bar.appendChild(s);
+      wrap.appendChild(tg);
+      wrap.appendChild(s);
+      bar.appendChild(wrap);
       return s;
     };
 
@@ -2138,9 +2147,9 @@
       ['Arial', 'Arial'],
       ['Georgia', 'Georgia'],
       ['Courier New', '等宽'],
-    ], (v) => execFont('fontName', v));
+    ], (v) => execFont('fontName', v), '', 'T');
     tbSizeSel = sel('字号', [
-      ['', '字号'],
+      ['', '默认'],
       ['12', '12'],
       ['14', '14'],
       ['16', '16'],
@@ -2149,7 +2158,7 @@
       ['24', '24'],
       ['28', '28'],
       ['32', '32'],
-    ], (v) => execFontSize(v), 'is-size');
+    ], (v) => execFontSize(v), 'is-size', 'Z');
     /* 文字颜色：和手机端同一套 6 色 + 默认。按钮下面那道小横线是
        上一次用的颜色，点开才出色板（色板挂在 body 上，滚出工具条也看得见）。 */
     const colorBtn = btn(
@@ -2191,7 +2200,7 @@
       applyRichLh();
       try { localStorage.setItem('sj_rich_lh', String(px)); } catch (_) {}
       syncLhPicker();
-    }, 'is-lh');
+    }, 'is-lh', 'H');
     syncLhPicker();
     const clearBtn = btn('<span class="tb-text" style="font-weight:600">Tx</span>', '清除格式', clearFormat, '');
     clearBtn.style.marginLeft = 'auto';

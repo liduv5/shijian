@@ -979,7 +979,8 @@ ok('正文载入体检：抹掉内联 caret-color、清掉列表里的野段落'
    两个下拉之间就像隔着一条沟。字段自适应 + 自绘箭头，和桌面端同一套。 */
 ok('字体/字号下拉宽度跟着内容走，箭头紧贴文字',
   (function () {
-    const a = styleSrc.indexOf('.tb-select {');
+    // 行首要锚住：`.tb-pick .tb-select { ... }` 里也含 `.tb-select {`
+    const a = styleSrc.search(/^\.tb-select \{/m);
     const b = a >= 0 ? styleSrc.indexOf('}', a) : -1;
     const block = a >= 0 && b > a ? styleSrc.slice(a, b) : '';
     return /field-sizing: content/.test(block)
@@ -988,11 +989,17 @@ ok('字体/字号下拉宽度跟着内容走，箭头紧贴文字',
       && /padding: 0 18px 0 8px/.test(block);
   })());
 ok('下拉有保底宽度、点开不描黑框',
-  /\.tb-select \{[\s\S]{0,300}min-width: 64px/.test(styleSrc)
-  && /\.tb-select\.is-size \{ min-width: 48px; \}/.test(styleSrc)
+  /\.tb-select \{[\s\S]{0,300}min-width: 52px/.test(styleSrc)
+  && /\.tb-select\.is-size \{ min-width: 40px; \}/.test(styleSrc)
   && /s\.className = 'tb-select' \+ \(cls \? ' ' \+ cls : ''\)/.test(appSrc)
-  && /execFontSize\(v\), 'is-size'\)/.test(appSrc)
+  && /execFontSize\(v\), 'is-size', 'Z'\)/.test(appSrc)
   && /\.tb-select:focus-visible \{ outline: none;/.test(styleSrc));
+/* 字号和行距都只显示一个数字，光看「28 + 箭头」分不出谁是谁 → 前面挂字母标。 */
+ok('字体/字号/行距各自带字母标 T / Z / H',
+  /execFont\('fontName', v\), '', 'T'\)/.test(appSrc)
+  && /'is-size', 'Z'\)/.test(appSrc) && /'is-lh', 'H'\)/.test(appSrc)
+  && /const wrap = document\.createElement\('label'\);[\s\S]{0,200}wrap\.className = 'tb-pick'/.test(appSrc)
+  && /\.tb-pick-tag \{[\s\S]{0,300}font-size: 10\.5px/.test(styleSrc));
 ok('深色主题下下拉箭头换一套颜色（不至于黑底看不见）',
   /html\[data-theme="dark"\] \.tb-select \{\s*background-image: url\("data:image\/svg\+xml/.test(styleSrc));
 /* 行距原来三档点击循环，改成像素下拉（和字号同一套控件）。 */
@@ -1010,7 +1017,7 @@ ok('阅读态正文也吃同一套像素行距',
 ok('行距下拉回显当前值（不在预设档就临时补一档）',
   /function syncLhPicker\(\)[\s\S]{0,700}data-temp/.test(appSrc)
   && /tbLhSel\.value = v;/.test(appSrc)
-  && /\.tb-select\.is-lh \{ min-width: 52px; \}/.test(styleSrc));
+  && /\.tb-select\.is-lh \{ min-width: 42px; \}/.test(styleSrc));
 ok('Markdown 笔记一被编辑即升级为富文本', /note\.content = \$\('#richPane'\)\.innerHTML;[\s\S]{0,80}note\.format = 'rich';/.test(appSrc));
 ok('新建笔记默认富文本', /categoryId: target, title: '', content: '',[\s\S]{0,120}format: 'rich'/.test(appSrc));
 ok('旧的 textarea 事件已摘掉', !/addEventListener\('input', onMdInput\)/.test(appSrc)

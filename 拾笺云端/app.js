@@ -1885,13 +1885,21 @@
       bar.appendChild(s);
     };
     // 富文本字体/字号下拉：原生 select，选后即复位到占位文字
-    const sel = (title, opts, onChange, cls) => {
+    // 左侧挂一个字母标（T 字体 / Z 字号 / H 行距）：后两个都只显示数字，没标分不出
+    const sel = (title, opts, onChange, cls, tag) => {
+      const wrap = document.createElement('label');
+      wrap.className = 'tb-pick';
+      const tg = document.createElement('span');
+      tg.className = 'tb-pick-tag';
+      tg.textContent = tag || '';
       const s = document.createElement('select');
       s.className = 'tb-select' + (cls ? ' ' + cls : '');
       s.title = title;
       s.innerHTML = opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
       s.addEventListener('change', () => { const v = s.value; s.value = ''; if (v) onChange(v); });
-      bar.appendChild(s);
+      wrap.appendChild(tg);
+      wrap.appendChild(s);
+      bar.appendChild(wrap);
       return s;
     };
 
@@ -1902,7 +1910,7 @@
     btn(I.strike, '删除线', () => exec('strikeThrough'));
     sep();
     sel('字体', [
-      ['', '字体'],
+      ['', '默认'],
       ['SimSun', '宋体'],
       ['SimHei', '黑体'],
       ['Microsoft YaHei', '微软雅黑'],
@@ -1910,9 +1918,9 @@
       ['Arial', 'Arial'],
       ['Georgia', 'Georgia'],
       ['Courier New', '等宽'],
-    ], (v) => execFont('fontName', v));
+    ], (v) => execFont('fontName', v), '', 'T');
     sel('字号', [
-      ['', '字号'],
+      ['', '默认'],
       ['12', '12'],
       ['14', '14'],
       ['16', '16'],
@@ -1921,7 +1929,7 @@
       ['24', '24'],
       ['28', '28'],
       ['32', '32'],
-    ], (v) => execFontSize(v), 'is-size');
+    ], (v) => execFontSize(v), 'is-size', 'Z');
     sep();
     btn('<span class="tb-text">H1</span>', '一级标题', () => exec('formatBlock', '<h1>'));
     btn('<span class="tb-text">H2</span>', '二级标题', () => exec('formatBlock', '<h2>'));
@@ -1950,7 +1958,7 @@
       applyRichLh();
       try { localStorage.setItem('sj_rich_lh', String(px)); } catch (_) {}
       syncLhPicker();
-    }, 'is-lh');
+    }, 'is-lh', 'H');
     syncLhPicker();
     const clearBtn = btn('<span class="tb-text" style="font-weight:600">Tx</span>', '清除格式', () => exec('removeFormat'), '');
     clearBtn.style.marginLeft = 'auto';
