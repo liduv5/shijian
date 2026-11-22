@@ -142,8 +142,17 @@ ok('下拉吞掉原生箭头留白，改自绘小箭头（箭头紧贴文字）'
     const block = a >= 0 && b > a ? css.slice(a, b) : '';
     return /appearance: none/.test(block) && /-webkit-appearance: none/.test(block)
       && /background-image: url\("data:image\/svg\+xml/.test(block)
-      && /padding: 0 17px 0 7px/.test(block);
+      && /padding: 0 18px 0 8px/.test(block);
   })());
+ok('下拉有保底宽度，不至于窄成一行裸文字',
+  /\.tb-select \{[\s\S]{0,300}min-width: 64px/.test(css)
+  && /\.tb-select\.is-size \{ min-width: 48px; \}/.test(css)
+  && /s\.className = 'tb-select' \+ \(cls \? ' ' \+ cls : ''\)/.test(js)
+  && /execFontSize\(v\), 'is-size'\)/.test(js));
+ok('点开下拉不描黑框（键盘聚焦改用底色提示）',
+  /\.tb-select:focus \{ outline: none; \}/.test(css)
+  && /\.tb-select:focus-visible \{ outline: none;/.test(css)
+  && !/\.tb-select:focus-visible \{ outline: 2px solid/.test(css));
 
 /* ---------- 4d. 正文载入体检 ---------- */
 console.log('\n正文载入体检（caret-color / 列表野段落）');

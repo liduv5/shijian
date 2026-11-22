@@ -1879,9 +1879,9 @@
       bar.appendChild(s);
     };
     // 富文本字体/字号下拉：原生 select，选后即复位到占位文字
-    const sel = (title, opts, onChange) => {
+    const sel = (title, opts, onChange, cls) => {
       const s = document.createElement('select');
-      s.className = 'tb-select';
+      s.className = 'tb-select' + (cls ? ' ' + cls : '');
       s.title = title;
       s.innerHTML = opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
       s.addEventListener('change', () => { const v = s.value; s.value = ''; if (v) onChange(v); });
@@ -1915,7 +1915,7 @@
       ['24', '24'],
       ['28', '28'],
       ['32', '32'],
-    ], (v) => execFontSize(v));
+    ], (v) => execFontSize(v), 'is-size');
     sep();
     btn('<span class="tb-text">H1</span>', '一级标题', () => exec('formatBlock', '<h1>'));
     btn('<span class="tb-text">H2</span>', '二级标题', () => exec('formatBlock', '<h2>'));

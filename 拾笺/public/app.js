@@ -2103,9 +2103,9 @@
     };
     /* 字体 / 字号下拉：选完不回占位文字 —— syncFontPickers 会把光标处
        真实的字体和大小重新算出来显示，下拉里「选中的那条」就是当前值。 */
-    const sel = (title, opts, onChange) => {
+    const sel = (title, opts, onChange, cls) => {
       const s = document.createElement('select');
-      s.className = 'tb-select';
+      s.className = 'tb-select' + (cls ? ' ' + cls : '');
       s.title = title;
       s.innerHTML = opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
       s.addEventListener('change', () => {
@@ -2143,7 +2143,7 @@
       ['24', '24'],
       ['28', '28'],
       ['32', '32'],
-    ], (v) => execFontSize(v));
+    ], (v) => execFontSize(v), 'is-size');
     /* 文字颜色：和手机端同一套 6 色 + 默认。按钮下面那道小横线是
        上一次用的颜色，点开才出色板（色板挂在 body 上，滚出工具条也看得见）。 */
     const colorBtn = btn(

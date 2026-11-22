@@ -905,7 +905,7 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 1px;
+  gap: 2px;
   padding: 0 28px 10px;
   border-bottom: 1px solid transparent;
   flex: none;
@@ -932,19 +932,20 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
 .tb-sep { width: 1px; height: 15px; background: var(--border); margin: 0 5px; flex: none; }
 .tb-text { font-weight: 700; font-size: 12.5px; letter-spacing: -.02em; }
 /* 字体 / 字号下拉：吞掉原生箭头自带的那一大块留白，改自绘小箭头。
-   宽度按内容走（field-sizing），否则短内容会被原生 select 按最长选项撑开，
-   两个下拉之间看着就隔着一条沟。 */
+   宽度按内容走（field-sizing）+ 一条保底宽度，太窄会像个裸文字。 */
 .tb-select {
   height: 27px;
   width: auto;
+  min-width: 64px;
+  margin: 0 3px;
   field-sizing: content;
-  padding: 0 17px 0 7px;
+  padding: 0 18px 0 8px;
   border: 1px solid transparent;
   border-radius: 6px;
   background-color: transparent;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238c8579' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 4px center;
+  background-position: right 5px center;
   background-size: 10px 10px;
   color: var(--text-2);
   font-size: 12px;
@@ -953,13 +954,17 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
+  outline: none;
   transition: background-color .14s, color .14s;
 }
+.tb-select.is-size { min-width: 48px; }
 html[data-theme="dark"] .tb-select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238f948f' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E");
 }
 .tb-select:hover { background-color: var(--surface-2); color: var(--text); }
-.tb-select:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+/* 点开时不描边；键盘聚焦用底色提示，别丢可达性。 */
+.tb-select:focus { outline: none; }
+.tb-select:focus-visible { outline: none; background-color: var(--surface-2); color: var(--text); }
 .tb-select option { background: var(--surface); color: var(--text); }
 
 /* 编辑主体 */

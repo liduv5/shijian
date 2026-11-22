@@ -985,8 +985,14 @@ ok('字体/字号下拉宽度跟着内容走，箭头紧贴文字',
     return /field-sizing: content/.test(block)
       && /appearance: none/.test(block)
       && /background-image: url\("data:image\/svg\+xml/.test(block)
-      && /padding: 0 17px 0 7px/.test(block);
+      && /padding: 0 18px 0 8px/.test(block);
   })());
+ok('下拉有保底宽度、点开不描黑框',
+  /\.tb-select \{[\s\S]{0,300}min-width: 64px/.test(styleSrc)
+  && /\.tb-select\.is-size \{ min-width: 48px; \}/.test(styleSrc)
+  && /s\.className = 'tb-select' \+ \(cls \? ' ' \+ cls : ''\)/.test(appSrc)
+  && /execFontSize\(v\), 'is-size'\)/.test(appSrc)
+  && /\.tb-select:focus-visible \{ outline: none;/.test(styleSrc));
 ok('深色主题下下拉箭头换一套颜色（不至于黑底看不见）',
   /html\[data-theme="dark"\] \.tb-select \{\s*background-image: url\("data:image\/svg\+xml/.test(styleSrc));
 ok('Markdown 笔记一被编辑即升级为富文本', /note\.content = \$\('#richPane'\)\.innerHTML;[\s\S]{0,80}note\.format = 'rich';/.test(appSrc));
