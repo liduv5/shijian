@@ -109,6 +109,15 @@ ok('只有光标时先选中整段再上色（和手机端一个规矩）',
   && /function selectBlockAtCaret\(/.test(js));
 ok('「默认颜色」是抹掉内联 color，不是写死一个色值',
   /stripCharStyles\(range, \['color'\]\)/.test(js) && !/color === 'default' \? getComputedStyle/.test(js));
+ok('颜色横线读的是光标前一个字符的颜色（不是上次用过的颜色）',
+  /function caretTextColor\(\)[\s\S]{0,260}getComputedStyle\(el\)\.color/.test(js)
+  && /function paintColorMark\(\)[\s\S]{0,320}caretTextColor\(\)/.test(js)
+  && !/lastTextColor/.test(js));
+ok('光标一动颜色横线就跟着刷（和字体/字号下拉同一趟）',
+  /function syncFontPickers\(\) \{[\s\S]{0,240}?paintColorMark\(\);/.test(js));
+ok('光标同步不吊死在 rAF 上（后台标签页一帧都不给也有 setTimeout 兜底）',
+  /fontPickTimer = setTimeout\(run, 32\)/.test(js)
+  && /cancelAnimationFrame\(fontPickTick\)/.test(js));
 ok('清除格式有自己的实现（不再是一句 exec(removeFormat)）',
   /function clearFormat\(\)/.test(js) && !/'清除格式', \(\) => exec\('removeFormat'\)/.test(js));
 ok('清除格式会自己扫内联 style（removeFormat 只管它认识的那几个命令）',

@@ -2235,6 +2235,7 @@
   let tbSizeSel = null;
   let tbLhSel = null;
   let fontPickTick = 0;
+  let fontPickTimer = 0;
 
   /* 行距下拉回显：值不在预设档里（老数据换算出来的奇数）就临时补一档 */
   function syncLhPicker() {
@@ -2287,12 +2288,19 @@
     return s;
   }
 
+  /* 光标一动就刷字体 / 字号 / 颜色那一排。原来只挂 rAF 合帧，但 rAF 并不
+     保证会有：窗口被遮挡、最小化、或后台标签页里浏览器一帧都不给
+     （Safari 切走直接暂停），回来时工具条还停在旧值。所以再挂一个 32ms
+     的 setTimeout 兜底，谁先到谁跑，run 自己把两边都撤掉，不会刷两次。 */
   function scheduleSyncFontPickers() {
-    if (fontPickTick) return;
-    fontPickTick = requestAnimationFrame(() => {
-      fontPickTick = 0;
+    if (fontPickTick || fontPickTimer) return;
+    const run = () => {
+      if (fontPickTick) { cancelAnimationFrame(fontPickTick); fontPickTick = 0; }
+      if (fontPickTimer) { clearTimeout(fontPickTimer); fontPickTimer = 0; }
       syncFontPickers();
-    });
+    };
+    fontPickTick = requestAnimationFrame(run);
+    fontPickTimer = setTimeout(run, 32);
   }
 
   function caretStyleHost() {
@@ -2367,6 +2375,9 @@
   }
 
   function syncFontPickers() {
+    /* 颜色横线和字体/字号下拉一伙的：都跟着光标走，所以一起刷
+       （放在最前面，下面两个 early return 也照样能刷到） */
+    paintColorMark();
     if (!tbFontSel || !tbSizeSel) return;
     const el = caretStyleHost();
     if (!el) {
@@ -2387,14 +2398,29 @@
     ['#d13b32', '红色'], ['#f2c53d', '黄色'], ['#63a95c', '绿色'],
     ['#61b0d9', '蓝色'], ['#4b46d8', '靛蓝'], ['#a554cd', '紫色'],
   ];
-  let lastTextColor = '';
   let colorPop = null;
   let colorPopAnchor = null;
+
+  /* 按钮 A 下面那道小横线 = 光标左边那个字真正是什么颜色。
+     不是「上次用过的颜色」：光标移到一行红字里，横线就该是红的；
+     移到没上过色的正文里，横线回到主题字色。
+     caretStyleHost() 已经处理掉两个坑（段落末尾的光标容器是 <p>、
+     字体/字号/颜色层层套 span），probeNodeOf() 又优先取「前一个子节点」，
+     所以拿到的元素就是光标前一个字符的容器，读它的计算色即可。
+     光标在段首（左边什么都没有）时取后一个字符，整段空着就是主题色。 */
+  function caretTextColor() {
+    const el = caretStyleHost();
+    if (!el) return '';
+    return getComputedStyle(el).color || '';
+  }
 
   function paintColorMark() {
     const mark = document.getElementById('tbColorMark');
     if (!mark) return;
-    mark.style.background = lastTextColor || '';
+    /* 和元素上的现值比，不用外部变量：工具条重建后 element 是新的，这里必须重刷 */
+    const c = caretTextColor();
+    if (mark.style.background === c) return;
+    mark.style.background = c;
   }
 
   function closeColorPop() {
@@ -2472,16 +2498,15 @@
       /* 「默认」不是写死一个颜色：直接把内联 color 抹掉，回到主题色，
          深色主题下才不会留下一行黑字。 */
       stripCharStyles(range, ['color']);
-      lastTextColor = '';
     } else {
       try { document.execCommand('styleWithCSS', false, true); } catch (_) {}
       try { document.execCommand('foreColor', false, color); } catch (_) {}
-      lastTextColor = color;
     }
-    paintColorMark();
     /* 只是光标、整段是自动选上的：上完色把光标放回段末。
        留着整段选中，用户接着打字就会把这一行整段覆盖掉。 */
     if (collapsed) caretToBlockEnd(block);
+    /* 光标摆好之后再取色，横线读的就是刚落下的这个颜色 */
+    paintColorMark();
     onRichInput();
   }
 
