@@ -311,5 +311,36 @@ ok('renderMarkdown 已导出到全局供 sync.js 用',
   /window\.SJRenderMarkdown = renderMarkdown/.test(js));
 ok('迁移脚本存在且可执行', fs.existsSync(path.join(__dirname, '..', 'scripts', 'migrate-to-rich.js')));
 
+console.log('\n阅读态舒适度（P1：Aa 浮层 / 看大图 / 下拉量宽）');
+/* 字号、行距都是本机显示偏好：只改 CSS 变量，不动笔记内容。 */
+ok('阅读态顶栏有 Aa，只在阅读态出现',
+  /id="readAaBtn"/.test(html)
+  && /body\.sj-note-read \.read-aa-btn \{ display: grid;/.test(css)
+  && /\.read-aa-btn \{ display: none; \}/.test(css));
+ok('Aa 浮层只有字号、行距两行滑杆 + 恢复默认',
+  /id="readAaFs"/.test(html) && /id="readAaLh"/.test(html) && /id="readAaReset"/.test(html)
+  && /function aaSync\(\)/.test(js) && /function aaToggle\(\)/.test(js));
+ok('Aa 只改显示偏好：写 --sj-rich-fs、存本机、不标脏',
+  /state\.richFs = clampFs\(AA_FS\.value\)/.test(js)
+  && /setProperty\('--sj-rich-fs', state\.richFs \+ 'px'\)/.test(js)
+  && /localStorage\.setItem\('sj_rich_fs'/.test(js)
+  && !/state\.richFs[\s\S]{0,120}markDirty\(\)/.test(js));
+ok('正文字号吃 --sj-rich-fs（编辑面 16 / 阅读态 17 兜底）',
+  /\.rich-pane\.markdown-body \{[\s\S]{0,120}font-size: var\(--sj-rich-fs, 16px\)/.test(css)
+  && /body\.sj-note-read \.rich-pane \{[\s\S]{0,120}font-size: var\(--sj-rich-fs, 17px\)/.test(css));
+ok('行距下界跟着字号走（24px 正文配 22px 行距会叠字）',
+  /function lhMin\(\) \{ return Math\.ceil\(lhBasePx\(\) \* 1\.2 \/ 2\) \* 2; \}/.test(js)
+  && /for \(let v = lhMin\(\); v <= 48; v \+= 2\)/.test(js)
+  && /Math\.max\(lhMin\(\), n\)/.test(js)
+  && /function rebuildLhOptions\(\)/.test(js));
+ok('阅读态点图片开大图，复用附件查看器；编辑态不受影响',
+  /function openSrcLightbox|openAttLightbox\(\{ type: 'image\/png', data:/.test(js)
+  && /if \(noteMode !== 'read'\) return;/.test(js)
+  && /function openAttLightbox\(a\)/.test(js));
+ok('下拉宽度自己量（不依赖 field-sizing）',
+  /function fitSel\(s\)/.test(js) && /function measureSel\(s\)/.test(js)
+  && /white-space:pre/.test(js)
+  && /fitSel\(tbLhSel\)/.test(js));
+
 console.log(`\n结果：${pass} 通过，${fail} 失败`);
 process.exit(fail ? 1 : 0);

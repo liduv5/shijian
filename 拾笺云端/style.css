@@ -966,7 +966,9 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   height: 27px;
   width: auto;
   min-width: 52px;
-  field-sizing: content;
+  /* 宽度不靠 field-sizing：它按最长选项算，iOS Safari 还完全不认。
+     实际宽度由 app.js 的 fitSel() 按当前显示文字量出来写死，
+     min-width 只是量不出来时（脚本没跑到）的兜底。 */
   padding: 0 18px 0 8px;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -1015,13 +1017,14 @@ html[data-theme="dark"] .tb-select {
   outline: none;
   font-size: 16px;
 }
-/* 行距变量须压过下方 .markdown-body 的 line-height（richPane 同时带两个类）。
-   值是像素，档位由 app.js 的 lhSteps() 按当前设备正文基准字号生成
-   （手机 24–48、桌面 22–48），下界已保证大于 1.1×基准字号。
-   这里的 1.1em 只是最后一道防重叠：正文里被单独放大到 28–32px 的段落，
-   行高不能比字身还小。原来写 1.2em，会把手机端 16–22 四档整体吃掉
-   （19px×1.2=22.8），选了完全没反应 —— 2026-11-22 复查后降下来。 */
-.rich-pane.markdown-body { line-height: max(var(--sj-rich-lh, 28px), 1.1em); }
+/* 正文基准字号与行距都是本机显示偏好，由 --sj-rich-fs / --sj-rich-lh 驱动
+   （阅读态那颗 Aa 和工具条的行距下拉都在改这两个值）。
+   字号默认随形态走：宽屏 16、手机 19；用户调过就一律听用户的。
+   行距下界与防重叠兜底的说明见 app.js 的 lhBounds() 与下面那条 1.1em。 */
+.rich-pane.markdown-body {
+  font-size: var(--sj-rich-fs, 16px);
+  line-height: max(var(--sj-rich-lh, 28px), 1.1em);
+}
 .rich-pane:empty::before {
   content: "开始书写…";
   color: var(--text-3);
@@ -2946,7 +2949,30 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
 .sj-cat-mgr, .sj-manage-menu, .sj-more-btn, .sj-more-menu,
 .sj-cat-editor, .sj-note-head, .sj-edit-bar, .sj-meta-cat,
 .sj-home-bar, .sj-read-hero { display: none; }
-.sj-meta-date, .sj-img-bar, .sj-style-sheet, .sj-pick-mask, .sj-pick-sheet { display: none; }
+.sj-meta-date, .sj-img-bar, .sj-style-sheet, .sj-pick-mask, .sj-pick-sheet,
+.sj-nh-aa, .sj-aa-mask, .sj-aa-sheet { display: none; }
+
+/* ---- 看大图：阅读态点正文里的图片弹这一层，点任意处关闭 ----
+   只做「看清」这一件事：不缩放不拖动，加手势反而和页面滚动打架。
+   宽屏也生效（云端在电脑上同样是这套页面）。 */
+.sj-lightbox {
+  position: fixed; inset: 0; z-index: 9050;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .94);
+  animation: sj-lb-in .16s var(--ease);
+  cursor: zoom-out;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.sj-lightbox.hidden { display: none; }
+.sj-lightbox img { display: block; max-width: 100vw; max-height: 100%; object-fit: contain; }
+.sj-lb-hint {
+  position: absolute; left: 0; right: 0;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  text-align: center; font-size: 12px; color: rgba(255, 255, 255, .6);
+  pointer-events: none;
+}
+@keyframes sj-lb-in { from { opacity: 0; } to { opacity: 1; } }
 
 @media (max-width: 980px) {
   /* ---- 华为备忘录配色（仅窄屏）----
@@ -3622,9 +3648,22 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
     display: flex; align-items: center; gap: 6px; flex: none;
     padding: calc(8px + env(safe-area-inset-top, 0px)) 10px 0;
   }
-  /* 阅读态右上角有固定的四点按钮（右侧 12 + 40 宽），再往左是「编辑」按钮，
-     两个都要让开，标题可用宽度约 52px 之外的部分 */
-  body.sj-note-open:not(.sj-note-edit) .sj-note-head { padding-right: 110px; }
+  /* 阅读态右上角有固定的四点按钮（右侧 12 + 40 宽），再往左是「编辑」和「Aa」，
+     这点内边距只为让开四点本身（52 + 12 的间隙），标题剩下的宽度归自己。
+     原来给 110px，把标题挤掉了近 50px；加了一颗按钮之后必须收回来。 */
+  body.sj-note-open:not(.sj-note-edit) .sj-note-head { padding-right: 64px; }
+  /* 阅读态的「Aa」：只调字号和行距，不改正文一个字，所以阅读态也能开。
+     和「编辑」并排但不抢戏：编辑是主色胶囊，这颗是低调的浅底块。 */
+  .sj-nh-aa {
+    display: none; flex: none; align-items: center; justify-content: center;
+    height: 30px; padding: 0 8px; margin-left: 2px;
+    border: 0; border-radius: 15px;
+    background: var(--surface-2); color: var(--text-2);
+    font-family: var(--font-ui); font-size: 13px; font-weight: 650; letter-spacing: .01em;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .sj-nh-aa:active { background: var(--surface-3); color: var(--text); }
+  body.sj-note-open:not(.sj-note-edit) .sj-nh-aa { display: flex; }
   /* 阅读态的「编辑」：进编辑的唯一入口（点正文不再跳进编辑态）。
      放在 header 里靠 padding-right 让开四点的位置，比绝对定位稳。 */
   .sj-nh-edit {
@@ -3781,7 +3820,7 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
   body.sj-note-open:not(.sj-note-edit) .tag-row,
   body.sj-note-open:not(.sj-note-edit) .toolbar { display: none; }
   body.sj-note-open:not(.sj-note-edit) .rich-pane {
-    font-size: 19px; line-height: max(var(--sj-rich-lh, 28px), 1.1em); padding: 4px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    font-size: var(--sj-rich-fs, 19px); line-height: max(var(--sj-rich-lh, 28px), 1.1em); padding: 4px 20px calc(20px + env(safe-area-inset-bottom, 0px));
   }
   /* 阅读态按截图收紧段间距：正文是连续的诗行/短段，段落之间不该空出一行 */
   body.sj-note-open:not(.sj-note-edit) .rich-pane p,
@@ -3830,7 +3869,7 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
   body.sj-note-edit .toolbar { display: none; }
   /* 手机端不再借桌面那条窄工具条：A 按钮改为弹出底部「样式」面板 */
   body.sj-note-edit .rich-pane {
-    font-size: 19px; line-height: max(var(--sj-rich-lh, 28px), 1.1em); padding: 2px 20px calc(180px + env(safe-area-inset-bottom, 0px));
+    font-size: var(--sj-rich-fs, 19px); line-height: max(var(--sj-rich-lh, 28px), 1.1em); padding: 2px 20px calc(180px + env(safe-area-inset-bottom, 0px));
   }
   body.sj-note-edit .rich-pane p,
   body.sj-note-edit .rich-pane div { margin: 0 0 2px; }
@@ -3887,6 +3926,73 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
     pointer-events: none;
     transition: opacity .16s var(--ease);
   }
+
+  /* ---- 阅读态的 Aa 面板：只改本机显示偏好（字号、行距）----
+     和上面那块「样式」面板分开：那块改选中的文字，这块改我自己的阅读舒适度，
+     所以它不改任何数据、不进编辑态也能用。 */
+  .sj-aa-mask {
+    display: block;
+    position: fixed; inset: 0; z-index: 9030;
+    background: rgba(0, 0, 0, .28);
+    animation: sj-mask-in .16s var(--ease);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sj-aa-mask.hidden { display: none; }
+  .sj-aa-sheet {
+    display: block;
+    position: fixed; z-index: 9040;
+    left: 0; right: 0; bottom: 0;
+    padding: 10px 18px calc(12px + env(safe-area-inset-bottom, 0px));
+    background: var(--surface-2);
+    border-radius: 22px 22px 0 0;
+    box-shadow: 0 -14px 44px -14px rgba(0, 0, 0, .28);
+    animation: sj-sheet-up .18s var(--ease);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sj-aa-sheet.hidden { display: none; }
+  .sj-aa-head {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 38px;
+  }
+  .sj-aa-title { font-family: var(--font-ui); font-size: 14px; font-weight: 650; color: var(--text); }
+  .sj-aa-close {
+    display: flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border: 0; border-radius: 50%;
+    background: transparent; color: var(--text-2);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sj-aa-close .ico { width: 17px; height: 17px; stroke-width: 2; }
+  .sj-aa-close:active { background: var(--surface-3); }
+  .sj-aa-row {
+    display: flex; align-items: center; gap: 9px;
+    height: 46px;
+  }
+  .sj-aa-lab {
+    flex: none; width: 32px;
+    font-family: var(--font-ui); font-size: 13px; color: var(--text-2);
+  }
+  .sj-aa-range {
+    flex: 1; min-width: 0; height: 28px;
+    margin: 0;
+    accent-color: var(--accent);
+    background: transparent;
+  }
+  .sj-aa-val {
+    flex: none; width: 26px; text-align: right;
+    font-family: var(--font-ui); font-size: 13px; color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .sj-aa-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding-top: 2px;
+  }
+  .sj-aa-reset {
+    border: 0; background: transparent; padding: 6px 0;
+    color: var(--accent); font-family: var(--font-ui); font-size: 13px; font-weight: 600;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sj-aa-tip { font-size: 11.5px; color: var(--text-3); }
 
   /* ---- 插入图片来源选择：点图片按钮先弹这一层 ----
      系统选择器只有「完成」，选不到图就退不出来；这里给「取消」。

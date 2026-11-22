@@ -1053,6 +1053,41 @@ html[data-theme="dark"] #homeNewNote:hover {
 body.sj-note-read #readEditBtn { display: grid; color: var(--accent); background: var(--accent-soft); }
 body.sj-note-read #readEditBtn:hover { background: var(--accent); color: #fff; }
 
+/* 阅读态的「Aa」：只调字号与行距，不改正文，所以只在阅读态出现。
+   底色比「编辑」轻一档 —— 编辑是主操作，这颗是舒适度设置。 */
+.read-aa-btn { display: none; }
+body.sj-note-read .read-aa-btn { display: grid; color: var(--text-2); }
+body.sj-note-read .read-aa-btn:hover,
+body.sj-note-read .read-aa-btn.on { background: var(--surface-2); color: var(--text); }
+.read-aa-glyph { font-family: var(--font-ui); font-size: 13px; font-weight: 650; letter-spacing: .01em; }
+
+.read-aa-pop {
+  position: fixed; z-index: 220;
+  top: 66px; right: 26px;
+  width: 254px; padding: 10px 14px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  animation: pop .16s var(--ease);
+}
+.read-aa-pop.hidden { display: none; }
+.raa-row { display: flex; align-items: center; gap: 8px; height: 40px; }
+.raa-lab { flex: none; width: 30px; font-size: 12.5px; color: var(--text-2); }
+.raa-row input[type=range] { flex: 1; min-width: 0; margin: 0; accent-color: var(--accent); }
+.raa-val {
+  flex: none; width: 24px; text-align: right;
+  font-size: 12.5px; color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.raa-reset {
+  margin-top: 2px; padding: 5px 0;
+  border: 0; background: transparent;
+  color: var(--accent); font-size: 12.5px; font-weight: 600;
+  cursor: pointer;
+}
+.raa-reset:hover { text-decoration: underline; }
+
 .segmented {
   display: flex;
   padding: 2px;
@@ -1284,7 +1319,12 @@ html[data-theme="dark"] .tb-select {
 /* 行距变量须压过下方 .markdown-body 的 line-height（richPane 同时带两个类）。
    值是像素（下拉里选的 16–48），标题另有自己的 1.25 不受影响。
    1.2em 是保底：选到比字号还小的行距时文字会叠在一起，任何编辑器都得拦一道。 */
-.rich-pane.markdown-body { line-height: max(var(--sj-rich-lh, 28px), 1.1em); }
+/* 正文基准字号与行距是本机显示偏好（阅读态那颗 Aa 和工具条的行距下拉都在改）：
+   --sj-rich-fs 字号、--sj-rich-lh 行距。字号不给默认值，各形态自己兜底。 */
+.rich-pane.markdown-body {
+  font-size: var(--sj-rich-fs, 16px);
+  line-height: max(var(--sj-rich-lh, 28px), 1.1em);
+}
 .rich-pane:empty::before {
   content: "开始书写…";
   color: var(--text-3);
@@ -2853,7 +2893,7 @@ body.sj-note-read.sj-head-solid .title-input { opacity: 1; pointer-events: auto;
    原来固定 1.85（≈31px），现在改用同一套像素设置 —— 阅读态字号 17px，
    想让阅读更松就把行距调大。1.2em 兜底防重叠。 */
 body.sj-note-read .rich-pane {
-  font-size: 17px; line-height: max(var(--sj-rich-lh, 28px), 1.1em);
+  font-size: var(--sj-rich-fs, 17px); line-height: max(var(--sj-rich-lh, 28px), 1.1em);
   padding: 0 4px 140px;
 }
 body.sj-note-read .rich-pane img {

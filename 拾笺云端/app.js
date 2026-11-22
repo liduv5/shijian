@@ -61,6 +61,13 @@
       if (v < 3) return Math.min(64, Math.max(14, Math.round(v * 16 / 2) * 2));
       return Math.min(64, Math.max(14, Math.round(v / 2) * 2));
     })(),
+    /* 正文基准字号，单位 px。没存过就是 0，表示「跟随形态默认」
+       （宽屏 16、手机 19，见 CSS 里的 var(--sj-rich-fs, …) 兜底）。
+       阅读态那颗 Aa 和它写的是同一个值，所以手机上调完，编辑态也是这个字号。 */
+    richFs: (function () {
+      const v = parseFloat(localStorage.getItem('sj_rich_fs'));
+      return isFinite(v) && v >= 10 ? Math.round(v) : 0;
+    })(),
     dirty: false,
   };
 
@@ -1896,10 +1903,11 @@
       s.className = 'tb-select' + (cls ? ' ' + cls : '');
       s.title = title;
       s.innerHTML = opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
-      s.addEventListener('change', () => { const v = s.value; s.value = ''; if (v) onChange(v); });
+      s.addEventListener('change', () => { const v = s.value; s.value = ''; fitSel(s); if (v) onChange(v); });
       wrap.appendChild(tg);
       wrap.appendChild(s);
       bar.appendChild(wrap);
+      fitSel(s);
       return s;
     };
 
@@ -2845,7 +2853,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-22-160';
+  const APP_BUILD = '2026-11-22-161';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -5217,7 +5225,27 @@
      四档渲染出来一模一样，看着像「选了没反应」（2026-11-22 复查发现）。
      所以下界按基准字号的 1.2 倍向上取偶数：手机 19→24、桌面 17→22。
      CSS 里的兜底同步降到 1.1em，只负责「正文里被放大到 32px 的段落不叠字」。 */
-  function lhBasePx() { return NARROW() ? 19 : 17; }
+  /* 正文基准字号（本机显示偏好）。0 = 跟随形态默认（宽屏 16 / 手机 19）。
+     范围按设备给：手机 15–26、宽屏 14–24 —— 再大一行只剩几个字，
+     再小就够不着了。这是「阅读舒适度」，和工具条里那个改选中文字的字号不是一回事。 */
+  function fsBounds() { return NARROW() ? { min: 15, max: 26 } : { min: 14, max: 24 }; }
+  function fsDefault() { return NARROW() ? 19 : 16; }
+  function clampFs(v) {
+    const b = fsBounds();
+    const n = Math.round(Number(v) || 0);
+    return Math.min(b.max, Math.max(b.min, n));
+  }
+  function curFs() { return clampFs(state.richFs || fsDefault()); }
+  function applyRichFs() {
+    if (state.richFs) document.documentElement.style.setProperty('--sj-rich-fs', state.richFs + 'px');
+    else document.documentElement.style.removeProperty('--sj-rich-fs');
+    /* 字号一动，行距下界跟着动（24px 正文配 24px 行距会叠字），
+       下拉的档位也要重排，不然会显示一个当前设备渲染不出来的值。 */
+    applyRichLh();
+    rebuildLhOptions();
+  }
+
+  function lhBasePx() { return state.richFs || (NARROW() ? 19 : 17); }
   function lhBounds() {
     return { min: Math.ceil(lhBasePx() * 1.2 / 2) * 2, max: 48 };
   }
@@ -5239,6 +5267,34 @@
     document.documentElement.style.setProperty('--sj-rich-lh', state.richLh + 'px');
   }
 
+  /* ---- 工具条三颗下拉的宽度自己量 ----
+     原生 select 的宽度按「最长选项」算（Chromium 的 field-sizing:content 也一样），
+     而这三颗选完就复位到占位文字，于是「默认」右边空一大片。
+     iOS Safari 至今不认 field-sizing，所以不指望它：量当前显示的文字，
+     加左内边距 8 与右侧箭头 18，宽度直接写死。CSS 里仍留 min-width 兜底。 */
+  let selMeter = null;
+  function measureSel(s) {
+    const opt = s.options[s.selectedIndex >= 0 ? s.selectedIndex : 0];
+    if (!selMeter) {
+      selMeter = document.createElement('span');
+      selMeter.setAttribute('aria-hidden', 'true');
+      selMeter.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;';
+      document.body.appendChild(selMeter);
+    }
+    const cs = getComputedStyle(s);
+    selMeter.style.fontFamily = cs.fontFamily;
+    selMeter.style.fontSize = cs.fontSize;
+    selMeter.style.fontWeight = cs.fontWeight;
+    selMeter.style.letterSpacing = cs.letterSpacing;
+    selMeter.textContent = opt ? opt.textContent : '';
+    return Math.ceil(selMeter.getBoundingClientRect().width);
+  }
+  function fitSel(s) {
+    if (!s || !document.body.contains(s)) return s;
+    s.style.width = Math.max(0, measureSel(s) + 8 + 18) + 'px';
+    return s;
+  }
+
   /* 行距下拉回显：值不在预设档里（老数据换算出来的奇数）就临时补一档 */
   let tbLhSel = null;
   function syncLhPicker() {
@@ -5254,7 +5310,92 @@
     }
     tbLhSel.value = v;
     tbLhSel.title = '正文行距 ' + v + 'px';
+    fitSel(tbLhSel);
   }
+
+  /* 字号变了 → 行距下界跟着变，档位重排一次（只在工具条已经建好时才有活干） */
+  function rebuildLhOptions() {
+    if (!tbLhSel) return;
+    const steps = lhSteps();
+    tbLhSel.innerHTML = steps.map((v) => `<option value="${v}">${v}</option>`).join('');
+    syncLhPicker();
+  }
+
+  /* ---- 阅读态「Aa」面板：字号 + 行距 ----
+     它只写本机偏好（--sj-rich-fs / --sj-rich-lh），不动笔记内容一个字节，
+     所以纯阅读态也能开：觉得字小了不必先切进编辑。 */
+  const AA_SHEET = $('#sjAaSheet'), AA_MASK = $('#sjAaMask');
+  function aaSync() {
+    const fs = $('#sjAaFs'), lh = $('#sjAaLh');
+    const fb = fsBounds(), lb = lhBounds();
+    if (fs) { fs.min = fb.min; fs.max = fb.max; fs.value = curFs(); }
+    if (lh) { lh.min = lb.min; lh.max = lb.max; lh.value = clampLh(state.richLh); }
+    const fv = $('#sjAaFsVal'), lv = $('#sjAaLhVal');
+    if (fv) fv.textContent = String(curFs());
+    if (lv) lv.textContent = String(clampLh(state.richLh));
+  }
+  function aaOpen() {
+    if (!AA_SHEET) return;
+    aaSync();
+    AA_MASK.classList.remove('hidden');
+    AA_SHEET.classList.remove('hidden');
+  }
+  function aaClose() {
+    if (!AA_SHEET) return;
+    AA_MASK.classList.add('hidden');
+    AA_SHEET.classList.add('hidden');
+  }
+  function aaToggle() {
+    if (!AA_SHEET) return;
+    if (AA_SHEET.classList.contains('hidden')) aaOpen(); else aaClose();
+  }
+  if (AA_MASK) AA_MASK.addEventListener('click', aaClose);
+  const AA_FS = $('#sjAaFs'), AA_LH = $('#sjAaLh');
+  if (AA_FS) AA_FS.addEventListener('input', () => {
+    state.richFs = clampFs(AA_FS.value);
+    applyRichFs();
+    try { localStorage.setItem('sj_rich_fs', String(state.richFs)); } catch (_) {}
+    aaSync();
+  });
+  if (AA_LH) AA_LH.addEventListener('input', () => {
+    state.richLh = clampLh(AA_LH.value);
+    applyRichLh();
+    try { localStorage.setItem('sj_rich_lh', String(state.richLh)); } catch (_) {}
+    syncLhPicker();
+    aaSync();
+  });
+  if (AA_SHEET) AA_SHEET.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    if (b.dataset.act === 'aa-close') { aaClose(); return; }
+    if (b.dataset.act === 'aa-reset') {
+      state.richFs = 0;
+      try { localStorage.removeItem('sj_rich_fs'); } catch (_) {}
+      applyRichFs();
+      state.richLh = 28;
+      try { localStorage.setItem('sj_rich_lh', '28'); } catch (_) {}
+      applyRichLh();
+      aaSync();
+      return;
+    }
+  });
+
+  /* ---- 看大图：阅读态点正文里的图片 ----
+     以前点图片会「进编辑并选中」，阅读态改成纯只读之后就彻底静默了。
+     现在点开一层黑底大图，点任意处关闭；宽屏同样可用。 */
+  const LB = $('#sjLightbox'), LB_IMG = $('#sjLightboxImg');
+  function lightboxOpen(src, alt) {
+    if (!LB || !LB_IMG || !src) return;
+    LB_IMG.src = src;
+    LB_IMG.alt = alt || '';
+    LB.classList.remove('hidden');
+  }
+  function lightboxClose() {
+    if (!LB) return;
+    LB.classList.add('hidden');
+    if (LB_IMG) LB_IMG.removeAttribute('src');
+  }
+  if (LB) LB.addEventListener('click', lightboxClose);
 
   /* 主题 */
   function applyTheme(t) {
@@ -5291,6 +5432,8 @@
       return;
     }
     if (e.key === 'Escape') {
+      if (LB && !LB.classList.contains('hidden')) { lightboxClose(); return; }
+      if (AA_SHEET && !AA_SHEET.classList.contains('hidden')) { aaClose(); return; }
       hideCtx();
       if (!$('#modalRoot').classList.contains('hidden')) closeModal();
     }
@@ -5474,6 +5617,7 @@
        只有冷启动改落点；会话内重载必须留在用户正在看的那篇。 */
     const cold = !booted;
     applyTheme(state.theme);
+    applyRichFs();
     applyRichLh();
     const quickAdded = await drainQuick();
     try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (_) {}
@@ -7073,7 +7217,7 @@
         document.body.classList.remove('sj-head-solid');
         if (BODY_BOX) BODY_BOX.scrollTop = rpY + heroH;
       }
-      if (!edit) { document.body.classList.remove('sj-note-fmt'); closeStyleSheet(); }
+      if (!edit) { document.body.classList.remove('sj-note-fmt'); closeStyleSheet(); aaClose(); }
       /* 附件面板跟着形态走：编辑态不留窄条（那边点 ⌄ 是整块收起），
          阅读态默认整块摊开 —— 用户 2026-11-22 要求阅读态默认能看到附件。 */
       if (edit) {
@@ -7162,6 +7306,8 @@
       if (a === 'nh-done') { setNoteMode('read'); return; }
       /* 阅读态那颗「编辑」：唯一入口。点正文不再进编辑（见下方 BODY_BOX）。 */
       if (a === 'nh-edit') { setNoteMode('edit'); return; }
+      /* 「Aa」：只调字号行距，不改正文，阅读态也能开 */
+      if (a === 'nh-aa') { aaToggle(); return; }
       /* 撤销 / 重做：正文只有富文本一个编辑面，统一走 execCommand。
          用静默聚焦，撤销一下不该把输入法顶出来。 */
       const target = $('#richPane');
@@ -7245,7 +7391,9 @@
          以前这里会 setNoteMode('edit') 并把光标落到点击处，代价是：
          手指轻触就进可写状态、退出时还会 saveNow() 落一次盘；
          而且这条路径没拦 a[href]，点正文里的链接会一边跳转一边切形态。
-         现在进编辑只走顶栏那颗「编辑」，链接、图片都回到原生行为。 */
+         现在进编辑只走顶栏那颗「编辑」，链接回到原生行为。
+         唯一的例外是图片：点开看大图（阅读模式看不清图，是功能空洞）。 */
+      if (img) { e.preventDefault(); lightboxOpen(img.currentSrc || img.src, img.alt); }
       return;
     });
     /* 标题同理：阅读态点标题不再进编辑（同 BODY_BOX 的理由）。

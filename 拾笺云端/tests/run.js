@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-160 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-161 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-22-160';
+const BUILD = '2026-11-22-161';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -482,7 +482,7 @@ ok('手机端不再有 Markdown / 富文本切换，标题与返回箭头同一�
   /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \.title-input \{[\s\S]{0,200}font-size: 20px; font-weight: 700[\s\S]{0,120}opacity: 0/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.editor-head \{ display: none; \}/.test(styleSrc) &&
   /\.sj-rh-title \{[\s\S]{0,160}font-size: 27px/.test(styleSrc) &&
-  /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane \{[\s\S]{0,180}font-size: 19px; line-height: max\(var\(--sj-rich-lh, 28px\), 1\.1em\)/.test(styleSrc) &&
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane \{[\s\S]{0,180}font-size: var\(--sj-rich-fs, 19px\); line-height: max\(var\(--sj-rich-lh, 28px\), 1\.1em\)/.test(styleSrc) &&
   /* 详情底栏整条下线，动作搬进右上角四点菜单 */
   !/body\.sj-note-open \.sj-detail-bar:not\(\.hidden\) \{ display: flex; \}/.test(styleSrc) &&
   styleSrc.indexOf('.sj-meta-cat {') >= 0);
@@ -496,8 +496,8 @@ ok('阅读态进编辑只有顶栏一颗按钮，点正文不再跳进编辑',
   && !/setNoteMode\('edit', \{ x: e\.clientX, y: e\.clientY \}\)/.test(appSrc)
   && !/阅读态点图片：同样进编辑/.test(appSrc)
   && /\.sj-nh-edit \{[\s\S]{0,500}body\.sj-note-open:not\(\.sj-note-edit\) \.sj-nh-edit \{ display: flex; \}/.test(styleSrc)
-  /* 阅读态顶栏右侧要同时让开「编辑」和四点按钮，别叠在一起 */
-  && /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \{ padding-right: 110px; \}/.test(styleSrc));
+  /* 阅读态顶栏右侧要让开固定的四点按钮（52 + 12 间隙）；110px 会把标题挤掉近 50px */
+  && /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \{ padding-right: 64px; \}/.test(styleSrc));
 
 ok('标题下面只留一份分类且可点：分类胶囊可点换类、右边不再重复一颗',
   indexSrc.indexOf('id="sjMetaDate"') >= 0 &&
@@ -999,18 +999,22 @@ ok('正文载入体检：抹掉内联 caret-color、清掉列表里的野段落'
   /function normalizeRich[\s\S]{0,900}caret-color/.test(appSrc)
   && /querySelectorAll\('ol, ul'\)/.test(appSrc));
 
-/* 原生 select 的宽度按「最长的选项」算，显示「字体」「16」这种短内容时右侧空一大截，
-   两个下拉之间就像隔着一条沟。字段自适应 + 自绘箭头，和桌面端同一套。 */
-ok('字体/字号下拉宽度跟着内容走，箭头紧贴文字',
+/* 原生 select 的宽度按「最长的选项」算，显示「默认」「16」这种短内容时右侧空一大截。
+   现在宽度由 fitSel() 量当前显示文字写死（field-sizing 按最长选项算、且 iOS Safari
+   不认，2026-11-22 换成自己量），CSS 里只留自绘箭头与内边距。 */
+ok('字体/字号下拉的宽度自己量，箭头紧贴文字',
   (function () {
     // 行首要锚住：`.tb-pick .tb-select { ... }` 里也含 `.tb-select {`
     const a = styleSrc.search(/^\.tb-select \{/m);
     const b = a >= 0 ? styleSrc.indexOf('}', a) : -1;
     const block = a >= 0 && b > a ? styleSrc.slice(a, b) : '';
-    return /field-sizing: content/.test(block)
+    return !/field-sizing\s*:/.test(block)
       && /appearance: none/.test(block)
       && /background-image: url\("data:image\/svg\+xml/.test(block)
-      && /padding: 0 18px 0 8px/.test(block);
+      && /padding: 0 18px 0 8px/.test(block)
+      && /function fitSel\(s\)/.test(appSrc)
+      && /function measureSel\(s\)/.test(appSrc)
+      && /white-space:pre/.test(appSrc);
   })());
 ok('下拉有保底宽度、点开不描黑框',
   /\.tb-select \{[\s\S]{0,300}min-width: 52px/.test(styleSrc)
@@ -1056,6 +1060,39 @@ ok('md 专属的插入助手已摘掉', !/function prefixLine\(/.test(appSrc) &&
 ok('富文本补上了表格插入', /function insertRichTable\(/.test(appSrc));
 ok('源码降级为二级入口', /function showMarkdownSource\(/.test(appSrc) && /Markdown 源码/.test(appSrc));
 ok('Markdown 笔记没被编辑就不改写数据', !/note\.content = \$\('#mdInput'\)\.value;/.test(appSrc));
+
+console.log('\n阅读态舒适度（P1：Aa 面板 / 看大图 / 下拉量宽）');
+/* 字号、行距都是本机显示偏好：只改 CSS 变量，不动笔记内容一个字节。
+   所以它在纯阅读态也能开 —— 觉得字小了不必先切进编辑。 */
+ok('阅读态顶栏有 Aa，和编辑并排且只在阅读态出现',
+  /data-act="nh-aa" aria-label="字体与行距"/.test(indexSrc)
+  && /if \(a === 'nh-aa'\) \{ aaToggle\(\); return; \}/.test(appSrc)
+  && /\.sj-nh-aa \{[\s\S]{0,600}body\.sj-note-open:not\(\.sj-note-edit\) \.sj-nh-aa \{ display: flex; \}/.test(styleSrc));
+ok('Aa 面板只有字号、行距两行滑杆 + 恢复默认',
+  /id="sjAaFs"/.test(indexSrc) && /id="sjAaLh"/.test(indexSrc)
+  && /data-act="aa-reset"/.test(indexSrc)
+  && /function aaSync\(\)/.test(appSrc) && /function aaOpen\(\)/.test(appSrc));
+ok('Aa 只改显示偏好：写 --sj-rich-fs，不标脏、不写笔记',
+  /state\.richFs = clampFs\(AA_FS\.value\);[\s\S]{0,260}localStorage\.setItem\('sj_rich_fs'/.test(appSrc)
+  && /setProperty\('--sj-rich-fs', state\.richFs \+ 'px'\)/.test(appSrc)
+  && !/state\.richFs[\s\S]{0,120}markDirty\(\)/.test(appSrc));
+ok('正文字号吃 --sj-rich-fs（宽屏 16 / 手机 19 兜底）',
+  /\.rich-pane\.markdown-body \{[\s\S]{0,120}font-size: var\(--sj-rich-fs, 16px\)/.test(styleSrc)
+  && /body\.sj-note-edit \.rich-pane \{[\s\S]{0,120}font-size: var\(--sj-rich-fs, 19px\)/.test(styleSrc));
+ok('字号改了行距下界跟着改，档位重排',
+  /function lhBasePx\(\) \{ return state\.richFs \|\| \(NARROW\(\) \? 19 : 17\); \}/.test(appSrc)
+  && /function rebuildLhOptions\(\)/.test(appSrc)
+  && /applyRichFs\(\);[\s\S]{0,80}applyRichLh\(\);/.test(appSrc));
+/* 阅读态纯只读之后点图片彻底静默了，补一层看大图；编辑态仍是「选中并弹图片条」。 */
+ok('阅读态点图片开大图，编辑态点图片仍是选中',
+  /function lightboxOpen\(src, alt\)/.test(appSrc)
+  && /if \(img\) \{ e\.preventDefault\(\); lightboxOpen\(img\.currentSrc \|\| img\.src, img\.alt\); \}/.test(appSrc)
+  && /if \(inRich\) \{ e\.preventDefault\(\); selectImg\(inRich\); return; \}/.test(appSrc)
+  && /id="sjLightbox"/.test(indexSrc)
+  && /\.sj-lightbox\.hidden \{ display: none; \}/.test(styleSrc));
+ok('大图层点任意处关闭，Esc 也能关',
+  /LB\.addEventListener\('click', lightboxClose\)/.test(appSrc)
+  && /if \(LB && !LB\.classList\.contains\('hidden'\)\) \{ lightboxClose\(\); return; \}/.test(appSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

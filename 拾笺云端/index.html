@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-22-160';
+  var SWV = '2026-11-22-161';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -368,6 +368,9 @@
             <svg viewBox="0 0 24 24" class="ico"><path d="M4 12.5l5 5L20 6.5"/></svg>
           </button>
         </div>
+        <!-- 阅读态只调「显示偏好」的一颗 Aa：字号、行距。它不改正文，
+             所以纯阅读态也能开 —— 觉得字小了不必先切进编辑（用户 2026-11-22 要求）。 -->
+        <button type="button" class="sj-nh-aa" data-act="nh-aa" aria-label="字体与行距">Aa</button>
         <!-- 阅读态唯一的「进编辑」入口（用户 2026-11-22 定：阅读就只是阅读，
              点正文不再跳进编辑态）。放在 acts 之后，靠 flex 顺序落在最右。 -->
         <button type="button" class="sj-nh-edit" data-act="nh-edit">编辑</button>
@@ -653,6 +656,42 @@
     <button type="button" class="sj-ss-paper dots" data-paper="3" style="--p:#ffffff" aria-label="点阵纸"></button>
     <button type="button" class="sj-ss-paper" data-paper="4" style="--p:#f7f0dd" aria-label="米黄纸"></button>
   </div>
+</div>
+
+<!-- 阅读态「Aa」：只调显示偏好（字号、行距），不改正文一个字。
+     和上面那块编辑态「样式」面板分工明确：那块改的是选中的文字，
+     这块改的是「我自己看着舒服」的本机设置，所以阅读态也开着。
+     两行的滑杆上限/下限由 app.js 按当前设备算（手机 15–26 / 24–48）。 -->
+<div class="sj-aa-mask hidden" id="sjAaMask"></div>
+<div class="sj-aa-sheet hidden" id="sjAaSheet" role="dialog" aria-modal="true" aria-label="字体与行距">
+  <div class="sj-aa-head">
+    <span class="sj-aa-title">字体与行距</span>
+    <button type="button" class="sj-aa-close" data-act="aa-close" aria-label="关闭">
+      <svg viewBox="0 0 24 24" class="ico"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <div class="sj-aa-row">
+    <span class="sj-aa-lab">字号</span>
+    <input type="range" class="sj-aa-range" id="sjAaFs" min="15" max="26" step="1" value="19" aria-label="正文字号">
+    <span class="sj-aa-val" id="sjAaFsVal">19</span>
+  </div>
+  <div class="sj-aa-row">
+    <span class="sj-aa-lab">行距</span>
+    <input type="range" class="sj-aa-range" id="sjAaLh" min="24" max="48" step="2" value="28" aria-label="正文行距">
+    <span class="sj-aa-val" id="sjAaLhVal">28</span>
+  </div>
+  <div class="sj-aa-foot">
+    <button type="button" class="sj-aa-reset" data-act="aa-reset">恢复默认</button>
+    <span class="sj-aa-tip">只影响这台设备上的显示，不改动笔记内容</span>
+  </div>
+</div>
+
+<!-- 看大图：阅读态点正文里的图片弹这一层，点任意处关闭。
+     以前点图片会「进编辑并选中」，而阅读态改成纯只读之后，点图片就彻底没反应了
+     —— 一个阅读模式看不清图，是功能空洞（2026-11-22 复查）。 -->
+<div class="sj-lightbox hidden" id="sjLightbox" role="dialog" aria-label="查看大图">
+  <img id="sjLightboxImg" alt="">
+  <span class="sj-lb-hint">点任意处关闭</span>
 </div>
 
 <!-- 插入图片：先在本应用里问一句「拍照 / 从相册选择 / 取消」。

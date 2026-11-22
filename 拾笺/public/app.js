@@ -65,6 +65,13 @@
       if (v < 3) return Math.min(64, Math.max(14, Math.round(v * 16 / 2) * 2));
       return Math.min(64, Math.max(14, Math.round(v / 2) * 2));
     })(),
+    /* 正文基准字号，单位 px。0 = 跟随默认（编辑面 16、阅读态 17，见 CSS 兜底）。
+       阅读态那颗 Aa 写的就是这个值，所以手机上定过的习惯不会带过来——
+       两台设备各存各的（localStorage 本来就不互通）。 */
+    richFs: (function () {
+      const v = parseFloat(localStorage.getItem('sj_rich_fs'));
+      return isFinite(v) && v >= 10 ? Math.round(v) : 0;
+    })(),
     dirty: false,
   };
 
@@ -1882,6 +1889,73 @@
     });
   }
 
+  /* ---- 阅读态「Aa」：字号 + 行距 ----
+     只写本机显示偏好（--sj-rich-fs / --sj-rich-lh），笔记内容一个字节都不动，
+     所以纯阅读态也能开。工具条里那颗行距下拉改的是同一个值，两边永远一致。 */
+  const AA_BTN = $('#readAaBtn'), AA_POP = $('#readAaPop');
+  function aaSync() {
+    const fs = $('#readAaFs'), lh = $('#readAaLh');
+    if (fs) { fs.value = curFs(); }
+    if (lh) { lh.min = lhMin(); lh.value = clampLh(state.richLh); }
+    const fv = $('#readAaFsVal'), lv = $('#readAaLhVal');
+    if (fv) fv.textContent = String(curFs());
+    if (lv) lv.textContent = String(clampLh(state.richLh));
+  }
+  function aaClose() {
+    if (!AA_POP) return;
+    AA_POP.classList.add('hidden');
+    if (AA_BTN) AA_BTN.classList.remove('on');
+  }
+  function aaToggle() {
+    if (!AA_POP) return;
+    if (AA_POP.classList.contains('hidden')) {
+      aaSync();
+      AA_POP.classList.remove('hidden');
+      if (AA_BTN) AA_BTN.classList.add('on');
+    } else aaClose();
+  }
+  if (AA_BTN) AA_BTN.addEventListener('click', (e) => { e.stopPropagation(); aaToggle(); });
+  if (AA_POP) AA_POP.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => aaClose());
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') aaClose(); });
+  const AA_FS = $('#readAaFs'), AA_LH = $('#readAaLh');
+  if (AA_FS) AA_FS.addEventListener('input', () => {
+    state.richFs = clampFs(AA_FS.value);
+    applyRichFs();
+    try { localStorage.setItem('sj_rich_fs', String(state.richFs)); } catch (_) {}
+    aaSync();
+  });
+  if (AA_LH) AA_LH.addEventListener('input', () => {
+    state.richLh = clampLh(AA_LH.value);
+    applyRichLh();
+    try { localStorage.setItem('sj_rich_lh', String(state.richLh)); } catch (_) {}
+    syncLhPicker();
+    aaSync();
+  });
+  const AA_RESET = $('#readAaReset');
+  if (AA_RESET) AA_RESET.addEventListener('click', () => {
+    state.richFs = 0;
+    try { localStorage.removeItem('sj_rich_fs'); } catch (_) {}
+    applyRichFs();
+    state.richLh = 28;
+    try { localStorage.setItem('sj_rich_lh', '28'); } catch (_) {}
+    applyRichLh();
+    syncLhPicker();
+    aaSync();
+  });
+
+  /* 阅读态点正文里的图片 → 开大图。
+     附件那套查看器（滚轮缩放、双击复位、拖拽、下载原图）已经很完整，
+     正文图片直接借它：给一个 data 地址就能显示，不必走附件仓。 */
+  const RICH_PANE_EL = $('#richPane');
+  if (RICH_PANE_EL) RICH_PANE_EL.addEventListener('click', (e) => {
+    if (noteMode !== 'read') return;
+    const img = e.target && e.target.closest ? e.target.closest('img') : null;
+    if (!img || !img.closest('#richPane')) return;
+    e.preventDefault();
+    openAttLightbox({ type: 'image/png', data: img.currentSrc || img.src, name: img.alt || '图片' });
+  });
+
   /* 阅读态滚动：正文大标题滚过顶栏后，顶栏小标题淡入接管 */
   $('#editorBody').addEventListener('scroll', () => {
     if (noteMode === 'read') placeReadTitle();
@@ -2053,10 +2127,12 @@
         const v = s.value;
         if (v) onChange(v);
         else syncFontPickers();
+        fitSel(s);
       });
       wrap.appendChild(tg);
       wrap.appendChild(s);
       bar.appendChild(wrap);
+      fitSel(s);
       return s;
     };
 
@@ -2159,6 +2235,41 @@
     }
     tbLhSel.value = v;
     tbLhSel.title = '正文行距 ' + v + 'px';
+    fitSel(tbLhSel);
+  }
+
+  /* 字号一改，行距下界跟着变（24px 正文配 22px 行距会叠字），档位重排一次 */
+  function rebuildLhOptions() {
+    if (!tbLhSel) return;
+    tbLhSel.innerHTML = lhSteps().map((v) => `<option value="${v}">${v}</option>`).join('');
+    syncLhPicker();
+  }
+
+  /* ---- 下拉宽度自己量 ----
+     原生 select 的宽度按「最长选项」算（field-sizing:content 也一样，且 iOS Safari
+     不认它），显示「默认」这种短内容时右侧空一大片。桌面这三颗还会显示当前值，
+     宽度得跟着变，所以每次回显都重量一次。 */
+  let selMeter = null;
+  function measureSel(s) {
+    const opt = s.options[s.selectedIndex >= 0 ? s.selectedIndex : 0];
+    if (!selMeter) {
+      selMeter = document.createElement('span');
+      selMeter.setAttribute('aria-hidden', 'true');
+      selMeter.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;';
+      document.body.appendChild(selMeter);
+    }
+    const cs = getComputedStyle(s);
+    selMeter.style.fontFamily = cs.fontFamily;
+    selMeter.style.fontSize = cs.fontSize;
+    selMeter.style.fontWeight = cs.fontWeight;
+    selMeter.style.letterSpacing = cs.letterSpacing;
+    selMeter.textContent = opt ? opt.textContent : '';
+    return Math.ceil(selMeter.getBoundingClientRect().width);
+  }
+  function fitSel(s) {
+    if (!s || !document.body.contains(s)) return s;
+    s.style.width = Math.max(0, measureSel(s) + 8 + 18) + 'px';
+    return s;
   }
 
   function scheduleSyncFontPickers() {
@@ -2246,11 +2357,14 @@
     if (!el) {
       tbFontSel.value = '';
       tbSizeSel.value = '';
+      fitSel(tbFontSel); fitSel(tbSizeSel);
       return;
     }
     const cs = getComputedStyle(el);
     tbFontSel.value = matchFontOption(inlineFontFamily(el));
     tbSizeSel.value = matchSizeOption(parseFloat(cs.fontSize));
+    /* 显示的内容变了，宽度跟着重量（「默认」与「微软雅黑」差一截） */
+    fitSel(tbFontSel); fitSel(tbSizeSel);
   }
 
   /* ---- 文字颜色 ---- */
@@ -4387,21 +4501,39 @@
      ------------------------------------------------------------
      档位下界必须大于「正文基准字号 × 1.1」，否则 CSS 里那条 1.1em 的
      防重叠兜底会把设置值吃掉（原来 1.2em 时，16/18/20 三档在 17px 正文下
-     全被 20.4px 盖掉，选了没反应）。桌面正文 17px（窄屏 16px）→ 下界取 22。 */
+     全被 20.4px 盖掉，选了没反应）。
+     字号可调之后（阅读态那颗 Aa），下界不能写死 22：24px 正文配 22px 行距
+     必然叠字，所以下界一律按当前字号算 —— 桌面 16→20、24→30。 */
+  function fsBounds() { return { min: 14, max: 24 }; }
+  function fsDefault() { return 16; }
+  function clampFs(v) {
+    const b = fsBounds();
+    const n = Math.round(Number(v) || 0);
+    return Math.min(b.max, Math.max(b.min, n));
+  }
+  function curFs() { return clampFs(state.richFs || fsDefault()); }
+  function lhBasePx() { return state.richFs || 16; }
+  function lhMin() { return Math.ceil(lhBasePx() * 1.2 / 2) * 2; }
   function lhSteps() {
     const out = [];
-    for (let v = 22; v <= 48; v += 2) out.push(v);
+    for (let v = lhMin(); v <= 48; v += 2) out.push(v);
     return out;
   }
   function clampLh(v) {
     const n = Math.round(Number(v) || 0);
-    return Math.min(48, Math.max(22, n));
+    return Math.min(48, Math.max(lhMin(), n));
   }
   function applyRichLh() {
     /* 手机端存下来的 16/18/20 拿到电脑上用，一律夹回档内，
        不然下拉框显示一个渲染不出来的值，等于骗人。 */
     state.richLh = clampLh(state.richLh);
     document.documentElement.style.setProperty('--sj-rich-lh', state.richLh + 'px');
+  }
+  function applyRichFs() {
+    if (state.richFs) document.documentElement.style.setProperty('--sj-rich-fs', state.richFs + 'px');
+    else document.documentElement.style.removeProperty('--sj-rich-fs');
+    applyRichLh();
+    rebuildLhOptions();
   }
 
   /* 主题 */
@@ -4477,6 +4609,7 @@
 
   async function boot() {
     applyTheme(state.theme);
+    applyRichFs();
     applyRichLh();
     try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (_) {}
     try {
