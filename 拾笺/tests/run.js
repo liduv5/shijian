@@ -159,6 +159,22 @@ ok('阅读态正文保持适眼行宽', /body\.sj-note-read \.rich-pane \{[\s\S]
 ok('底部胶囊与右侧面板的样式已清除',
   !/\.sj-edit-bar \{/.test(css) && !/\.sj-style-panel \{/.test(css) && !/\.sj-sp-btn \{/.test(css));
 
+/* ---------- 5.5 阅读态只读：分类当标签、标签只展示 ---------- */
+console.log('\n阅读态只读（电脑端）');
+ok('阅读态分类是纯标签：span 而非按钮，不绑点击',
+  /const catEl = document\.createElement\('span'\);/.test(js)
+  && /catEl\.className = 'sj-rh-cat is-label'/.test(js)
+  && !/catBtn\.addEventListener\('click'/.test(js));
+ok('阅读态在大标题下渲染只读标签胶囊（不带 ×）',
+  /\(note\.tags \|\| \[\]\)\.forEach\(\(t\) => \{[\s\S]{0,220}chip\.className = 'tag-chip is-ro'/.test(js));
+ok('只有编辑态才响应点分类改名',
+  /#metaInfo'\)\.addEventListener\('click', \(e\) => \{[\s\S]{0,240}classList\.contains\(NOTE_EDIT\)\) return;/.test(js));
+ok('阅读态分类不回手型、不给 ▾',
+  /body\.sj-note-read \.meta-cat \{ cursor: default; pointer-events: none; \}/.test(css)
+  && /body\.sj-note-read \.meta-cat \.meta-caret \{ display: none; \}/.test(css)
+  && /\.sj-rh-cat\.is-label \{ background: transparent;/.test(css)
+  && !/\.sj-rh-cat::after \{/.test(css));
+
 /* ---------- 6. 数据格式没被动过（回归保护） ---------- */
 console.log('\n数据格式与保存链路未受影响');
 ok('富文本仍存 innerHTML', /note\.content = \$\('#richPane'\)\.innerHTML;/.test(js));

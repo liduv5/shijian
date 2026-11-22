@@ -1199,6 +1199,8 @@
       opt.value = tag;
       dl.appendChild(opt);
     });
+    /* 加/删标签后，阅读态大标题下那串只读标签跟着变（手机上标签行本身是藏在编辑态后面的） */
+    if (window.SJRefreshNoteMeta) window.SJRefreshNoteMeta();
   }
 
   function showTagInput() {
@@ -2830,7 +2832,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-22-158';
+  const APP_BUILD = '2026-11-22-159';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -6201,6 +6203,7 @@
        不改任何数据格式，桌面端完全不受影响（样式都在 ≤980px 内）。 */
     const NOTE_HEAD = $('#sjNoteHead'), NOTE_ACTIONS = NOTE_HEAD && NOTE_HEAD.querySelector('.sj-nh-acts');
     const META_CAT = $('#sjMetaCat'), EDIT_BAR = $('#sjEditBar'), BODY_BOX = $('#editorBody');
+    const RH_TAGS = $('#sjRhTags');
     const META_ROW = META_CAT && META_CAT.parentElement;
     const READ_HERO = $('#sjReadHero'), READ_TITLE = $('#sjReadTitle'), READ_META = $('#sjRhMeta');
     let lastReadHeroH = 0;   /* 阅读态 hero 高度：编辑态它是 display:none，换算滚动位置时得用缓存 */
@@ -6234,6 +6237,13 @@
       if (d) {
         d.textContent = note ? '创建于 ' + fmtDate(note.createdAt) : '';
         d.classList.toggle('hidden', !note);
+      }
+      /* 阅读态的标签：只读一串小胶囊（原来阅读态把标签行整行藏了，
+         用户 2026-11-22 反馈「阅读模式没有标签显示」）。 */
+      if (RH_TAGS) {
+        const tags = note && note.tags ? note.tags : [];
+        RH_TAGS.innerHTML = tags.map((t) => `<span class="tag-chip is-ro">${escapeHtml(t)}</span>`).join('');
+        RH_TAGS.classList.toggle('hidden', !tags.length);
       }
       /* 正文顶部的大标题（阅读态）跟着同一条笔记走 */
       if (READ_TITLE) {

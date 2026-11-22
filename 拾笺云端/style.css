@@ -3694,6 +3694,13 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
     margin-top: 9px;
   }
   .sj-rh-meta:empty { display: none; }
+  /* 阅读态的标签：大标题下面一串只读小胶囊（用户 2026-11-22 反馈阅读态看不到标签） */
+  .sj-rh-tags {
+    display: flex; flex-wrap: wrap; gap: 5px;
+    margin-top: 8px;
+  }
+  .sj-rh-tags.hidden { display: none; }
+  .sj-rh-tags .tag-chip { cursor: default; }
   /* 分类/日期搬进大标题下方后，原来那一行只剩空壳 */
   body.sj-note-open:not(.sj-note-edit) .meta-row { display: none; }
   /* 顶栏普通定位：正文在独立滚动容器里滚，大标题滚上去后自然消失，

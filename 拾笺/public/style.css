@@ -1100,6 +1100,9 @@ html[data-theme="dark"] #homeNewNote:hover {
 .meta-cat.is-empty { opacity: .82; }
 .meta-caret { font-style: normal; font-size: 9px; opacity: .6; flex: none; }
 .meta-date { white-space: nowrap; }
+/* 阅读态只读：标题行那颗分类不给 ▾、不 hover、不回手型（用户 2026-11-22 要求） */
+body.sj-note-read .meta-cat { cursor: default; pointer-events: none; }
+body.sj-note-read .meta-cat .meta-caret { display: none; }
 
 /* 分类选择弹层 */
 .picker-list { max-height: 56vh; overflow-y: auto; margin: -4px -6px 0; }
@@ -2764,17 +2767,18 @@ body.sj-note-read .sj-read-hero {
   font-size: 12.5px; color: var(--text-3);
 }
 .sj-rh-meta:empty { display: none; }
-/* 分类可点 → 弹层改分类（沿用现有分类选择器） */
+/* 阅读态的分类只是标签：不点、不 hover、不给 ▾（用户 2026-11-22 要求）。
+   换分类去编辑态点标题下那颗胶囊。 */
 .sj-rh-cat {
   display: inline-flex; align-items: center; gap: 3px;
   height: 24px; padding: 0 10px;
   border: 0; border-radius: 999px; background: var(--surface-2);
   font-family: var(--font-ui); font-size: 12.5px; color: var(--accent);
-  white-space: nowrap; cursor: pointer;
+  white-space: nowrap; cursor: default;
 }
-.sj-rh-cat:hover { background: var(--accent-soft); }
-.sj-rh-cat::after { content: '▾'; font-size: 9px; opacity: .7; }
+.sj-rh-cat.is-label { background: transparent; padding: 0; color: var(--text-3); }
 .sj-rh-cat.is-empty { color: var(--text-3); }
+.sj-rh-meta .tag-chip.is-ro { cursor: default; }
 .sj-rh-date { font-family: var(--font-ui); }
 
 /* 顶栏小标题：静止时藏起来，正文大标题滚过去后才淡入接管 */

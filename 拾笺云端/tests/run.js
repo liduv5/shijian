@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-158 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-159 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-22-158';
+const BUILD = '2026-11-22-159';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -912,6 +912,15 @@ ok('编辑态底栏「⋯」只留「移动到分类」',
     return /移动到分类/.test(body) && !/Markdown 源码/.test(body)
       && !/历史版本/.test(body) && !/同步到云端/.test(body);
   })());
+ok('阅读态大标题下有只读标签容器（阅读态原来整行藏掉了标签）',
+  /id="sjRhTags"/.test(indexSrc)
+  && /const RH_TAGS = \$\('#sjRhTags'\)/.test(appSrc)
+  && /RH_TAGS\.innerHTML = tags\.map\(\(t\) => `<span class="tag-chip is-ro">/.test(appSrc)
+  && /RH_TAGS\.classList\.toggle\('hidden', !tags\.length\)/.test(appSrc));
+ok('阅读态标签只读：不渲染移除按钮，改完标签跟着刷新',
+  !/RH_TAGS[\s\S]{0,200}tag-x/.test(appSrc)
+  && /if \(window\.SJRefreshNoteMeta\) window\.SJRefreshNoteMeta\(\);/.test(appSrc)
+  && /\.sj-rh-tags \{[\s\S]{0,120}display: flex; flex-wrap: wrap;/.test(styleSrc));
 ok('列表首页仍是原来那套全局菜单（两套内容按有没有打开笔记切）',
   /act: 'tree', label: '目录分类'/.test(appSrc) && /MORE_ROWS/.test(appSrc));
 ok('笔记菜单的动作全转手给现有按钮，不另写一套',

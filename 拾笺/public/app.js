@@ -1695,17 +1695,25 @@
     if (!READ_META) return;
     if (!note) { READ_META.innerHTML = ''; return; }
     const cat = note.categoryId ? catMap().get(note.categoryId) : null;
-    const catBtn = document.createElement('button');
-    catBtn.type = 'button';
-    catBtn.className = 'sj-rh-cat' + (cat ? '' : ' is-empty');
-    catBtn.textContent = cat ? cat.name : '未分类';
-    catBtn.addEventListener('click', (e) => { e.stopPropagation(); openCategoryPicker(note); });
+    /* 阅读态只读：分类只是标签，不是按钮（用户 2026-11-22 要求）。
+       换分类去编辑态点标题下那颗胶囊，这里不给 ▾、不绑点击。 */
+    const catEl = document.createElement('span');
+    catEl.className = 'sj-rh-cat is-label' + (cat ? '' : ' is-empty');
+    catEl.textContent = cat ? cat.name : '未分类';
     const date = document.createElement('span');
     date.className = 'sj-rh-date';
     date.textContent = '创建于 ' + fmtDate(note.createdAt);
     READ_META.innerHTML = '';
-    READ_META.appendChild(catBtn);
+    READ_META.appendChild(catEl);
     READ_META.appendChild(date);
+    /* 阅读态原来把标签整行藏了（body.sj-note-read .tag-row 隐藏），
+       大标题下面跟着一串只读标签，不做 × 也不给添加入口。 */
+    (note.tags || []).forEach((t) => {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip is-ro';
+      chip.textContent = t;
+      READ_META.appendChild(chip);
+    });
   }
 
   /* 顶栏小标题的接管：正文大标题滚到顶栏下方时淡入。
@@ -4262,9 +4270,11 @@
 
   /* 编辑区那行只有「分类名」本身可点 → 改分类（与云端同一入口）。
      日期不属于可点范围：整行绑 click 会让鼠标移到「创建于…」上也高亮、
-     点日期也弹分类框（用户反馈）。 */
+     点日期也弹分类框（用户反馈）。
+     只在编辑态响应：阅读态是纯阅读，不做任何编辑动作（用户 2026-11-22 要求）。 */
   $('#metaInfo').addEventListener('click', (e) => {
     if (!e.target.closest || !e.target.closest('[data-meta-cat]')) return;
+    if (!document.body.classList.contains(NOTE_EDIT)) return;
     const note = currentNote();
     if (note) openCategoryPicker(note);
   });
