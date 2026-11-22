@@ -482,7 +482,7 @@ ok('手机端不再有 Markdown / 富文本切换，标题与返回箭头同一�
   /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \.title-input \{[\s\S]{0,200}font-size: 20px; font-weight: 700[\s\S]{0,120}opacity: 0/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.editor-head \{ display: none; \}/.test(styleSrc) &&
   /\.sj-rh-title \{[\s\S]{0,160}font-size: 27px/.test(styleSrc) &&
-  /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane \{[\s\S]{0,120}font-size: 19px; line-height: 1\.78/.test(styleSrc) &&
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane \{[\s\S]{0,180}font-size: 19px; line-height: max\(var\(--sj-rich-lh, 28px\), 1\.2em\)/.test(styleSrc) &&
   /* 详情底栏整条下线，动作搬进右上角四点菜单 */
   !/body\.sj-note-open \.sj-detail-bar:not\(\.hidden\) \{ display: flex; \}/.test(styleSrc) &&
   styleSrc.indexOf('.sj-meta-cat {') >= 0);
@@ -1002,7 +1002,11 @@ ok('行距是像素下拉（16–48），不再是三档循环',
   && !/LH_STEPS/.test(appSrc) && !/LH_LABELS/.test(appSrc)
   && /setProperty\('--sj-rich-lh', state\.richLh \+ 'px'\)/.test(appSrc)
   && /if \(v < 3\) return Math\.min\(64, Math\.max\(14, Math\.round\(v \* 16 \/ 2\) \* 2\)\)/.test(appSrc)
-  && /line-height: var\(--sj-rich-lh, 28px\)/.test(styleSrc));
+  && /line-height: max\(var\(--sj-rich-lh, 28px\), 1\.2em\)/.test(styleSrc));
+/* 阅读态原来固定 1.78 不吃这个设置，用户要求跟着走。手机端编辑态也统一。 */
+ok('阅读态正文也吃同一套像素行距',
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane \{[\s\S]{0,220}line-height: max\(var\(--sj-rich-lh, 28px\), 1\.2em\)/.test(styleSrc)
+  && !/line-height: 1\.78/.test(styleSrc) && !/line-height: 1\.86/.test(styleSrc));
 ok('行距下拉回显当前值（不在预设档就临时补一档）',
   /function syncLhPicker\(\)[\s\S]{0,700}data-temp/.test(appSrc)
   && /tbLhSel\.value = v;/.test(appSrc)

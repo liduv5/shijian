@@ -163,7 +163,11 @@ ok('行距是像素下拉（16–48），不再是三档循环',
 ok('行距写进 CSS 变量时带 px，老倍数自动换算成像素',
   /setProperty\('--sj-rich-lh', state\.richLh \+ 'px'\)/.test(js)
   && /if \(v < 3\) return Math\.min\(64, Math\.max\(14, Math\.round\(v \* 16 \/ 2\) \* 2\)\)/.test(js)
-  && /line-height: var\(--sj-rich-lh, 28px\)/.test(css));
+  && /line-height: max\(var\(--sj-rich-lh, 28px\), 1\.2em\)/.test(css));
+/* 阅读态原来固定 1.85 不吃这个设置，用户要求跟着走。1.2em 兜底防重叠。 */
+ok('阅读态正文也吃同一套像素行距',
+  /body\.sj-note-read \.rich-pane \{[\s\S]{0,200}line-height: max\(var\(--sj-rich-lh, 28px\), 1\.2em\)/.test(css)
+  && !/body\.sj-note-read \.rich-pane \{[\s\S]{0,160}line-height: 1\.85/.test(css));
 ok('行距下拉回显当前值（不在预设档就临时补一档）',
   /function syncLhPicker\(\)[\s\S]{0,700}data-temp/.test(js)
   && /tbLhSel\.value = v;/.test(js));

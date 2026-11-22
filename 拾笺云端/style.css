@@ -989,8 +989,9 @@ html[data-theme="dark"] .tb-select {
 }
 /* 行距变量须压过下方 .markdown-body 的 line-height（richPane 同时带两个类） */
 /* 行距变量须压过下方 .markdown-body 的 line-height（richPane 同时带两个类）。
-   值是像素（下拉里选的 16–48），标题另有自己的行高不受影响。 */
-.rich-pane.markdown-body { line-height: var(--sj-rich-lh, 28px); }
+   值是像素（下拉里选的 16–48），标题另有自己的行高不受影响。
+   1.2em 是保底：选到比字号还小的行距时文字会叠在一起。 */
+.rich-pane.markdown-body { line-height: max(var(--sj-rich-lh, 28px), 1.2em); }
 .rich-pane:empty::before {
   content: "开始书写…";
   color: var(--text-3);
@@ -3737,7 +3738,7 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
   body.sj-note-open:not(.sj-note-edit) .tag-row,
   body.sj-note-open:not(.sj-note-edit) .toolbar { display: none; }
   body.sj-note-open:not(.sj-note-edit) .rich-pane {
-    font-size: 19px; line-height: 1.78; padding: 4px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    font-size: 19px; line-height: max(var(--sj-rich-lh, 28px), 1.2em); padding: 4px 20px calc(20px + env(safe-area-inset-bottom, 0px));
   }
   /* 阅读态按截图收紧段间距：正文是连续的诗行/短段，段落之间不该空出一行 */
   body.sj-note-open:not(.sj-note-edit) .rich-pane p,
@@ -3786,7 +3787,7 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
   body.sj-note-edit .toolbar { display: none; }
   /* 手机端不再借桌面那条窄工具条：A 按钮改为弹出底部「样式」面板 */
   body.sj-note-edit .rich-pane {
-    font-size: 19px; line-height: 1.86; padding: 2px 20px calc(180px + env(safe-area-inset-bottom, 0px));
+    font-size: 19px; line-height: max(var(--sj-rich-lh, 28px), 1.2em); padding: 2px 20px calc(180px + env(safe-area-inset-bottom, 0px));
   }
   body.sj-note-edit .rich-pane p,
   body.sj-note-edit .rich-pane div { margin: 0 0 2px; }
