@@ -2063,6 +2063,8 @@
     note.updatedAt = Date.now();
     wordCount();
     markDirty();
+    /* 字体 / 字号下拉跟着更新（命令执行完光标处的样式已经变了） */
+    scheduleSyncFontPickers();
   }
 
   /* 富文本里的图片保持原生，无需额外处理。 */
@@ -2091,13 +2093,18 @@
       s.className = 'tb-sep';
       bar.appendChild(s);
     };
-    // 富文本字体/字号下拉：原生 select，选后即复位到占位文字
+    /* 字体 / 字号下拉：选完不回占位文字 —— syncFontPickers 会把光标处
+       真实的字体和大小重新算出来显示，下拉里「选中的那条」就是当前值。 */
     const sel = (title, opts, onChange) => {
       const s = document.createElement('select');
       s.className = 'tb-select';
       s.title = title;
       s.innerHTML = opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
-      s.addEventListener('change', () => { const v = s.value; s.value = ''; if (v) onChange(v); });
+      s.addEventListener('change', () => {
+        const v = s.value;
+        if (v) onChange(v);
+        else syncFontPickers();
+      });
       bar.appendChild(s);
       return s;
     };
@@ -2108,8 +2115,8 @@
     btn(I.underline, '下划线', () => exec('underline'));
     btn(I.strike, '删除线', () => exec('strikeThrough'));
     sep();
-    sel('字体', [
-      ['', '字体'],
+    tbFontSel = sel('字体', [
+      ['', '默认'],
       ['SimSun', '宋体'],
       ['SimHei', '黑体'],
       ['Microsoft YaHei', '微软雅黑'],
@@ -2118,7 +2125,7 @@
       ['Georgia', 'Georgia'],
       ['Courier New', '等宽'],
     ], (v) => execFont('fontName', v));
-    sel('字号', [
+    tbSizeSel = sel('字号', [
       ['', '字号'],
       ['12', '12'],
       ['14', '14'],
@@ -2177,6 +2184,107 @@
     if (lhTxt) lhTxt.textContent = '行距' + LH_LABELS[LH_STEPS.indexOf(state.richLh)];
     const clearBtn = btn('<span class="tb-text" style="font-weight:600">Tx</span>', '清除格式', clearFormat, '');
     clearBtn.style.marginLeft = 'auto';
+    syncFontPickers();
+  }
+
+  /* ---- 字体 / 字号下拉的「当前值」 ----
+     光标的字体和字号从 startContainer 的计算样式里算：内联 span 上写的、
+     标题自带的都如实反映。字号不在预设那几档里（手机端拖出来的 21px）
+     就临时补一档 -- 否则下拉只能停在占位文字上，等于没信息。 */
+  let tbFontSel = null;
+  let tbSizeSel = null;
+  let fontPickTick = 0;
+
+  function scheduleSyncFontPickers() {
+    if (fontPickTick) return;
+    fontPickTick = requestAnimationFrame(() => {
+      fontPickTick = 0;
+      syncFontPickers();
+    });
+  }
+
+  function caretStyleHost() {
+    const pane = $('#richPane');
+    if (!pane) return null;
+    let r = null;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && pane.contains(sel.getRangeAt(0).startContainer)) r = sel.getRangeAt(0);
+    if (!r && savedRange && pane.contains(savedRange.startContainer)) r = savedRange;
+    if (!r) return null;
+    const el = probeNodeOf(r);
+    return el && pane.contains(el) ? el : null;
+  }
+
+  /* 光标落在哪个节点上取样式。两层坑：
+     ① 段落末尾的光标容器是 <p> 本身（offset 指到末尾），直接拿它算
+        样式会读到段落默认值 —— 明明刚把这段设成 18px，下拉却回显 16px；
+     ② 上色/字号叠起来时结构是 <p><span 字体><span 字号>文字</span></span></p>
+        命中的最外层 span 上并没有字号，还得往里钻到真正包着文字的那层。
+     所以：元素级光标先取紧邻的那半边（先看前一个子节点），再一路钻到
+     最深的一层，直到下一个子节点是文字。 */
+  function probeNodeOf(range) {
+    const c = range.startContainer;
+    if (c.nodeType === 3) return c.parentElement;
+    const usePrev = range.startOffset > 0;
+    let node = c.childNodes[usePrev ? range.startOffset - 1 : range.startOffset] || c;
+    while (node && node.nodeType === 1) {
+      const next = usePrev ? node.lastChild : node.firstChild;
+      if (!next || next.nodeType === 3) break;
+      node = next;
+    }
+    if (!node) return c;
+    return node.nodeType === 1 ? node : node.parentElement;
+  }
+
+  /* 字体只认正文里真写过的 font-family。计算样式里挂着一长串兜底栈
+     （-apple-system、Segoe UI…），拿它去比对会把「没设过字体」误报成
+     列表里的某一项 —— 明明没选过字体，下拉却显示「微软雅黑」。 */
+  function inlineFontFamily(el) {
+    const pane = $('#richPane');
+    let n = el;
+    while (n && n !== pane) {
+      if (n.style && n.style.fontFamily) return n.style.fontFamily;
+      n = n.parentElement;
+    }
+    return '';
+  }
+
+  function matchFontOption(family) {
+    if (!tbFontSel || !family) return '';
+    const stack = String(family).split(',')
+      .map((s) => s.trim().replace(/^["']|["']$/g, '').toLowerCase());
+    for (const opt of tbFontSel.options) {
+      if (!opt.value) continue;
+      if (stack.includes(opt.value.toLowerCase())) return opt.value;
+    }
+    return '';
+  }
+
+  function matchSizeOption(px) {
+    if (!tbSizeSel || !isFinite(px) || px <= 0) return '';
+    Array.from(tbSizeSel.querySelectorAll('option[data-temp]')).forEach((o) => o.remove());
+    const v = String(Math.round(px));
+    if (Array.from(tbSizeSel.options).some((o) => o.value === v)) return v;
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = v;
+    opt.dataset.temp = '1';
+    const next = Array.from(tbSizeSel.options).find((o) => o.value && Number(o.value) > Number(v));
+    tbSizeSel.insertBefore(opt, next || null);
+    return v;
+  }
+
+  function syncFontPickers() {
+    if (!tbFontSel || !tbSizeSel) return;
+    const el = caretStyleHost();
+    if (!el) {
+      tbFontSel.value = '';
+      tbSizeSel.value = '';
+      return;
+    }
+    const cs = getComputedStyle(el);
+    tbFontSel.value = matchFontOption(inlineFontFamily(el));
+    tbSizeSel.value = matchSizeOption(parseFloat(cs.fontSize));
   }
 
   /* ---- 文字颜色 ---- */
@@ -2278,14 +2386,7 @@
     paintColorMark();
     /* 只是光标、整段是自动选上的：上完色把光标放回段末。
        留着整段选中，用户接着打字就会把这一行整段覆盖掉。 */
-    if (collapsed && block && block.isConnected) {
-      const r = document.createRange();
-      r.selectNodeContents(block);
-      r.collapse(false);
-      sel.removeAllRanges();
-      sel.addRange(r);
-      savedRange = r.cloneRange();
-    }
+    if (collapsed) caretToBlockEnd(block);
     onRichInput();
   }
 
@@ -2325,14 +2426,7 @@
       if (!sp.attributes.length) sp.replaceWith(...Array.from(sp.childNodes));
     });
     /* 只有光标时整段被选中了：清完把光标放回段末，接着打字不会覆盖整段 */
-    if (collapsed && block && block.isConnected) {
-      const r = document.createRange();
-      r.selectNodeContents(block);
-      r.collapse(false);
-      sel.removeAllRanges();
-      sel.addRange(r);
-      savedRange = r.cloneRange();
-    }
+    if (collapsed) caretToBlockEnd(block);
     onRichInput();
   }
 
@@ -2359,6 +2453,8 @@
     if (!pane || !sel || !sel.rangeCount) return;
     const r = sel.getRangeAt(0);
     if (pane.contains(r.commonAncestorContainer)) savedRange = r.cloneRange();
+    /* 光标换到别处：字体 / 字号下拉跟着换成那一处的实际值 */
+    scheduleSyncFontPickers();
   });
 
   /* 执行格式命令前把选区摆好。两件事必须按这个顺序来：
@@ -2382,6 +2478,28 @@
     sel.addRange(target);
   }
 
+  /* 字体 / 字号这类「点了应该看得见」的命令：只有光标没有选区时，
+     浏览器只会给「下一次输入」记一笔，现有文字纹丝不动 —— 用户点了
+     半天没反应，以为下拉坏了。所以先把光标所在那一段整段选中再做。 */
+  function blockAwareRange() {
+    prepareRange();
+    const sel = window.getSelection();
+    const collapsed = !!sel && sel.rangeCount > 0 && sel.getRangeAt(0).collapsed;
+    return { collapsed, block: collapsed ? selectBlockAtCaret() : null };
+  }
+
+  function caretToBlockEnd(block) {
+    if (!block || !block.isConnected) return;
+    const sel = window.getSelection();
+    if (!sel) return;
+    const r = document.createRange();
+    r.selectNodeContents(block);
+    r.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    savedRange = r.cloneRange();
+  }
+
   function exec(cmd, value) {
     const pane = $('#richPane');
     prepareRange();
@@ -2394,9 +2512,11 @@
   // 而不是会被 DOMPurify 清掉 face 属性的旧 <font> 标签。
   function execFont(cmd, value) {
     const pane = $('#richPane');
-    prepareRange();
+    if (!pane) return;
+    const { collapsed, block } = blockAwareRange();
     try { document.execCommand('styleWithCSS', false, true); } catch (_) {}
     document.execCommand(cmd, false, value);
+    if (collapsed) caretToBlockEnd(block);
     onRichInput();
   }
 
@@ -2405,7 +2525,8 @@
   // 再把本次产生的那些 <font> 换成带精确 px 的 <span style="font-size">。
   function execFontSize(px) {
     const pane = $('#richPane');
-    prepareRange();
+    if (!pane) return;
+    const { collapsed, block } = blockAwareRange();
     try { document.execCommand('styleWithCSS', false, false); } catch (_) {}
     // 记录执行前已有的 font 节点，避免误改正文里别处的内容
     const before = new Set(Array.from(pane.querySelectorAll('font')));
@@ -2420,6 +2541,9 @@
       f.replaceWith(span);
       newSpans.push(span);
     });
+    /* 只有光标的情况：整段是自动选上的，改完把光标放回段末，
+       不然接着打字会把这一段整段覆盖掉 */
+    if (collapsed) { caretToBlockEnd(block); onRichInput(); return; }
     // 用替换后的新 span 重建选区，保证字号变更后选中内容仍被选中
     const sel = window.getSelection();
     if (sel && newSpans.length) {

@@ -115,11 +115,26 @@ ok('清除格式有自己的实现（不再是一句 exec(removeFormat)）',
 ok('清除格式会自己扫内联 style（removeFormat 只管它认识的那几个命令）',
   /stripCharStyles\(after\)/.test(js) && /'caret-color'/.test(js));
 ok('清除格式后把光标放回段末（不会留着整段选中被覆盖）',
-  /if \(collapsed && block && block\.isConnected\)/.test(js));
+  /function caretToBlockEnd\(block\)/.test(js) && /if \(collapsed\) caretToBlockEnd\(block\);/.test(js));
 ok('色板挂在 body 上（工具条换行也裁不到）',
   /document\.body\.appendChild\(pop\)/.test(js) && /\.tb-color-pop \{[\s\S]{0,80}position: fixed/.test(css));
 
-/* ---------- 4c. 正文载入体检 ---------- */
+/* ---------- 4c. 字体 / 字号下拉回显当前值 ---------- */
+console.log('\n字体 / 字号下拉回显当前值');
+ok('下拉选完不再复位到占位文字', !/s\.value = ''; if \(v\) onChange\(v\);/.test(js));
+ok('有回显函数，并挂在 selectionchange / onRichInput 上',
+  /function syncFontPickers\(/.test(js) && /scheduleSyncFontPickers\(\);/.test(js)
+  && (js.match(/scheduleSyncFontPickers\(\);/g) || []).length >= 2);
+ok('字号不在预设档里就临时补一档（21px 也能选中）',
+  /option\[data-temp\]/.test(js) && /insertBefore\(opt, next \|\| null\)/.test(js));
+ok('字体只认正文里写过的 font-family（不拿兜底字体栈误报）',
+  /function inlineFontFamily\(/.test(js) && /matchFontOption\(inlineFontFamily\(el\)\)/.test(js));
+ok('只有光标时选字体/字号先整段选中（否则浏览器只记一笔 typing style）',
+  /function blockAwareRange\(/.test(js)
+  && /const \{ collapsed, block \} = blockAwareRange\(\);/.test(js));
+ok('下拉给当前值留了最小宽度（换值不带着工具条抖）', /\.tb-select \{[\s\S]{0,160}min-width: 58px/.test(css));
+
+/* ---------- 4d. 正文载入体检 ---------- */
 console.log('\n正文载入体检（caret-color / 列表野段落）');
 ok('noteHtml 先净化再过体检', /return normalizeRich\(DOMPurify\.sanitize\(/.test(js));
 ok('抹掉内联 caret-color（手机端上色留下的透明光标）',

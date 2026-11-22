@@ -1152,6 +1152,7 @@ html[data-theme="dark"] #homeNewNote:hover {
 .tb-select {
   height: 27px;
   padding: 0 4px;
+  min-width: 58px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
