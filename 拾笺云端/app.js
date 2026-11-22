@@ -1050,11 +1050,15 @@
     }
     return parts.join(' / ');
   }
-  /* 编辑区第二行那句「分类名 ▾ · 创建于 …」。带 ▾ 是提示「这里可以点」，
-     点开就是分类选择弹层。抽成函数是因为改完分类要就地重写这一行。 */
-  function metaInfoText(note) {
+  /* 编辑区第二行那句「分类名 ▾ · 创建于 …」。
+     分类单独做成按钮：之前整行是一个可点元素，鼠标移到日期上也会高亮，
+     点日期也弹分类选择器 —— 范围太大了。抽成函数是因为改完分类要就地重写这一行。 */
+  function metaInfoHTML(note) {
     const cat = catMap().get(note.categoryId);
-    return `${cat ? cat.name : '未分类'} ▾ · 创建于 ${fmtDate(note.createdAt)}`;
+    const name = escapeHtml(cat ? cat.name : '未分类');
+    return `<button type="button" class="meta-cat${cat ? '' : ' is-empty'}" data-meta-cat="1" aria-label="修改分类">${name}<i class="meta-caret" aria-hidden="true">▾</i></button>`
+      + '<span class="meta-dot">·</span>'
+      + `<span class="meta-date">创建于 ${escapeHtml(fmtDate(note.createdAt))}</span>`;
   }
   /* 改完分类后，把编辑区第二行这句就地重写。
      编辑区显示的永远是「当前打开的那篇」，所以别的笔记改了分类不该动这一行。
@@ -1064,7 +1068,7 @@
   function refreshMetaFor(note) {
     if (!note || state.selNote !== note.id) return;
     const el = $('#metaInfo');
-    if (el) el.textContent = metaInfoText(note);
+    if (el) el.innerHTML = metaInfoHTML(note);
     if (window.SJRefreshNoteMeta) window.SJRefreshNoteMeta();
   }
   function scopeName(scope) {
@@ -1700,7 +1704,7 @@
     decorate($('#richPane'));
     $('#richPane').classList.remove('hidden');
 
-    $('#metaInfo').textContent = metaInfoText(note);
+    $('#metaInfo').innerHTML = metaInfoHTML(note);
     setSaveState('', `已保存 ${new Date(note.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`);
 
     applyFormat();
@@ -4013,7 +4017,7 @@
         renderList();
         const cat = catMap().get(id);
         const el = $('#metaInfo');
-        if (el) el.textContent = metaInfoText(note);
+        if (el) el.innerHTML = metaInfoHTML(note);
         /* 手机端标题下面那一行也要跟着换，否则分类还停在上一个 */
         if (window.SJRefreshNoteMeta) window.SJRefreshNoteMeta();
         toast('已移动到「' + (cat ? cat.name : '未分类') + '」');
@@ -4793,8 +4797,13 @@
   /* 同步按钮：本地优先，只有手动点才登录并上传 / 拉取 */
   $('#mSyncBtn').addEventListener('click', () => { if (window.SJSync) window.SJSync.open(); });
   const sb = $('#syncBtn'); if (sb) sb.addEventListener('click', () => { if (window.SJSync) window.SJSync.open(); });
-  /* 编辑器里的分类名可点击，打开「移动到分类」 */
-  $('#metaInfo').addEventListener('click', () => openCategoryPicker(currentNote()));
+  /* 编辑器里只有「分类名」本身可点，打开「移动到分类」。
+     整行绑 click 会让鼠标移到「创建于…」上也高亮、点日期也弹分类框（用户反馈）。 */
+  $('#metaInfo').addEventListener('click', (e) => {
+    if (!e.target.closest || !e.target.closest('[data-meta-cat]')) return;
+    const n = currentNote();
+    if (n) openCategoryPicker(n);
+  });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeDrawer();
   });

@@ -31,11 +31,12 @@ ok('大标题下的元信息容器存在', /id="sjRhMeta"/.test(html));
 ok('编辑工具条常驻（不再有底部胶囊 sjEditBar）', !/id="sjEditBar"/.test(html));
 ok('不再有右侧格式面板（sjStylePanel / sjStyleBody / sjStyleMask 全移除）',
   !/id="sjStylePanel"/.test(html) && !/id="sjStyleBody"/.test(html) && !/id="sjStyleMask"/.test(html));
-ok('常驻工具条位于分类行之后、标签行之前', (() => {
+ok('常驻工具条位于标题、分类、标签全都下方、正文之前', (() => {
   const meta = html.indexOf('class="meta-row"');
-  const bar = html.indexOf('id="toolbar"');
   const tag = html.indexOf('class="tag-row"');
-  return meta > 0 && bar > meta && tag > bar;
+  const bar = html.indexOf('id="toolbar"');
+  const body = html.indexOf('id="editorBody"');
+  return meta > 0 && tag > meta && bar > tag && body > bar;
 })());
 ok('顶栏撤销 / 重做 / 完成三个按钮存在',
   /id="sjUndoBtn"/.test(html) && /id="sjRedoBtn"/.test(html) && /id="sjDoneBtn"/.test(html));
@@ -51,8 +52,25 @@ ok('编辑态把富文本设为可编辑', /setAttribute\('contenteditable', 'tr
 ok('标题框在阅读态只读、编辑态可写', /ti\.readOnly = true/.test(js) && /ti\.readOnly = false/.test(js));
 ok('打开笔记时会同步形态', /syncNoteMode\(note\)/.test(js));
 ok('新建草稿直接进编辑态', /setNoteMode\(true, \{ focus: false \}\)/.test(js));
-ok('点正文进编辑态', /function enterEditAt\(/.test(js) && /enterEditAt\(e\.clientX, e\.clientY\)/.test(js));
+ok('点正文进编辑态（要等一小会儿，让双击选词先成立）',
+  /function enterEditAt\(/.test(js) && /enterTimer = setTimeout\(\(\) => \{[\s\S]{0,200}enterEditAt\(x, y\);/.test(js));
+ok('双击 / 三击选词会撤销排队中的「进编辑态」',
+  /addEventListener\('dblclick', cancelEnterEdit, true\)/.test(js) && /e\.detail >= 3\) cancelEnterEdit\(\)/.test(js));
 ok('完成按钮回阅读态', /sjDoneBtn[\s\S]{0,200}setNoteMode\(false\)/.test(js));
+
+/* 阅读态拖选文字不能被「点正文进编辑态」那个 click 塌掉 */
+ok('点正文进编辑态会区分「单击」与「拖选」',
+  /hasRealSelection\(\)/.test(js) && /Math\.abs\(e\.clientX - dp\.x\) > 4/.test(js));
+ok('按下位置在捕获阶段记录下来（拖选位移要靠它判断）',
+  /addEventListener\('mousedown',[\s\S]{0,160}downPoint = e\.button === 0/.test(js));
+ok('已有非空选区时不进编辑态', /if \(hasRealSelection\(\)\) return;/.test(js));
+
+/* 编辑区第二行只有分类名是热区，日期不可点 */
+ok('分类名是独立按钮（带 data-meta-cat）', /metaInfoHTML\(/.test(js) && /data-meta-cat="1"/.test(js));
+ok('点这行时只认分类按钮（点日期不弹分类框）',
+  /#metaInfo'\)\.addEventListener\('click', \(e\) => \{[\s\S]{0,220}closest\('\[data-meta-cat\]'\)/.test(js));
+ok('整行不再直接绑 openCategoryPicker',
+  !/\$\('#metaInfo'\)\.addEventListener\('click', \(\) => openCategoryPicker/.test(js));
 
 /* ---------- 3. 顶栏小标题接管 ---------- */
 console.log('\n顶栏小标题接管');

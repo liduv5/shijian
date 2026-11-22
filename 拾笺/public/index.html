@@ -203,10 +203,6 @@
         <span id="wordCount" class="word-count"></span>
       </div>
 
-      <!-- 编辑工具条：就在标题和分类下面常驻一条，编辑态直接可用，
-           不再从底部浮出、也不再有右侧弹出面板。 -->
-      <div class="toolbar" id="toolbar"></div>
-
       <div class="tag-row" id="tagRow">
         <span class="tag-row-label">标签</span>
         <div class="tag-list" id="tagList"></div>
@@ -216,6 +212,10 @@
         <input class="tag-input hidden" id="tagInput" list="tagOptions" placeholder="输入标签，回车确认" maxlength="20" autocomplete="off">
         <datalist id="tagOptions"></datalist>
       </div>
+
+      <!-- 编辑工具条：在标题、分类、标签全都下面，紧挨正文常驻一条，
+           编辑态直接可用，不再从底部浮出、也不再有右侧弹出面板。 -->
+      <div class="toolbar" id="toolbar"></div>
 
       <div class="editor-body" id="editorBody">
         <!-- 华为风阅读态：大标题放回正文顶部，跟着正文一起上滚；

@@ -495,6 +495,13 @@ ok('标题下面只留一份分类且可点：分类胶囊可点换类、右边�
   /\.sj-meta-cat::after \{ content: '▾'/.test(styleSrc) &&
   appSrc.indexOf("window.addEventListener('sj-categories-changed', () => { refreshNoteMetaLine(); })") >= 0);
 
+ok('桌面端第二行也只有分类名是热区（点日期不弹分类框）',
+  appSrc.indexOf('function metaInfoHTML') >= 0 &&
+  /data-meta-cat="1"/.test(appSrc) &&
+  /#metaInfo'\)\.addEventListener\('click', \(e\) => \{[\s\S]{0,220}closest\('\[data-meta-cat\]'\)/.test(appSrc) &&
+  appSrc.indexOf('metaInfoText') < 0 &&
+  /\.meta-cat:hover \{ color: var\(--accent\); background: var\(--accent-soft\); \}/.test(styleSrc));
+
 ok('写正文时图片保持图片：手机端进编辑先转富文本，不再露出 data URI 长串',
   appSrc.indexOf('function toRichEditor()') >= 0 &&
   /function toRichEditor\(\)[\s\S]{0,420}noteHtml/.test(appSrc) &&

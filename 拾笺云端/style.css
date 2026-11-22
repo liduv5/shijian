@@ -2125,8 +2125,23 @@ html[data-theme="dark"] .sj-tip {
 /* ============================================================
    同步面板 / 分类选择 / 可点击分类名
    ============================================================ */
-.meta-row #metaInfo { cursor: pointer; user-select: none; }
-.meta-row #metaInfo:hover { color: var(--accent); }
+/* 编辑区第二行的分类名可点 → 弹层改分类。
+   只让「分类名」本身是热区：原先整行绑 click，鼠标移到「创建于…」上也高亮，
+   点日期也弹分类框（用户反馈）。*/
+.meta-cat {
+  display: inline-flex; align-items: center; gap: 3px;
+  max-width: 34ch;
+  padding: 1px 6px; margin-left: -6px;
+  border: 0; border-radius: 6px; background: transparent;
+  font: inherit; color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: pointer; user-select: none;
+  transition: color .12s var(--ease), background-color .12s var(--ease);
+}
+.meta-cat:hover { color: var(--accent); background: var(--accent-soft); }
+.meta-cat.is-empty { opacity: .82; }
+.meta-caret { font-style: normal; font-size: 9px; opacity: .6; flex: none; }
+.meta-date { white-space: nowrap; }
 
 /* 分类选择弹层 */
 .picker-list { max-height: 56vh; overflow-y: auto; margin: -4px -6px 0; }

@@ -1052,11 +1052,15 @@
     }
     return parts.join(' / ');
   }
-  /* 编辑区第二行那句「分类名 ▾ · 创建于 …」。带 ▾ 是提示「这里可以点」，
-     点开就是分类选择弹层。抽成函数是因为改完分类要就地重写这一行。 */
-  function metaInfoText(note) {
+  /* 编辑区第二行那句「分类名 ▾ · 创建于 …」。
+     分类单独做成按钮：之前整行是一个可点元素，鼠标移到日期上也会高亮，
+     点日期也弹分类选择器 —— 范围太大了。抽成函数是因为改完分类要就地重写这一行。 */
+  function metaInfoHTML(note) {
     const cat = catMap().get(note.categoryId);
-    return `${cat ? cat.name : '未分类'} ▾ · 创建于 ${fmtDate(note.createdAt)}`;
+    const name = escapeHtml(cat ? cat.name : '未分类');
+    return `<button type="button" class="meta-cat${cat ? '' : ' is-empty'}" data-meta-cat="1" aria-label="修改分类">${name}<i class="meta-caret" aria-hidden="true">▾</i></button>`
+      + '<span class="meta-dot">·</span>'
+      + `<span class="meta-date">创建于 ${escapeHtml(fmtDate(note.createdAt))}</span>`;
   }
   /* 改完分类后，把编辑区第二行这句就地重写。
      编辑区显示的永远是「当前打开的那篇」，所以别的笔记改了分类不该动这一行。
@@ -1066,7 +1070,7 @@
   function refreshMetaFor(note) {
     if (!note || state.selNote !== note.id) return;
     const el = $('#metaInfo');
-    if (el) el.textContent = metaInfoText(note);
+    if (el) el.innerHTML = metaInfoHTML(note);
   }
   function scopeName(scope) {
     if (state.search.trim()) return '搜索结果';
@@ -1820,7 +1824,7 @@
     decorate($('#richPane'));
     $('#richPane').classList.remove('hidden');
 
-    $('#metaInfo').textContent = metaInfoText(note);
+    $('#metaInfo').innerHTML = metaInfoHTML(note);
     setSaveState('', `已保存 ${new Date(note.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`);
 
     applyFormat();
@@ -1881,15 +1885,59 @@
     }
   }
 
+  /* 记下按下的位置：用来把「单击进编辑」和「拖选文字」分开。
+     阅读态拖选文字时，鼠标抬起后浏览器还会补一个 click，若照常进编辑态
+     并 focus 正文，focus 会把刚选好的选区塌掉 —— 表现就是「正文文字选不中」。 */
+  let downPoint = null;
+  document.addEventListener('mousedown', (e) => {
+    downPoint = e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
+  }, true);
+
+  /* 这段选区是不是「用户真的选了一段话」 —— 非塌陷且不是纯空白 */
+  function hasRealSelection() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return false;
+    return !!String(sel).trim();
+  }
+
+  /* 进编辑态要等一小会儿：双击选词 / 三击选段也会先来一次 click，
+     立刻进编辑态就会把它吃掉（focus 塌陷选区），结果「双击选不中字」。
+     等到这个窗口过去还没有选区，才认为用户是想开始写。 */
+  let enterTimer = null;
+  function cancelEnterEdit() {
+    if (enterTimer) { clearTimeout(enterTimer); enterTimer = null; }
+  }
+  /* 双击 / 三击：明确是选字，撤销排队中的「进编辑态」 */
+  document.addEventListener('dblclick', cancelEnterEdit, true);
+  document.addEventListener('mouseup', (e) => {
+    if (e.detail >= 3) cancelEnterEdit();
+  }, true);
+  /* 换了笔记 / 切成阅读态以外的形态时，排队中的动作作废 —— 定时器回调自己
+     会检查 noteMode 和选区，这里不需要额外挂钩，留着这个注释说明意图。 */
+
   document.addEventListener('click', (e) => {
     /* 阅读态点正文 → 进编辑态 */
+    const dp = downPoint;
+    downPoint = null;
+    cancelEnterEdit();
     if (noteMode !== 'read') return;
     const body = $('#editorBody');
     if (!body || !body.contains(e.target)) return;
     /* 点在图片链接上时先让链接生效，不进编辑态 */
     const a = e.target.closest && e.target.closest('a[href]');
     if (a) return;
-    enterEditAt(e.clientX, e.clientY);
+    /* 拖着选了一段（位移超过 4px）→ 这是在选字，别进编辑态 */
+    if (dp && (Math.abs(e.clientX - dp.x) > 4 || Math.abs(e.clientY - dp.y) > 4)) return;
+    /* 已经有非空选区 → 同上，别把选区塌掉 */
+    if (hasRealSelection()) return;
+    const x = e.clientX;
+    const y = e.clientY;
+    enterTimer = setTimeout(() => {
+      enterTimer = null;
+      /* 窗口期里选区出来了（双击选词）就不再进编辑态 */
+      if (noteMode !== 'read' || hasRealSelection()) return;
+      enterEditAt(x, y);
+    }, 180);
   });
 
   /* 阅读态滚动：正文大标题滚过顶栏后，顶栏小标题淡入接管 */
@@ -3095,7 +3143,7 @@
         renderList();
         const cat = catMap().get(id);
         const el = $('#metaInfo');
-        if (el) el.textContent = metaInfoText(note);
+        if (el) el.innerHTML = metaInfoHTML(note);
         toast('已移动到「' + (cat ? cat.name : '未分类') + '」');
       });
     });
@@ -3876,8 +3924,14 @@
     if (note) deleteNote(note);
   });
 
-  /* 编辑区那行「分类名 ▾」可点击 → 移动到这个分类（与云端同一入口） */
-  $('#metaInfo').addEventListener('click', () => openCategoryPicker(currentNote()));
+  /* 编辑区那行只有「分类名」本身可点 → 改分类（与云端同一入口）。
+     日期不属于可点范围：整行绑 click 会让鼠标移到「创建于…」上也高亮、
+     点日期也弹分类框（用户反馈）。 */
+  $('#metaInfo').addEventListener('click', (e) => {
+    if (!e.target.closest || !e.target.closest('[data-meta-cat]')) return;
+    const note = currentNote();
+    if (note) openCategoryPicker(note);
+  });
 
   /* 华为风编辑态顶栏：撤销 / 重做 / 完成 */
   $('#sjUndoBtn').addEventListener('click', () => {
