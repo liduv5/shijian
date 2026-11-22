@@ -418,8 +418,9 @@ ok('合并相关样式仅窄屏、未在桌面放开（依托 .sj-cat-mgr 隐藏
   styleSrc.indexOf('.sj-merge-list {') >= 0 &&
   styleSrc.indexOf('.sj-merge-row b {') >= 0);
 
-ok('详情页抬高主区给固定底栏让位，附件面板不再被遮挡',
-  /body\.sj-note-open \.app \{[\s\S]{0,140}bottom: calc\(56px \+ env\(safe-area-inset-bottom, 0px\)\);/.test(styleSrc) &&
+ok('底栏下线后主区铺到底；编辑态抬到 52px 工具条上方，附件面板仍不被遮挡',
+  /body\.sj-note-open\.sj-note-edit \.app \{[\s\S]{0,140}bottom: calc\(52px \+ env\(safe-area-inset-bottom, 0px\)\);/.test(styleSrc) &&
+  !/body\.sj-note-open \.app \{[\s\S]{0,140}bottom: calc\(56px/.test(styleSrc) &&
   styleSrc.indexOf('.attach-panel {') >= 0 &&
   styleSrc.indexOf('position: fixed; z-index: 61;') >= 0);
 
@@ -482,7 +483,8 @@ ok('手机端不再有 Markdown / 富文本切换，标题与返回箭头同一�
   /body\.sj-note-open:not\(\.sj-note-edit\) \.editor-head \{ display: none; \}/.test(styleSrc) &&
   /\.sj-rh-title \{[\s\S]{0,160}font-size: 27px/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane \{[\s\S]{0,120}font-size: 19px; line-height: 1\.78/.test(styleSrc) &&
-  /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-detail-bar button\[data-act="back"\] \{ display: none; \}/.test(styleSrc) &&
+  /* 详情底栏整条下线，动作搬进右上角四点菜单 */
+  !/body\.sj-note-open \.sj-detail-bar:not\(\.hidden\) \{ display: flex; \}/.test(styleSrc) &&
   styleSrc.indexOf('.sj-meta-cat {') >= 0);
 
 ok('标题下面只留一份分类且可点：分类胶囊可点换类、右边不再重复一颗',
@@ -878,6 +880,44 @@ ok('加号落到底部且与首次安装提示条避让',
   /body\.sj-tip-open:not\(\.sj-note-open\) \.sj-fab \{[\s\S]{0,80}bottom: calc\(78px/.test(styleSrc) &&
   /classList\.add\('sj-tip-open'\)/.test(pwaSrc) &&
   /classList\.remove\('sj-tip-open'\)/.test(pwaSrc));
+
+console.log('\n阅读态底栏收进右上角菜单');
+ok('详情底栏不再显示（56px 屏高还给正文）',
+  /\.sj-detail-bar \{\s+display: none;/.test(styleSrc)
+  && !/sj-detail-bar:not\(\.hidden\) \{ display: flex/.test(styleSrc));
+ok('打开笔记时菜单换成笔记动作：分享 / 收藏 / 删除 + 原「更多」那几项',
+  /function noteMoreRows\(note\) \{/.test(appSrc)
+  && /act: 'n-share'/.test(appSrc) && /act: 'n-star'/.test(appSrc)
+  && /act: 'n-delete'/.test(appSrc) && /act: 'n-md'/.test(appSrc)
+  && /act: 'n-history'/.test(appSrc) && /act: 'n-move'/.test(appSrc)
+  && /const rows = note \? noteMoreRows\(note\) : MORE_ROWS;/.test(appSrc));
+ok('列表首页仍是原来那套全局菜单（两套内容按有没有打开笔记切）',
+  /act: 'tree', label: '目录分类'/.test(appSrc) && /MORE_ROWS/.test(appSrc));
+ok('笔记菜单的动作全转手给现有按钮，不另写一套',
+  /if \(act === 'n-share'\) \{ const el = \$\('#exportBtn2'\);/.test(appSrc)
+  && /if \(act === 'n-star'\) \{ const el = \$\('#starBtn'\);/.test(appSrc)
+  && /if \(act === 'n-delete'\) \{ const el = \$\('#deleteNoteBtn'\);/.test(appSrc)
+  && /if \(act === 'n-md'\) \{ showMarkdownSource\(\);/.test(appSrc));
+ok('菜单分隔线与红字「删除笔记」有样式',
+  /\.sj-more-menu \.sj-more-sep \{/.test(styleSrc)
+  && /\.sj-more-menu \.sj-more-row\.is-danger/.test(styleSrc));
+
+console.log('\n附件面板：阅读态可折成窄条 + 与样式面板互斥');
+ok('附件面板三态（open / collapsed / hidden）有统一读写函数',
+  /function attachStateOf\(\) \{/.test(appSrc) && /function setAttachState\(state\) \{/.test(appSrc));
+ok('阅读态点 ⌄ 压成窄条、箭头翻上来；编辑态仍是整块收起',
+  /classList\.toggle\('is-collapsed'\)/.test(appSrc)
+  && /body\.sj-note-open:not\(\.sj-note-edit\) \.attach-panel\.is-collapsed \{/.test(styleSrc)
+  && /\.attach-panel\.is-collapsed #closeAttachBtn \.ico \{[\s\S]{0,120}rotate\(180deg\)/.test(styleSrc));
+ok('窄条整条是抓手（按钮铺满 + 点面板也能展开）',
+  /#closeAttachBtn \{\s+width: 100%; height: 26px/.test(styleSrc)
+  && /\$\('#attachPanel'\)\.addEventListener\('click'/.test(appSrc));
+ok('阅读态默认摊开（有附件时）',
+  /setAttachState\(note\.attachments && note\.attachments\.length \? 'open' : 'hidden'\)/.test(appSrc));
+ok('点 A 先收附件面板，关掉样式面板原样还原',
+  /function openStyleSheet\(\) \{[\s\S]{0,400}collapseAttachForSheet\(\)/.test(appSrc)
+  && /function closeStyleSheet\(\) \{[\s\S]{0,1600}restoreAttachAfterSheet\(\)/.test(appSrc)
+  && /let ssAttachPrev = null;/.test(appSrc));
 
 console.log('\n收藏星标用金色');
 ok('--star-gold 在手机端与电脑端四套主题里都有',

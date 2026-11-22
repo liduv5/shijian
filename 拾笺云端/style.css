@@ -3075,6 +3075,13 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
   .sj-more-menu .sj-more-row .ico { width: 18px; height: 18px; color: var(--text-3); flex: none; }
   .sj-more-menu .sj-more-row + .sj-more-row { border-top: 1px solid var(--border); border-radius: 0; }
   .sj-more-menu .sj-more-row .sj-more-n { margin-left: auto; font-size: 11px; color: var(--text-3); }
+  /* 笔记页这份菜单里多出来的两样：分组线 / 红字「删除笔记」 */
+  .sj-more-menu .sj-more-sep {
+    height: 1px; margin: 5px 10px;
+    background: var(--border);
+  }
+  .sj-more-menu .sj-more-row.is-danger,
+  .sj-more-menu .sj-more-row.is-danger .ico { color: var(--danger); }
 
   /* 页面顶部留出状态栏安全区，避免大标题贴顶（安全区已由 sticky 顶栏让出，
      这里只做兜底，正常情况为 0） */
@@ -3491,7 +3498,12 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
   }
   .sj-editor-actions button.save:disabled { opacity: .45; cursor: default; }
 
-  /* ---- 详情页底部操作栏 ---- */
+  /* ---- 详情页底部操作栏：已下线 ----
+     原先阅读态底部有一条「分享 / 收藏 / 删除 / 更多」，占掉 56px 屏高，
+     而且和右上角菜单重复。现在这些动作全部收进右上角四点菜单
+     （见 renderMoreMenu 的 noteMoreRows），底栏不再显示。
+     DOM 仍然保留：编辑态工具条与四点菜单都拿它里面那几颗按钮当代理，
+     点一下等于点原来那颗，不重复实现数据链路。 */
   .sj-detail-bar {
     display: none;
     position: fixed; z-index: 61;
@@ -3503,7 +3515,6 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
     border-top: 1px solid var(--border);
   }
   .sj-detail-bar.hidden { display: none; }
-  body.sj-note-open .sj-detail-bar:not(.hidden) { display: flex; }
   .sj-detail-bar button {
     flex: 1; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 2px;
@@ -3514,17 +3525,15 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
   .sj-detail-bar button .ico { width: 21px; height: 21px; }
   .sj-detail-bar button.on { color: var(--accent); }
   .sj-detail-bar button.danger-hover { color: var(--danger); }
-  /* 附件面板贴在 .app 底部，而详情底栏 fixed 盖在最上层。
-     打开笔记时把主区底部抬到底栏上方，否则「附件 1」只露标题、卡片被挡住。 */
+  /* 主区底部：阅读态没有底栏，铺到底（附件面板自带安全区内边距）；
+     编辑态抬到 52px 工具条上方，否则「附件 1」只露标题、卡片被挡住。 */
   body.sj-note-open .app {
-    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
-    /* 打开和收起都要有过渡：只写在 .sj-style-open 里的话，收起就是 378→56 的瞬跳，
+    /* 打开和收起都要有过渡：只写在 .sj-style-open 里的话，收起就是 378→0 的瞬跳，
        整页像闪了一下（用户 2026-11-21 反馈） */
     transition: bottom .18s var(--ease);
   }
-  /* 详情页底栏占位，正文末尾不被遮住 */
-  body.sj-note-open .rich-pane {
-    padding-bottom: calc(180px + env(safe-area-inset-bottom, 0px));
+  body.sj-note-open.sj-note-edit .app {
+    bottom: calc(52px + env(safe-area-inset-bottom, 0px));
   }
 
   /* 样式面板打开时把整个编辑区抬到面板上方（--ss-h 由脚本量出来的面板高度）。
@@ -3690,15 +3699,44 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
   body.sj-note-open:not(.sj-note-edit) .tag-row,
   body.sj-note-open:not(.sj-note-edit) .toolbar { display: none; }
   body.sj-note-open:not(.sj-note-edit) .rich-pane {
-    font-size: 19px; line-height: 1.78; padding: 4px 20px calc(180px + env(safe-area-inset-bottom, 0px));
+    font-size: 19px; line-height: 1.78; padding: 4px 20px calc(20px + env(safe-area-inset-bottom, 0px));
   }
   /* 阅读态按截图收紧段间距：正文是连续的诗行/短段，段落之间不该空出一行 */
   body.sj-note-open:not(.sj-note-edit) .rich-pane p,
   body.sj-note-open:not(.sj-note-edit) .rich-pane div {
     margin: 0 0 2px;
   }
-  /* 阅读态顶栏已有返回箭头，底栏不再重复一个「返回」 */
-  body.sj-note-open:not(.sj-note-edit) .sj-detail-bar button[data-act="back"] { display: none; }
+  /* 底栏整条下线（动作在右上角四点菜单里），这里不再需要单独藏「返回」 */
+
+  /* ---- 附件面板：阅读态可以「向下收成一条」----
+     阅读态默认整块显示（有附件时）。点表头那个 ⌄ 不整块抽走，而是压成
+     一条 26px 的窄条，箭头翻上来 —— 既腾出正文空间，又留个抓手让人知道
+     附件还在、点一下就能展开（用户 2026-11-22 要求）。
+     编辑态与桌面端不受影响：那边点了还是整块收起。 */
+  body.sj-note-open:not(.sj-note-edit) .attach-panel.is-collapsed {
+    padding: 0 0 env(safe-area-inset-bottom, 0px);
+    max-height: none;
+    overflow: hidden;
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -2px 10px -6px rgba(20, 20, 26, .28);
+    cursor: pointer;
+  }
+  .attach-panel.is-collapsed .attach-head {
+    margin: 0; padding: 0; height: 26px;
+    justify-content: center; align-items: center;
+  }
+  .attach-panel.is-collapsed .attach-head > span,
+  .attach-panel.is-collapsed #attachAddBtn,
+  .attach-panel.is-collapsed .attach-list { display: none; }
+  /* 窄条整条都是热区，别让人去戳那 26px 里的小图标 */
+  .attach-panel.is-collapsed #closeAttachBtn {
+    width: 100%; height: 26px; border-radius: 0;
+    color: var(--text-3);
+  }
+  .attach-panel.is-collapsed #closeAttachBtn .ico {
+    width: 17px; height: 17px;
+    transform: rotate(180deg);   /* ⌄ 翻成 ⌃：向上箭头 = 点一下展开 */
+  }
 
   /* ---- 编辑态：紧凑头部 + 编辑工具条 ---- */
   body.sj-note-edit .editor-head { display: none; }

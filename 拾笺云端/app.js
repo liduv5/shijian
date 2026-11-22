@@ -1717,7 +1717,8 @@
     updateAttachBadge();
     wordCount();
 
-    $('#attachPanel').classList.toggle('hidden', !(note.attachments && note.attachments.length));
+    /* 换笔记：附件面板回到「整块摊开」（阅读态默认显示，折叠状态不带到下一篇） */
+    setAttachState(note.attachments && note.attachments.length ? 'open' : 'hidden');
 
     if (focusTitle) {
       $('#titleInput').focus();
@@ -5007,11 +5008,35 @@
   /* 点正文里的图片 → 弹尺寸工具条 */
   bindImgResize($('#richPane'), 'rich');
   bindImgResize($('#richPane'), 'rich');
+
+  /* ---- 附件面板三态：open / collapsed / hidden ----
+     · open     整块摊开
+     · collapsed 阅读态专用：压成一条 26px 窄条，只留一个向上箭头
+     · hidden   整块收起
+     手机阅读态点 ⌄ 走 collapsed（腾空间又留抓手），编辑态与桌面端还是 hidden。
+     样式面板（A）打开时要把它收起来，关掉再还原，所以这里还要一对读写函数。 */
+  function attachHasAny() {
+    const note = currentNote();
+    return !!(note && note.attachments && note.attachments.length);
+  }
+  function attachStateOf() {
+    const el = $('#attachPanel');
+    if (!el || el.classList.contains('hidden')) return 'hidden';
+    return el.classList.contains('is-collapsed') ? 'collapsed' : 'open';
+  }
+  function setAttachState(state) {
+    const el = $('#attachPanel');
+    if (!el) return;
+    if (state !== 'hidden' && !attachHasAny()) state = 'hidden';
+    el.classList.toggle('hidden', state === 'hidden');
+    el.classList.toggle('is-collapsed', state === 'collapsed');
+  }
+
   $('#attachBtn').addEventListener('click', () => {
     const note = currentNote();
     if (!note) return;
     if (note.attachments && note.attachments.length) {
-      $('#attachPanel').classList.toggle('hidden');
+      setAttachState(attachStateOf() === 'hidden' ? 'open' : 'hidden');
     } else {
       const fi = $('#fileInput');
       fi.accept = '';
@@ -5019,7 +5044,25 @@
       fi.click();
     }
   });
-  $('#closeAttachBtn').addEventListener('click', () => $('#attachPanel').classList.add('hidden'));
+  /* 阅读态：⌄ 不整块抽走，压成窄条；再点那条（含翻上来的箭头）展开。
+     编辑态：维持原样，点了整块收起。 */
+  $('#closeAttachBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (NARROW() && !document.body.classList.contains('sj-note-edit')) {
+      const el = $('#attachPanel');
+      if (!el) return;
+      el.classList.toggle('is-collapsed');
+      return;
+    }
+    setAttachState('hidden');
+  });
+  /* 窄条整条都是抓手（按钮已经铺满，这里兜住内边距那几像素） */
+  $('#attachPanel').addEventListener('click', (e) => {
+    const el = $('#attachPanel');
+    if (!el || !el.classList.contains('is-collapsed')) return;
+    if (e.target.closest && e.target.closest('#closeAttachBtn')) return;
+    el.classList.remove('is-collapsed');
+  });
 
   $('#attachAddBtn').addEventListener('click', () => {
     const fi = $('#fileInput');
@@ -6306,6 +6349,20 @@
         && !STYLE_SHEET.classList.contains('sj-ss-closing'));
     }
     let ssCloseTimer = 0;
+    /* 样式面板与附件面板不共存：面板一开就把附件收起来（不管它当时是摊开、
+       折成窄条还是本来就隐藏），并记下当时的状态；面板关掉再原样还回去 ——
+       两块叠在一起时正文只剩一条缝（用户 2026-11-22 要求）。 */
+    let ssAttachPrev = null;
+    function collapseAttachForSheet() {
+      if (ssAttachPrev) return;      /* 已经收过一次：别把「已收」再覆盖成 hidden */
+      ssAttachPrev = attachStateOf();
+      if (ssAttachPrev !== 'hidden') setAttachState('hidden');
+    }
+    function restoreAttachAfterSheet() {
+      const prev = ssAttachPrev;
+      ssAttachPrev = null;
+      if (prev && prev !== 'hidden') setAttachState(prev);
+    }
     function closeStyleSheet() {
       if (!STYLE_SHEET) return;
       /* 还在等键盘收完的那种「半开」状态，一并撤掉 */
@@ -6332,6 +6389,8 @@
          没有焦点，系统连光标都不画，用户会觉得「光标没了」。 */
       const rp = $('#richPane');
       if (rp && document.activeElement !== rp) focusQuiet(rp);
+      /* 附件面板回到打开面板之前的样子（摊开 / 窄条 / 隐藏原样还回去） */
+      restoreAttachAfterSheet();
     }
     /* 面板升降有 180ms 的高度过渡，期间布局一直在变，光标得多跟几帧 */
     function cmSettle() {
@@ -6528,6 +6587,8 @@
     function openStyleSheet() {
       if (!STYLE_SHEET) return;
       clearImgSel();
+      /* 先把附件面板收起来：面板一开它就整块占着正文上方，两块叠一起只剩一条缝 */
+      collapseAttachForSheet();
       /* 调格式不需要输入法：面板弹起时顺手把键盘收掉，
          否则键盘会把面板顶到半屏（用户 2026-11-21 反馈） */
       hideSoftKeyboard();
@@ -6942,6 +7003,13 @@
         if (BODY_BOX) BODY_BOX.scrollTop = rpY + heroH;
       }
       if (!edit) { document.body.classList.remove('sj-note-fmt'); closeStyleSheet(); }
+      /* 附件面板跟着形态走：编辑态不留窄条（那边点 ⌄ 是整块收起），
+         阅读态默认整块摊开 —— 用户 2026-11-22 要求阅读态默认能看到附件。 */
+      if (edit) {
+        if (attachStateOf() === 'collapsed') setAttachState('open');
+      } else {
+        setAttachState(attachHasAny() ? 'open' : 'hidden');
+      }
       const ti = $('#titleInput');
       if (ti) {
         ti.readOnly = !edit;
@@ -7038,6 +7106,8 @@
         /* 还在等键盘收完（面板还没露头）：再点一下按取消算，别让它待会儿自己冒出来 */
         if (styleSheetPending()) {
           stopViewportQuiet();
+          /* 面板没真正露头就取消了：附件面板也得还回去，别白收一次 */
+          restoreAttachAfterSheet();
           const fbtn = EDIT_BAR && EDIT_BAR.querySelector('[data-act="fmt"]');
           if (fbtn) fbtn.classList.remove('on');
           return;
@@ -7138,14 +7208,51 @@
       { act: 'io', label: '导入 / 导出', icon: '<svg viewBox="0 0 24 24" class="ico"><path d="M12 3v12M8.5 9.5 12 13l3.5-3.5M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>' },
       { act: 'theme', label: '切换主题', icon: '<svg viewBox="0 0 24 24" class="ico"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>' },
     ];
+    /* ---- 笔记页的这份菜单：底栏那四个动作 + 原「更多」里的几项 ----
+       以前阅读态底部有一条「分享 / 收藏 / 删除 / 更多」，自占 56px 屏高；
+       现在整条收进这里，列表首页仍然是原来那套全局菜单（目录/批量/排序…），
+       两套内容按「有没有打开笔记」切换 —— 全局项在笔记页没用（用户 2026-11-22 要求）。 */
+    const I_SHARE = '<svg viewBox="0 0 24 24" class="ico"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg>';
+    const I_STAR = '<svg viewBox="0 0 24 24" class="ico"><path d="M12 3.6l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.8l5.9-.8z"/></svg>';
+    const I_SRC = '<svg viewBox="0 0 24 24" class="ico"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg>';
+    const I_HIST = '<svg viewBox="0 0 24 24" class="ico"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3 4v5h5"/><path d="M12 8v4.5l3 1.8"/></svg>';
+    const I_MOVE = '<svg viewBox="0 0 24 24" class="ico"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h8A1.5 1.5 0 0 1 20 10v7.5a1.5 1.5 0 0 1-1.5 1.5h-14A1.5 1.5 0 0 1 3 17.5z"/></svg>';
+    const I_SYNC = '<svg viewBox="0 0 24 24" class="ico"><path d="M20 12a8 8 0 0 0-13.7-5.7"/><path d="M4 12a8 8 0 0 0 13.7 5.7"/></svg>';
+    const I_DEL = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>';
+    function noteMoreRows(note) {
+      return [
+        { act: 'n-share', label: '分享 / 导出', icon: I_SHARE },
+        { act: 'n-star', label: note.starred ? '取消收藏' : '加入收藏', icon: I_STAR,
+          hint: note.starred ? '已收藏' : '' },
+        { sep: true },
+        { act: 'n-md', label: 'Markdown 源码', icon: I_SRC },
+        { act: 'n-history', label: '历史版本', icon: I_HIST },
+        { act: 'n-move', label: '移动到分类', icon: I_MOVE },
+        { act: 'n-sync', label: '同步到云端', icon: I_SYNC },
+        { sep: true },
+        { act: 'n-delete', label: '删除笔记', icon: I_DEL, danger: true },
+      ];
+    }
     function renderMoreMenu() {
       if (!MENU) return;
-      MENU.innerHTML = MORE_ROWS.map((r) =>
-        `<button type="button" class="sj-more-row" data-act="${r.act}">${r.icon}<span>${r.label}</span>`
-        + (r.hint ? `<span class="sj-more-n">${r.hint}</span>` : '') + '</button>').join('');
+      const note = currentNote();
+      const rows = note ? noteMoreRows(note) : MORE_ROWS;
+      MENU.innerHTML = rows.map((r) => (r.sep
+        ? '<div class="sj-more-sep"></div>'
+        : `<button type="button" class="sj-more-row${r.danger ? ' is-danger' : ''}" data-act="${r.act}">`
+          + `${r.icon}<span>${r.label}</span>`
+          + (r.hint ? `<span class="sj-more-n">${r.hint}</span>` : '')
+          + '</button>')).join('');
     }
     function doMore(act) {
       hideMoreMenu();
+      /* 笔记页那几项：全部转手给现有按钮/函数，不重复实现 */
+      if (act === 'n-share') { const el = $('#exportBtn2'); if (el) el.click(); return; }
+      if (act === 'n-star') { const el = $('#starBtn'); if (el) el.click(); return; }
+      if (act === 'n-delete') { const el = $('#deleteNoteBtn'); if (el) el.click(); return; }
+      if (act === 'n-md') { showMarkdownSource(); return; }
+      if (act === 'n-history') { const el = $('#historyBtn'); if (el) el.click(); return; }
+      if (act === 'n-move') { const n = currentNote(); if (n) openCategoryPicker(n); return; }
       if (act === 'tree') { hideCatSheet(); openDrawer('tree'); }
       else if (act === 'batch') {
         hideCatSheet();
