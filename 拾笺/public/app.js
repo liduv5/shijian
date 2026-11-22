@@ -368,6 +368,11 @@
   function bindImgResize(container, mode) {
     if (!container) return;
     container.addEventListener('click', (e) => {
+      /* 阅读态点图是「看大图」，尺寸条是写操作（改 width 百分比）：
+         这里直接放行，交给下面那条阅读态监听去开预览层。
+         不这么分，一张图会同时弹出尺寸条和预览层，尺寸条被压在预览层下面
+         只露半截（用户 2026-11-22 报的问题）。 */
+      if (noteMode === 'read') return;
       const img = e.target.closest ? e.target.closest('img') : null;
       if (!img || !container.contains(img)) return;
       e.preventDefault();
@@ -1746,10 +1751,13 @@
   }
 
   /* 切形态。edit=true 进编辑态，false 回阅读态。
-     两种形态共用同一套 DOM，只切 body 上的 class 和 contenteditable。 */
+     两种形态共用同一套 DOM，只切 body 上的 class 和 contenteditable。
+     noteMode 这个变量要跟着走：点图开大图、⌘B 加粗都靠它判形态，
+     长期不赋值的话它就永远停在 'read'（2026-11-22 查出来的老坑）。 */
   function setNoteMode(edit, opts = {}) {
     const note = currentNote();
     if (!note) return;
+    noteMode = edit ? 'edit' : 'read';
     if (edit) {
       document.body.classList.remove(NOTE_READ);
       document.body.classList.add(NOTE_EDIT);
@@ -1772,6 +1780,9 @@
       if (rp) rp.setAttribute('contenteditable', 'false');
       const ti = $('#titleInput');
       if (ti) ti.readOnly = true;
+      /* 回阅读态时图片尺寸条不该留着：它是写操作的面板，
+         留着会浮在正文上，再点图还会跟大图预览撞在一起 */
+      closeImgSizer();
       placeReadTitle();
     }
   }
@@ -1782,6 +1793,7 @@
     if (id !== noteModeId) {
       noteModeId = id;
       /* 换了一篇：先回到阅读态，滚动位置归零 */
+      noteMode = 'read';
       document.body.classList.remove(NOTE_EDIT);
       document.body.classList.add(NOTE_READ);
       const ti = $('#titleInput');
@@ -1953,6 +1965,9 @@
     const img = e.target && e.target.closest ? e.target.closest('img') : null;
     if (!img || !img.closest('#richPane')) return;
     e.preventDefault();
+    /* 兜一道：尺寸条要是还开着（编辑态点了图再切回阅读），先收掉再开大图，
+       否则它会躲在预览层后面露半截 */
+    closeImgSizer();
     openAttLightbox({ type: 'image/png', data: img.currentSrc || img.src, name: img.alt || '图片' });
   });
 

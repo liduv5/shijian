@@ -346,6 +346,17 @@ ok('阅读态点图片开大图，复用附件查看器；编辑态不受影响'
   /function openSrcLightbox|openAttLightbox\(\{ type: 'image\/png', data:/.test(js)
   && /if \(noteMode !== 'read'\) return;/.test(js)
   && /function openAttLightbox\(a\)/.test(js));
+/* 点图只该发生一件事：阅读态看大图，编辑态调宽度。
+   两边同时触发时，尺寸条会被遮在预览层后面露半截（2026-11-22 用户报的）。 */
+ok('阅读态点图不再弹出图片宽度条（尺寸条是写操作）',
+  /if \(noteMode === 'read'\) return;\s*\n\s*const img = e\.target\.closest/.test(js));
+ok('切回阅读态时自动收起图片宽度条',
+  /closeImgSizer\(\);\s*\n\s*placeReadTitle\(\);/.test(js));
+/* noteMode 之前是个「声明了但从不赋值」的死变量，永远停在 'read'：
+   结果编辑态点图也会开大图，⌘B 加粗也永远进不了分支。 */
+ok('形态变量 noteMode 跟着 setNoteMode 走',
+  /noteMode = edit \? 'edit' : 'read';/.test(js)
+  && /noteMode = 'read';/.test(js));
 ok('下拉宽度自己量（不依赖 field-sizing）',
   /function fitSel\(s\)/.test(js) && /function measureSel\(s\)/.test(js)
   && /white-space:pre/.test(js)
