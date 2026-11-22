@@ -1399,8 +1399,17 @@ html[data-theme="dark"] .sj-tip {
 }
 /* 去掉安卓默认的点击蓝块（附件按钮、大图预览等被点到的区域） */
 .att-view, .att-view *,
-.att-acts, .att-act {
+.att-acts, .att-act,
+/* 附件面板整块：表头那颗 ⌄ / +，以及收成窄条后铺满整条的按钮 ——
+   窄屏这套配色里强调色是华为蓝，系统高亮一压上去就是一块淡蓝，特别显眼。 */
+.attach-panel, .attach-panel * {
   -webkit-tap-highlight-color: transparent;
+}
+/* 触屏没有真正的 hover：手指点完 :hover 会留在元素上，底色淡入淡出
+   看起来像「闪了一下」。附件表头只有这两颗按钮，就地收掉。 */
+@media (hover: none) {
+  .attach-head .icon-btn:hover,
+  .attach-head .icon-btn:focus { background: transparent; }
 }
 /* 大图里的「下载原图」：给支持原生下载的环境用；手机上长按图片那条路更稳。 */
 .att-view-dl {

@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-161 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-162 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-22-161';
+const BUILD = '2026-11-22-162';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -972,6 +972,12 @@ ok('点 A 先收附件面板，关掉样式面板原样还原',
   /function openStyleSheet\(\) \{[\s\S]{0,400}collapseAttachForSheet\(\)/.test(appSrc)
   && /function closeStyleSheet\(\) \{[\s\S]{0,1600}restoreAttachAfterSheet\(\)/.test(appSrc)
   && /let ssAttachPrev = null;/.test(appSrc));
+/* 手机点 ⌄ / + 会先闪一块淡蓝：窄屏那套配色里 --accent 是华为蓝，
+   系统点击高亮压上去就成一块蓝底；折叠成窄条后按钮铺满整条，更明显。 */
+ok('附件面板与表头按钮吃掉系统点击高亮',
+  /\.attach-panel, \.attach-panel \* \{\s*-webkit-tap-highlight-color: transparent;/.test(styleSrc));
+ok('触屏上不再留 :hover 底色（表头两颗按钮）',
+  /@media \(hover: none\) \{[\s\S]{0,160}\.attach-head \.icon-btn:hover,[\s\S]{0,80}\.attach-head \.icon-btn:focus \{ background: transparent; \}/.test(styleSrc));
 
 console.log('\n收藏星标用金色');
 ok('--star-gold 在手机端与电脑端四套主题里都有',
