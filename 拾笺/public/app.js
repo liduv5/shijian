@@ -1741,6 +1741,311 @@
       && /<img\s[^>]*src=["'](?:\/api\/files\/|data:image\/)/i.test(content);
   }
 
+  /* ============================================================
+     华为风笔记编辑：阅读态 / 编辑态双形态
+     ------------------------------------------------------------
+     电脑端之前打开笔记就是编辑器：顶栏一排图标 + 常驻工具条 +
+     源码/预览/分屏三态。手机端是两态（先读后写），这一段把电脑端
+     也改成同一套交互，交互外壳换了，数据格式（Markdown 源码 /
+     富文本 HTML）和保存链路一个字没动。
+       阅读态 —— 正文渲染出来读，大标题在正文顶部随内容上滚，
+                 滚过顶栏后顶栏的小标题淡入接管；
+       编辑态 —— 点正文进入，顶栏出现撤销/重做/完成，底部浮出工具条，
+                 格式选项收进右侧面板。
+     ============================================================ */
+  const NOTE_READ = 'sj-note-read';
+  const NOTE_EDIT = 'sj-note-edit';
+  const EDIT_BAR = $('#sjEditBar');
+  const STYLE_PANEL = $('#sjStylePanel');
+  const STYLE_MASK = $('#sjStyleMask');
+  const READ_HERO = $('#sjReadHero');
+  const READ_TITLE = $('#sjReadTitle');
+  const READ_META = $('#sjRhMeta');
+  let noteMode = 'read';          /* read | edit */
+  let noteModeId = null;           /* 当前处于哪种形态的是哪篇笔记 */
+
+  function stylePanelOpen() {
+    return !!(STYLE_PANEL && !STYLE_PANEL.classList.contains('hidden'));
+  }
+
+  /* 阅读态正文顶部的分类 + 日期。分类可点 → 沿用现有分类选择器 */
+  function renderReadMeta(note) {
+    if (!READ_META) return;
+    if (!note) { READ_META.innerHTML = ''; return; }
+    const cat = note.categoryId ? catMap().get(note.categoryId) : null;
+    const catBtn = document.createElement('button');
+    catBtn.type = 'button';
+    catBtn.className = 'sj-rh-cat' + (cat ? '' : ' is-empty');
+    catBtn.textContent = cat ? cat.name : '未分类';
+    catBtn.addEventListener('click', (e) => { e.stopPropagation(); openCategoryPicker(note); });
+    const date = document.createElement('span');
+    date.className = 'sj-rh-date';
+    date.textContent = '创建于 ' + fmtDate(note.createdAt);
+    READ_META.innerHTML = '';
+    READ_META.appendChild(catBtn);
+    READ_META.appendChild(date);
+  }
+
+  /* 顶栏小标题的接管：正文大标题滚到顶栏下方时淡入。
+     进度按「大标题底边离顶栏还有多远」算，和手机端同一套算法：
+     大标题还露着时小标题是透明的，大标题整个滚过去才淡入接管。 */
+  function placeReadTitle() {
+    const ti = $('#titleInput');
+    if (!ti || !READ_HERO) return;
+    if (noteMode !== 'read') { ti.style.opacity = ''; document.body.classList.remove('sj-head-solid'); return; }
+    const hero = READ_HERO.getBoundingClientRect();
+    const head = document.querySelector('.editor-head');
+    const headBottom = head ? head.getBoundingClientRect().bottom : 0;
+    const heroH = hero.height || 1;
+    const p = Math.min(1, Math.max(0, (headBottom - hero.bottom) / Math.max(40, heroH)));
+    ti.style.opacity = p > 0.05 ? p.toFixed(2) : '0';
+    document.body.classList.toggle('sj-head-solid', p > 0.9);
+  }
+
+  /* 切形态。edit=true 进编辑态，false 回阅读态。
+     两种形态共用同一套 DOM，只切 body 上的 class 和 contenteditable。 */
+  function setNoteMode(edit, opts = {}) {
+    const note = currentNote();
+    if (!note) return;
+    if (edit) {
+      document.body.classList.remove(NOTE_READ);
+      document.body.classList.add(NOTE_EDIT);
+      const rp = $('#richPane');
+      if (rp) rp.setAttribute('contenteditable', 'true');
+      if (EDIT_BAR) EDIT_BAR.classList.remove('hidden');
+      /* 标题框在编辑态才可写；阅读态是只读的展示 */
+      const ti = $('#titleInput');
+      if (ti) { ti.readOnly = false; ti.style.opacity = ''; }
+      document.body.classList.remove('sj-head-solid');
+      /* 进编辑态时把 Markdown 切到可写的源码态（原来在阅读态是渲染出来的） */
+      if (viewFormat === 'md') {
+        state.viewMode = 'edit';
+        applyFormat('md');
+        renderToolbar();
+      }
+      if (opts.focus !== false) {
+        setTimeout(() => {
+          const t = viewFormat === 'rich' ? $('#richPane') : $('#mdInput');
+          if (t) t.focus();
+        }, 0);
+      }
+    } else {
+      closeStylePanel();
+      document.body.classList.remove(NOTE_EDIT);
+      document.body.classList.add(NOTE_READ);
+      const rp = $('#richPane');
+      if (rp) rp.setAttribute('contenteditable', 'false');
+      if (EDIT_BAR) EDIT_BAR.classList.add('hidden');
+      const ti = $('#titleInput');
+      if (ti) ti.readOnly = true;
+      /* Markdown 回到渲染态（阅读态看的是排版结果，不是源码） */
+      if (viewFormat === 'md') {
+        state.viewMode = 'preview';
+        applyFormat('md');
+        renderToolbar();
+      }
+      placeReadTitle();
+    }
+  }
+
+  /* 打开一篇笔记时同步形态：换笔记就重置成阅读态。 */
+  function syncNoteMode(note) {
+    const id = note ? String(note.id) : null;
+    if (id !== noteModeId) {
+      noteModeId = id;
+      /* 换了一篇：先回到阅读态，滚动位置归零 */
+      document.body.classList.remove(NOTE_EDIT);
+      document.body.classList.add(NOTE_READ);
+      if (EDIT_BAR) EDIT_BAR.classList.add('hidden');
+      closeStylePanel();
+      const ti = $('#titleInput');
+      if (ti) ti.readOnly = true;
+      const rp = $('#richPane');
+      if (rp) rp.setAttribute('contenteditable', 'false');
+      if (note) {
+        const body = $('#editorBody');
+        if (body) body.scrollTop = 0;
+      }
+    }
+    if (READ_TITLE) READ_TITLE.textContent = note ? (String(note.title || '').trim() || '无标题笔记') : '';
+    renderReadMeta(note);
+    placeReadTitle();
+  }
+
+  /* ---- 格式面板：内容随当前格式（富文本 / Markdown）变化 ---- */
+  /* 面板是浮层，点按钮时正文会失焦，浏览器的选区就丢了。
+     所以打开面板前先把选区存下来，点按钮时先恢复回去。
+     （面板按钮在 mousedown 上 preventDefault 就是为了不让焦点跑掉，
+       但 selectionchange 不一定会触发，savedRange 可能还是旧的，
+       这里自己存一份更稳。） */
+  let panelRange = null;
+  function capturePanelRange() {
+    const pane = $('#richPane');
+    const sel = window.getSelection();
+    if (!pane || !sel || !sel.rangeCount) return;
+    const r = sel.getRangeAt(0);
+    if (pane.contains(r.commonAncestorContainer)) panelRange = r.cloneRange();
+  }
+  function restorePanelRange() {
+    const pane = $('#richPane');
+    if (!panelRange || !pane) return false;
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(panelRange);
+    return true;
+  }
+
+  function renderStylePanel() {
+    const body = $('#sjStyleBody');
+    if (!body) return;
+    body.innerHTML = '';
+    const group = (label) => {
+      const g = document.createElement('div');
+      g.className = 'sj-sp-group';
+      if (label) {
+        const l = document.createElement('span');
+        l.className = 'sj-sp-label';
+        l.textContent = label;
+        g.appendChild(l);
+      }
+      const grid = document.createElement('div');
+      grid.className = 'sj-sp-grid';
+      g.appendChild(grid);
+      body.appendChild(g);
+      return grid;
+    };
+    const spBtn = (parent, html, title, fn, cls = '') => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sj-sp-btn ' + cls;
+      b.title = title;
+      b.innerHTML = html;
+      b.addEventListener('mousedown', (e) => e.preventDefault());
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        /* 先把正文里的选区放回去，格式才作用在用户选的那段上 */
+        restorePanelRange();
+        fn();
+      });
+      parent.appendChild(b);
+      return b;
+    };
+
+    if (viewFormat === 'md') {
+      /* Markdown 源码态：这些是往光标处插语法的 */
+      const g1 = group('结构');
+      spBtn(g1, '<span class="sj-sp-glyph">H1</span>', '一级标题', () => prefixLine('# '));
+      spBtn(g1, '<span class="sj-sp-glyph">H2</span>', '二级标题', () => prefixLine('## '));
+      spBtn(g1, '<span class="sj-sp-glyph">H3</span>', '三级标题', () => prefixLine('### '));
+      spBtn(g1, '<span class="sj-sp-glyph">正文</span>', '正文', () => prefixLine(''));
+      const g2 = group('强调');
+      spBtn(g2, '<span class="sj-sp-glyph b">B</span>', '加粗', () => wrapSel('**', '**', '粗体'));
+      spBtn(g2, '<span class="sj-sp-glyph i">I</span>', '斜体', () => wrapSel('*', '*', '斜体'));
+      spBtn(g2, '<span class="sj-sp-glyph u">U</span>', '下划线', () => wrapSel('<u>', '</u>', '下划线'));
+      spBtn(g2, I.strike, '删除线', () => wrapSel('~~', '~~', '删除线'));
+      const g3 = group('列表');
+      spBtn(g3, I.list, '无序列表', () => prefixLine('- '));
+      spBtn(g3, I.listOrdered, '有序列表', () => prefixLine('1. '));
+      spBtn(g3, I.check, '任务列表', () => prefixLine('- [ ] '));
+      spBtn(g3, I.quote, '引用', () => prefixLine('> '));
+      const g4 = group('插入');
+      spBtn(g4, I.link, '链接', () => insertLink());
+      spBtn(g4, I.table, '表格', () => insertTable());
+      spBtn(g4, I.hr, '分隔线', () => insertAtCursor('\n---\n'));
+      return;
+    }
+
+    /* 富文本：作用在正文选区上 */
+    const g1 = group('文字');
+    spBtn(g1, '<span class="sj-sp-glyph b">B</span>', '加粗', () => exec('bold'));
+    spBtn(g1, '<span class="sj-sp-glyph i">I</span>', '斜体', () => exec('italic'));
+    spBtn(g1, '<span class="sj-sp-glyph u">U</span>', '下划线', () => exec('underline'));
+    spBtn(g1, I.strike, '删除线', () => exec('strikeThrough'));
+    const g2 = group('段落');
+    spBtn(g2, '<span class="sj-sp-glyph">H1</span>', '一级标题', () => exec('formatBlock', '<h1>'));
+    spBtn(g2, '<span class="sj-sp-glyph">H2</span>', '二级标题', () => exec('formatBlock', '<h2>'));
+    spBtn(g2, '<span class="sj-sp-glyph">H3</span>', '三级标题', () => exec('formatBlock', '<h3>'));
+    spBtn(g2, '<span class="sj-sp-glyph">正文</span>', '正文', () => exec('formatBlock', '<p>'));
+    const g3 = group('对齐');
+    spBtn(g3, '<span class="sj-sp-glyph">左</span>', '左对齐', () => cssCmd('justifyLeft'));
+    spBtn(g3, '<span class="sj-sp-glyph">中</span>', '居中', () => cssCmd('justifyCenter'));
+    spBtn(g3, '<span class="sj-sp-glyph">右</span>', '右对齐', () => cssCmd('justifyRight'));
+    const g4 = group('列表');
+    spBtn(g4, I.list, '无序列表', () => exec('insertUnorderedList'));
+    spBtn(g4, I.listOrdered, '有序列表', () => exec('insertOrderedList'));
+    spBtn(g4, I.quote, '引用', () => exec('formatBlock', '<blockquote>'));
+    const g5 = group('字号');
+    const sg = document.createElement('div');
+    sg.className = 'sj-sp-sizes';
+    const sizes = [['14', '小'], ['16', '中'], ['18', '大'], ['22', '特大']];
+    sizes.forEach(([px, label]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sj-sp-size';
+      b.textContent = label;
+      b.title = '字号 ' + px + 'px';
+      b.addEventListener('mousedown', (e) => e.preventDefault());
+      b.addEventListener('click', (e) => { e.preventDefault(); restorePanelRange(); execFontSize(px); });
+      sg.appendChild(b);
+    });
+    const g5wrap = document.createElement('div');
+    g5wrap.className = 'sj-sp-group';
+    const l5 = document.createElement('span');
+    l5.className = 'sj-sp-label';
+    l5.textContent = '字号';
+    g5wrap.appendChild(l5);
+    g5wrap.appendChild(sg);
+    body.appendChild(g5wrap);
+    const g6 = group('其它');
+    spBtn(g6, I.code, '代码块', () => richCodeBlock());
+    spBtn(g6, I.link, '链接', () => {
+      const url = prompt('请输入链接地址', 'https://');
+      if (url) exec('createLink', url);
+    });
+    spBtn(g6, I.hr, '分隔线', () => exec('insertHorizontalRule'));
+    spBtn(g6, '<span class="sj-sp-glyph">Tx</span>', '清除格式', () => exec('removeFormat'));
+  }
+
+  function openStylePanel() {
+    if (!STYLE_PANEL) return;
+    /* 面板弹出来时正文会失焦，选区先存一份，点格式按钮时再放回去 */
+    capturePanelRange();
+    renderStylePanel();
+    /* 面板从顶栏下方开始，不遮住顶栏的 Markdown/富文本 切换和撤销/重做/完成 */
+    const head = document.querySelector('.editor-head');
+    const wrap = $('#editorWrap');
+    if (head && wrap) {
+      const top = head.getBoundingClientRect().bottom - wrap.getBoundingClientRect().top;
+      wrap.style.setProperty('--sj-sp-top', Math.max(0, Math.round(top)) + 'px');
+    }
+    STYLE_PANEL.classList.remove('hidden');
+    if (STYLE_MASK) STYLE_MASK.classList.remove('hidden');
+    const b = EDIT_BAR && EDIT_BAR.querySelector('[data-act="fmt"]');
+    if (b) b.classList.add('on');
+  }
+  function closeStylePanel() {
+    if (!STYLE_PANEL) return;
+    STYLE_PANEL.classList.add('hidden');
+    if (STYLE_MASK) STYLE_MASK.classList.add('hidden');
+    const b = EDIT_BAR && EDIT_BAR.querySelector('[data-act="fmt"]');
+    if (b) b.classList.remove('on');
+  }
+  function toggleStylePanel() {
+    if (stylePanelOpen()) closeStylePanel(); else openStylePanel();
+  }
+
+  /* 富文本下对齐/缩进必须 styleWithCSS=true，否则浏览器生成 align 属性
+     或 <font color>，这些在净化那关会被抹掉，重开笔记就白调了。 */
+  function cssCmd(cmd, val) {
+    const pane = $('#richPane');
+    if (!pane) return;
+    pane.focus();
+    restoreRange();
+    try { document.execCommand('styleWithCSS', false, true); } catch (_) {}
+    try { document.execCommand(cmd, false, val); } catch (_) {}
+    onRichInput();
+  }
+
   function openNote(id, { focusTitle = false } = {}) {
     /* 离开当前笔记：先把脏数据落盘，再切换选中项。所有打开笔记的路径
        （列表、搜索、双链、外部调用）都会经过这里，不用逐个补钩子。 */
@@ -1797,11 +2102,116 @@
 
     $('#attachPanel').classList.toggle('hidden', !(note.attachments && note.attachments.length));
 
+    /* 形态同步：已有笔记进阅读态（先读后写），新建草稿直接进编辑态。
+       Markdown 笔记在阅读态显示渲染结果，编辑态切回源码。 */
+    syncNoteMode(note);
+    if (id === DRAFT_ID) {
+      setNoteMode(true, { focus: false });
+    } else {
+      setNoteMode(false);
+    }
+    /* 富文本在阅读态不可编辑（由 setNoteMode 处理），Markdown 渲染结果要先刷出来 */
+    if (viewFormat === 'md') {
+      state.viewMode = id === DRAFT_ID ? 'edit' : 'preview';
+      applyFormat(viewFormat);
+      refreshPreview();
+    }
+
     if (focusTitle) {
       $('#titleInput').focus();
       $('#titleInput').select();
     }
   }
+
+  /* ---- 双形态的事件绑定 ---- */
+
+  /* 点正文 → 进编辑态。富文本点哪就从哪开始写（把光标放到点的位置）。 */
+  function enterEditAt(clientX, clientY) {
+    if (noteMode === 'edit') return;
+    setNoteMode(true, { focus: false });
+    const target = viewFormat === 'rich' ? $('#richPane') : $('#mdInput');
+    if (!target) return;
+    target.focus();
+    if (viewFormat === 'rich' && clientX != null) {
+      try {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount) {
+          /* 用 caretPosition 找到点击处的文字节点 */
+          if (document.caretRangeFromPoint) {
+            const r = document.caretRangeFromPoint(clientX, clientY);
+            if (r) { sel.removeAllRanges(); sel.addRange(r); }
+          } else if (document.caretPositionFromPoint) {
+            const p = document.caretPositionFromPoint(clientX, clientY);
+            if (p) {
+              const r = document.createRange();
+              r.setStart(p.offsetNode, p.offset);
+              r.collapse(true);
+              sel.removeAllRanges(); sel.addRange(r);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  document.addEventListener('click', (e) => {
+    /* 阅读态点正文 → 进编辑态 */
+    if (noteMode !== 'read') return;
+    const body = $('#editorBody');
+    if (!body || !body.contains(e.target)) return;
+    /* 点在图片链接上时先让链接生效，不进编辑态 */
+    const a = e.target.closest && e.target.closest('a[href]');
+    if (a) return;
+    enterEditAt(e.clientX, e.clientY);
+  });
+
+  /* 阅读态滚动：正文大标题滚过顶栏后，顶栏小标题淡入接管 */
+  $('#editorBody').addEventListener('scroll', () => {
+    if (noteMode === 'read') placeReadTitle();
+  }, { passive: true });
+
+  /* 编辑态底部工具条 */
+  if (EDIT_BAR) {
+    EDIT_BAR.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const act = btn.dataset.act;
+      if (act === 'fmt') { toggleStylePanel(); return; }
+      if (act === 'img') { closeStylePanel(); $('#imgBtn').click(); return; }
+      if (act === 'attach') { closeStylePanel(); $('#attachBtn').click(); return; }
+      if (act === 'star') {
+        const note = currentNote();
+        if (note) starNote(note);
+        return;
+      }
+      if (act === 'more') {
+        closeStylePanel();
+        const r = btn.getBoundingClientRect();
+        showCtx(r.left - 120, r.top - 150, [
+          { label: '历史版本', icon: I.dots, onClick: () => $('#historyBtn').click() },
+          { label: '导出', icon: I.download, onClick: () => $('#exportBtn2').click() },
+          { sep: true },
+          { label: '删除笔记', icon: I.trash, danger: true, onClick: () => $('#deleteNoteBtn').click() },
+        ]);
+      }
+    });
+  }
+
+  if (STYLE_MASK) STYLE_MASK.addEventListener('click', closeStylePanel);
+  if (STYLE_PANEL) {
+    STYLE_PANEL.addEventListener('click', (e) => {
+      const c = e.target.closest('[data-act="sp-close"]');
+      if (c) closeStylePanel();
+    });
+  }
+
+  /* 编辑态里点正文外的地方：收起格式面板（但不退出编辑态） */
+  document.addEventListener('mousedown', (e) => {
+    if (!stylePanelOpen()) return;
+    if (STYLE_PANEL && STYLE_PANEL.contains(e.target)) return;
+    if (EDIT_BAR && EDIT_BAR.contains(e.target)) return;
+    closeStylePanel();
+  });
 
   function applyFormat(format) {
     const note = currentNote();
@@ -2163,15 +2573,19 @@
   });
 
   function restoreRange() {
-    if (!savedRange) return false;
+    /* 面板打开时另存了一份更准的选区（savedRange 可能已经被面板交互刷旧） */
+    const src = panelRange || savedRange;
+    if (!src) return false;
     const sel = window.getSelection();
     sel.removeAllRanges();
-    sel.addRange(savedRange);
+    sel.addRange(src);
     return true;
   }
 
   function exec(cmd, value) {
     const pane = $('#richPane');
+    /* 顺序很要紧：先 focus 再放选区。反过来的话 focus 会把选区塌回光标点，
+       格式就作用不到用户选的那段上了。 */
     pane.focus();
     restoreRange();
     try { document.execCommand('styleWithCSS', false, false); } catch (_) {}
@@ -3899,6 +4313,35 @@
 
   /* 编辑区那行「分类名 ▾」可点击 → 移动到这个分类（与云端同一入口） */
   $('#metaInfo').addEventListener('click', () => openCategoryPicker(currentNote()));
+
+  /* 华为风编辑态顶栏：撤销 / 重做 / 完成 */
+  $('#sjUndoBtn').addEventListener('click', () => {
+    const pane = $('#richPane');
+    if (viewFormat === 'rich' && pane) {
+      pane.focus();
+      try { document.execCommand('undo'); } catch (_) {}
+      onRichInput();
+    } else {
+      /* Markdown 是 textarea，浏览器自身的 undo 栈管不了，交给文本域原生行为 */
+      const ta = $('#mdInput');
+      if (ta) { ta.focus(); try { document.execCommand('undo'); } catch (_) {} }
+    }
+  });
+  $('#sjRedoBtn').addEventListener('click', () => {
+    const pane = $('#richPane');
+    if (viewFormat === 'rich' && pane) {
+      pane.focus();
+      try { document.execCommand('redo'); } catch (_) {}
+      onRichInput();
+    } else {
+      const ta = $('#mdInput');
+      if (ta) { ta.focus(); try { document.execCommand('redo'); } catch (_) {} }
+    }
+  });
+  $('#sjDoneBtn').addEventListener('click', () => {
+    setNoteMode(false);
+    void saveNow();
+  });
 
   $('#historyBtn').addEventListener('click', openHistory);
   $('#exportBtn2').addEventListener('click', (e) => {

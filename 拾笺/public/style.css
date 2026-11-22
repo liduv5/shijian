@@ -2661,3 +2661,238 @@ img.sj-img-picked {
   .sj-batch-bar .btn { padding: 3px 6px; font-size: 11px; }
   .sj-sort-sel { max-width: 88px; }
 }
+
+/* ============================================================
+   华为风笔记编辑：阅读态 / 编辑态双形态（与手机端同一套交互）
+   ------------------------------------------------------------
+   电脑端之前是「打开就是编辑器」：顶栏一排图标 + 常驻工具条 +
+   源码 / 预览 / 分屏三态，写字时工具条一直占着地方。
+   现在改成和手机端一致的两态：
+     阅读态 —— 正文渲染出来好好读，大标题在正文顶部随内容上滚，
+               滚过顶栏后顶栏的小标题淡入接管；
+     编辑态 —— 点正文才进入，顶栏换成标题框 + 撤销/重做/完成，
+               底部浮出工具条，格式选项收进右侧面板。
+   数据格式没动（还是 Markdown 源码 / 富文本 HTML），只换交互外壳。
+   ============================================================ */
+
+/* 两种形态都由 body 上的 class 驱动 */
+
+/* 阅读态：顶栏图标按钮都留着（收藏/历史/插图/附件/导出/删除，读的时候也能用），
+   只是 Markdown / 富文本 切换（那是编辑器的事）先收起来。
+   格式工具条、标签行、元信息行也收起来 —— 元信息已经搬进正文大标题下面。 */
+body.sj-note-read .segmented { display: none; }
+body.sj-note-read .toolbar { display: none; }
+body.sj-note-read .tag-row { display: none; }
+body.sj-note-read .meta-row { display: none; }
+body.sj-note-read .editor-head { padding-bottom: 0; }
+
+/* 编辑态：格式工具条不再常驻横铺一行，改由底部工具条的「格式」按钮
+   打开右侧面板（与手机端一致）。
+   插图 / 附件 / 收藏 三个按钮挪到了底部工具条，顶栏这几颗就收起来。 */
+body.sj-note-edit .toolbar { display: none; }
+body.sj-note-edit #imgBtn,
+body.sj-note-edit #attachBtn,
+body.sj-note-edit #starBtn { display: none; }
+
+/* 阅读态：正文整块当滚动容器，大标题才能和正文一起滚 */
+body.sj-note-read .editor-body {
+  display: block;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  overflow-anchor: none;
+}
+/* 编辑态要把布局还回去 —— 阅读态把 .editor-body 改成了 block（整块滚动），
+   不复位的话源码区和预览区会上下叠成一列，而不是左右分栏。 */
+body.sj-note-edit .editor-body {
+  display: flex;
+  overflow: hidden;
+}
+/* 阅读态的正文保持一个适眼的行宽并居中 —— 宽屏下拉满整行太散，读着费劲 */
+body.sj-note-read .rich-pane,
+body.sj-note-read .preview-pane {
+  overflow: visible;
+  max-width: 760px;
+  margin: 0 auto;
+}
+body.sj-note-read .sj-read-hero {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+/* 阅读态的大标题 */
+.sj-read-hero { display: none; }
+body.sj-note-read .sj-read-hero {
+  display: block;
+  padding: 4px 0 16px;
+}
+.sj-rh-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 30px; line-height: 1.3; font-weight: 700;
+  color: var(--text); word-break: break-word;
+}
+.sj-rh-title:empty { display: none; }
+.sj-rh-meta {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 12.5px; color: var(--text-3);
+}
+.sj-rh-meta:empty { display: none; }
+/* 分类可点 → 弹层改分类（沿用现有分类选择器） */
+.sj-rh-cat {
+  display: inline-flex; align-items: center; gap: 3px;
+  height: 24px; padding: 0 10px;
+  border: 0; border-radius: 999px; background: var(--surface-2);
+  font-family: var(--font-ui); font-size: 12.5px; color: var(--accent);
+  white-space: nowrap; cursor: pointer;
+}
+.sj-rh-cat:hover { background: var(--accent-soft); }
+.sj-rh-cat::after { content: '▾'; font-size: 9px; opacity: .7; }
+.sj-rh-cat.is-empty { color: var(--text-3); }
+.sj-rh-date { font-family: var(--font-ui); }
+
+/* 顶栏小标题：静止时藏起来，正文大标题滚过去后才淡入接管 */
+body.sj-note-read .title-input {
+  opacity: 0;
+  transition: opacity .14s linear;
+  pointer-events: none;
+}
+body.sj-note-read.sj-head-solid .title-input { opacity: 1; pointer-events: auto; }
+
+/* 阅读态正文：字号行距放大到「读」的比例，标题层级更清楚 */
+body.sj-note-read .rich-pane,
+body.sj-note-read .preview-pane {
+  font-size: 17px; line-height: 1.85;
+  padding: 0 4px 140px;
+}
+body.sj-note-read .rich-pane img,
+body.sj-note-read .preview-pane img {
+  max-width: 100%; height: auto; border-radius: 10px; display: block; margin: 12px 0;
+}
+
+/* ---- 编辑态：顶栏换成「返回 + 标题框 + 撤销/重做/完成」 ---- */
+.sj-edit-acts { display: none; align-items: center; gap: 2px; flex: none; }
+body.sj-note-edit .sj-edit-acts { display: flex; }
+.sj-ea-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; flex: none;
+  border: 0; border-radius: 8px; background: transparent; color: var(--text);
+  cursor: pointer;
+}
+.sj-ea-btn:hover { background: var(--surface-2); }
+.sj-ea-btn .ico { width: 19px; height: 19px; }
+.sj-ea-btn.sj-ea-done { color: var(--accent); }
+.sj-ea-btn.sj-ea-done .ico { stroke-width: 2.4; }
+body.sj-note-edit .title-input { font-size: 19px; }
+
+/* ---- 编辑态底部工具条 ---- */
+.sj-edit-bar {
+  position: absolute; z-index: 30;
+  left: 50%; transform: translateX(-50%);
+  bottom: 18px;
+  display: flex; align-items: center; gap: 2px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-lg);
+}
+.sj-edit-bar.hidden { display: none; }
+.sj-edit-bar button {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px;
+  width: 56px; height: 50px; flex: none;
+  border: 0; border-radius: 999px; background: transparent; color: var(--text);
+  font-family: var(--font-ui); font-size: 10.5px;
+  cursor: pointer;
+}
+.sj-edit-bar button:hover { background: var(--surface-2); }
+.sj-edit-bar button.on { color: var(--accent); background: var(--accent-soft); }
+.sj-edit-bar button .ico { width: 20px; height: 20px; }
+
+/* ---- 格式面板：电脑端从右侧滑出（鼠标操作，右侧更顺手） ---- */
+.sj-sp-mask {
+  position: absolute; inset: 0; z-index: 34;
+  background: rgba(18, 16, 14, .28);
+}
+.sj-sp-mask.hidden { display: none; }
+.sj-style-panel {
+  position: absolute; z-index: 35;
+  top: var(--sj-sp-top, 52px); right: 0; bottom: 0;
+  width: 268px;
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 28px -12px rgba(0, 0, 0, .3);
+  animation: sjSpIn .18s var(--ease);
+}
+.sj-style-panel.hidden { display: none; }
+@keyframes sjSpIn {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.sj-sp-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 14px 12px 10px 18px;
+  flex: none;
+}
+.sj-sp-title {
+  flex: 1;
+  font-family: var(--font-ui); font-size: 13px; font-weight: 600; color: var(--text);
+}
+.sj-sp-close {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; flex: none;
+  border: 0; border-radius: 8px; background: transparent; color: var(--text-3);
+  cursor: pointer;
+}
+.sj-sp-close:hover { background: var(--surface-2); color: var(--text); }
+.sj-sp-close .ico { width: 18px; height: 18px; }
+.sj-sp-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2px 14px 18px;
+}
+.sj-sp-group { margin-bottom: 18px; }
+.sj-sp-group:last-child { margin-bottom: 4px; }
+.sj-sp-label {
+  display: block;
+  margin-bottom: 8px;
+  font-family: var(--font-ui); font-size: 11px; color: var(--text-3);
+  letter-spacing: .04em;
+}
+.sj-sp-grid { display: flex; flex-wrap: wrap; gap: 5px; }
+.sj-sp-btn {
+  display: flex; align-items: center; justify-content: center;
+  min-width: 34px; height: 34px; padding: 0 8px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text);
+  font-family: var(--font-ui); font-size: 13px;
+  cursor: pointer;
+}
+.sj-sp-btn:hover { background: var(--surface-2); }
+.sj-sp-btn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.sj-sp-btn .ico { width: 18px; height: 18px; }
+.sj-sp-glyph { font-family: var(--font-ui); font-weight: 700; }
+.sj-sp-glyph.b { font-weight: 800; }
+.sj-sp-glyph.i { font-style: italic; }
+.sj-sp-glyph.u { text-decoration: underline; }
+.sj-sp-sizes { display: flex; gap: 5px; flex-wrap: wrap; }
+.sj-sp-size {
+  min-width: 34px; height: 30px; padding: 0 8px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text);
+  font-family: var(--font-ui); font-size: 12px;
+  cursor: pointer;
+}
+.sj-sp-size:hover { background: var(--surface-2); }
+.sj-sp-size.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.sj-sp-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.sj-sp-swatch {
+  width: 26px; height: 26px; flex: none;
+  border: 1px solid var(--border); border-radius: 7px;
+  cursor: pointer;
+}
+.sj-sp-swatch.on { box-shadow: 0 0 0 2px var(--accent); }
+
