@@ -1534,6 +1534,28 @@ html[data-theme="dark"] .sj-tip {
   justify-content: flex-end;
   gap: 8px;
 }
+/* Markdown 源码查看框：只读，等宽字体，够高以便整段扫读 */
+.sj-src-box {
+  width: 100%;
+  min-height: min(46vh, 360px);
+  margin-bottom: 16px;
+  padding: 11px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  outline: none;
+  resize: vertical;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.sj-src-box:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 .modal-choices { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 .choice {
   display: flex;

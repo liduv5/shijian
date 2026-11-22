@@ -345,8 +345,17 @@
   }
 
   /* ---------------------------------------------- Markdown */
+  /* Markdown 导出：正文如果还是 HTML（富文本笔记直传的情况），
+     先转成 Markdown 源码，别把标签原样写进 .md 文件。 */
   function toMarkdown({ title, content }) {
-    const md = `# ${title || '无标题笔记'}\n\n${content || ''}`;
+    let body = content || '';
+    if (/<[a-z][\s\S]*>/i.test(body) && typeof window.TurndownService === 'function') {
+      try {
+        const t = new window.TurndownService();
+        body = t.turndown(body);
+      } catch (_) { /* 转不了就按原样导出 */ }
+    }
+    const md = `# ${title || '无标题笔记'}\n\n${body}`;
     download(new Blob([md], { type: 'text/markdown;charset=utf-8' }), safeName(title, 'md'));
   }
 

@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-155 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-156 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-22-155';
+const BUILD = '2026-11-22-156';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -476,7 +476,7 @@ ok('打开笔记默认阅读态、点正文才进编辑态（draft 直接进编�
 
 ok('手机端不再有 Markdown / 富文本切换，标题与返回箭头同一行、大字正文按截图',
   styleSrc.indexOf('#formatSwitch { display: none; }') >= 0 &&
-  appSrc.indexOf("format: NARROW() ? 'rich' : 'md'") >= 0 &&
+  appSrc.indexOf("format: 'rich'") >= 0 &&
   // 顶栏小标题：默认隐藏（opacity:0），等正文大标题滚过去才淡入接管
   /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \.title-input \{[\s\S]{0,200}font-size: 20px; font-weight: 700[\s\S]{0,120}opacity: 0/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.editor-head \{ display: none; \}/.test(styleSrc) &&
@@ -497,7 +497,7 @@ ok('标题下面只留一份分类且可点：分类胶囊可点换类、右边�
 
 ok('写正文时图片保持图片：手机端进编辑先转富文本，不再露出 data URI 长串',
   appSrc.indexOf('function toRichEditor()') >= 0 &&
-  /function toRichEditor\(\)[\s\S]{0,420}renderMarkdown/.test(appSrc) &&
+  /function toRichEditor\(\)[\s\S]{0,420}noteHtml/.test(appSrc) &&
   /setNoteMode[\s\S]{0,2200}toRichEditor\(\);/.test(appSrc) &&
   appSrc.indexOf('if (NARROW()) return;') >= 0 &&
   indexSrc.indexOf('id="sjImgBar"') >= 0 &&
@@ -871,6 +871,24 @@ ok('加号落到底部且与首次安装提示条避让',
   /body\.sj-tip-open:not\(\.sj-note-open\) \.sj-fab \{[\s\S]{0,80}bottom: calc\(78px/.test(styleSrc) &&
   /classList\.add\('sj-tip-open'\)/.test(pwaSrc) &&
   /classList\.remove\('sj-tip-open'\)/.test(pwaSrc));
+
+console.log('\n编辑面收敛（Markdown / 富文本双模式已下线）');
+ok('顶栏不再有格式分段开关', !/id="formatSwitch"/.test(indexSrc) && !/data-format="md"/.test(indexSrc));
+ok('Markdown 源码框永久隐藏', /class="md-pane hidden" id="mdPane"/.test(indexSrc));
+ok('预览栏永久隐藏', /class="preview-pane markdown-body hidden" id="previewPane"/.test(indexSrc));
+ok('编辑面只有 richPane 一个', /function applyFormat\(\)/.test(appSrc)
+  && /\$\('#mdPane'\)\.classList\.add\('hidden'\)/.test(appSrc)
+  && /\$\('#richPane'\)\.classList\.remove\('hidden'\)/.test(appSrc));
+ok('Markdown 笔记读时渲染成 HTML', /function noteHtml\(/.test(appSrc) && /renderMarkdown\(c\)/.test(appSrc));
+ok('Markdown 笔记一被编辑即升级为富文本', /note\.content = \$\('#richPane'\)\.innerHTML;[\s\S]{0,80}note\.format = 'rich';/.test(appSrc));
+ok('新建笔记默认富文本', /categoryId: target, title: '', content: '',[\s\S]{0,120}format: 'rich'/.test(appSrc));
+ok('旧的 textarea 事件已摘掉', !/addEventListener\('input', onMdInput\)/.test(appSrc)
+  && !/function onMdInput\(/.test(appSrc));
+ok('旧的格式切换函数已摘掉', !/function switchFormat\(/.test(appSrc));
+ok('md 专属的插入助手已摘掉', !/function prefixLine\(/.test(appSrc) && !/function wrapSel\(/.test(appSrc));
+ok('富文本补上了表格插入', /function insertRichTable\(/.test(appSrc));
+ok('源码降级为二级入口', /function showMarkdownSource\(/.test(appSrc) && /Markdown 源码/.test(appSrc));
+ok('Markdown 笔记没被编辑就不改写数据', !/note\.content = \$\('#mdInput'\)\.value;/.test(appSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
