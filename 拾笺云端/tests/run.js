@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-154 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-155 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-22-154';
+const BUILD = '2026-11-22-155';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -219,16 +219,14 @@ ok('随手记手机端（≤980px）配色与主程序手机端一致：冷灰�
   quickSrc.indexOf('<div id="view"></div>') < quickSrc.indexOf('<div class="card">') + 60 &&
   /* 桌面端 ≥981px 石墨灰块仍在，未被手机端块覆盖 */
   /@media \(min-width: 981px\) \{[\s\S]{0,900}html\[data-theme="light"\] \{[\s\S]{0,300}--accent: #43403a;/.test(quickSrc));
-ok('随手记键盘弹起时整卡上移，避免输入法遮挡按钮（≤980px 才生效）',
-  /* CSS：body.kb-open 从居中切到顶部对齐、收紧上下留白 */
-  /body\.kb-open \{[\s\S]{0,180}justify-content: flex-start;[\s\S]{0,180}padding-top: 14px;/.test(quickSrc) &&
-  /* JS：visualViewport 高度差判断键盘，阈值 120，只在 ≤980px 生效 */
-  /window\.innerWidth > 980\) return;/.test(quickSrc) &&
-  /var kb = base - vv\.height;/.test(quickSrc) &&
-  /kb > 120/.test(quickSrc) &&
-  /classList\.toggle\('kb-open'/.test(quickSrc) &&
-  /vv\.addEventListener\('resize'/.test(quickSrc) &&
-  /focusin/.test(quickSrc));
+ok('随手记手机端卡片默认固定在偏上位置（一进入即在键盘上方，不依赖键盘事件）',
+  /* 手机端 body 从居中改为顶部对齐 + 固定上边距 */
+  /@media \(max-width: 980px\) \{[\s\S]{0,80}body \{ justify-content: flex-start; padding-top: clamp\(20px, 9vh, 84px\); \}/.test(quickSrc) &&
+  /* 桌面端仍保持居中（未被顶部对齐污染） */
+  /body \{[\s\S]{0,200}justify-content: center;/.test(quickSrc) &&
+  /* 旧的键盘检测方案已移除，避免残留 */
+  quickSrc.indexOf('kb-open') < 0 &&
+  quickSrc.indexOf('base - vv.height') < 0);
 ok('详情页返回顶栏走 closeEditor（替代原底部笔记 tab）',
   appSrc.indexOf("a === 'nh-back'") >= 0 && appSrc.indexOf('closeEditor(); return;') >= 0);
 ok('分类面板复用现有伪节点 all/uncat/starred',

@@ -87,12 +87,10 @@
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     transition: background-color .2s var(--ease), color .2s var(--ease);
   }
-  /* 输入法弹起：卡片整体上移。visualViewport 变矮而布局视口不变时，
-     垂直居中会把卡片下半（含「存进拾笺」按钮）压到键盘下面。 */
-  body.kb-open {
-    justify-content: flex-start;
-    padding-top: 14px;
-    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  /* 手机端：卡片默认就固定在偏上位置（一进入即在此处），
+     输入法弹起时整卡仍在键盘上方、完整可见，不依赖键盘事件检测。 */
+  @media (max-width: 980px) {
+    body { justify-content: flex-start; padding-top: clamp(20px, 9vh, 84px); }
   }
   .card {
     width: min(520px, 100%); background: var(--surface); border: 1px solid var(--border);
@@ -535,43 +533,13 @@
    安装，每次打开主程序都触发 controllerchange → 整页自动刷新。 */
 (function () {
   if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
-  var SWV = '2026-11-22-154';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
+  var SWV = '2026-11-22-155';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
   var sc = new URLSearchParams(location.search).get('sharecode') || 'X4WPKTHLIN';
   var url = '/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SWV;
   navigator.serviceWorker.getRegistration().then(function (reg) {
     if (reg && reg.active) return;      /* 已有 SW：直接复用，绝不重复注册 */
     return navigator.serviceWorker.register(url, { scope: '/' });
   }).catch(function () {});
-})();
-</script>
-<script>
-/* 输入法弹起时把整张卡片上移，避免键盘挡住「存进拾笺 / 打开拾笺」按钮。
-   用 visualViewport.height 相对初始高度的变化判断键盘：
-   键盘弹出会压缩 visualViewport，收起后恢复；真机上阈值取 120px。
-   只在窄屏（≤980px，触屏设备）生效，桌面端不需要。 */
-(function () {
-  if (!window.visualViewport || window.innerWidth > 980) return;
-  var vv = window.visualViewport;
-  var base = vv.height;              // 页面初次加载（键盘未弹起）的可视高度
-  var ticking = false;
-  function apply() {
-    ticking = false;
-    var kb = base - vv.height;       // 键盘占用高度（正值=弹起）
-    document.body.classList.toggle('kb-open', kb > 120);
-  }
-  function onResize() {
-    if (ticking) return;
-    ticking = true;
-    requestAnimationFrame(apply);
-  }
-  vv.addEventListener('resize', onResize);
-  // 键盘弹起时用户可能不触发 vv resize（部分机型），focus 后补测一次
-  document.addEventListener('focusin', function (e) {
-    if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) {
-      base = Math.max(base, vv.height);
-      onResize();
-    }
-  });
 })();
 </script>
 </body>
