@@ -78,6 +78,8 @@ html[data-theme="light"] {
   --accent-soft: rgba(47, 111, 94, .10);
   --accent-line: rgba(47, 111, 94, .28);
   --star: #c8892a;
+  /* 收藏星标单独一个金色；--star 只留给保存状态的小圆点 */
+  --star-gold: #c8892a;
   --danger: #c0442f;
   --shadow-sm: 0 1px 2px rgba(34, 32, 28, .05);
   --shadow-md: 0 8px 28px -10px rgba(34, 32, 28, .18);
@@ -104,6 +106,7 @@ html[data-theme="dark"] {
   --accent-soft: rgba(99, 183, 157, .12);
   --accent-line: rgba(99, 183, 157, .35);
   --star: #d8a44a;
+  --star-gold: #d8a44a;
   --danger: #e07a63;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .25);
   --shadow-md: 0 8px 28px -10px rgba(0, 0, 0, .55);
@@ -625,7 +628,7 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
   display: flex; align-items: center; gap: 4px;
   overflow: hidden;
 }
-.tree-note-title svg { width: 12px; height: 12px; color: var(--accent); flex: none; }
+.tree-note-title svg { width: 12px; height: 12px; color: var(--star-gold); fill: var(--star-gold); stroke: none; flex: none; }
 .tree-note-name {
   font-size: 13px;
   font-weight: 400;
@@ -756,7 +759,7 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   white-space: nowrap;
   flex: 1;
 }
-.note-card-title svg { width: 12px; height: 12px; color: var(--star); fill: var(--star); stroke: none; flex: none; }
+.note-card-title svg { width: 12px; height: 12px; color: var(--star-gold); fill: var(--star-gold); stroke: none; flex: none; }
 
 .note-card-snippet {
   font-size: 12px;
@@ -871,8 +874,8 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   box-shadow: var(--shadow-sm);
 }
 
-#starBtn.on { color: var(--star); }
-#starBtn.on svg { fill: var(--star); stroke: var(--star); }
+#starBtn.on { color: var(--star-gold); }
+#starBtn.on svg { fill: var(--star-gold); stroke: var(--star-gold); }
 
 .meta-row {
   display: flex;
@@ -2909,6 +2912,7 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
     --accent-soft: rgba(10, 89, 247, .10);
     --accent-line: rgba(10, 89, 247, .28);
     --star: #e8a317;
+    --star-gold: #e8a317;
     --danger: #e5484d;
     --sel: rgba(10, 89, 247, .14);
     --shadow-sm: 0 1px 3px rgba(20, 20, 26, .05);
@@ -3992,6 +3996,7 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
     --sel: rgba(67, 64, 58, .13);
     --danger: #5f5a53;
     --star: #6d6860;
+    --star-gold: #c8892a;
   }
   html[data-theme="dark"] {
     --accent: #d5d0c7;
@@ -4001,6 +4006,7 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
     --sel: rgba(213, 208, 199, .18);
     --danger: #b8b3aa;
     --star: #b0aba2;
+    --star-gold: #d8a44a;
   }
   /* 深色下 accent 变浅，实心按钮要换深色字才看得清 */
   html[data-theme="dark"] .btn.primary,

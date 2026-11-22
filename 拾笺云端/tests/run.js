@@ -879,8 +879,18 @@ ok('加号落到底部且与首次安装提示条避让',
   /classList\.add\('sj-tip-open'\)/.test(pwaSrc) &&
   /classList\.remove\('sj-tip-open'\)/.test(pwaSrc));
 
-console.log('\n编辑面收敛（Markdown / 富文本双模式已下线）');
-ok('顶栏不再有格式分段开关', !/id="formatSwitch"/.test(indexSrc) && !/data-format="md"/.test(indexSrc));
+console.log('\n收藏星标用金色');
+ok('--star-gold 在手机端与电脑端四套主题里都有',
+  (styleSrc.match(/--star-gold: #(?:c8892a|d8a44a|e8a317);/g) || []).length >= 4);
+ok('收藏按钮 / 列表卡 / 侧栏树三处星标都用金色',
+  /#starBtn\.on \{ color: var\(--star-gold\); \}/.test(styleSrc)
+  && /#starBtn\.on svg \{ fill: var\(--star-gold\); stroke: var\(--star-gold\); \}/.test(styleSrc)
+  && /\.note-card-title svg \{[\s\S]{0,160}var\(--star-gold\)/.test(styleSrc)
+  && /\.tree-note-title svg \{[\s\S]{0,160}var\(--star-gold\)/.test(styleSrc));
+ok('电脑端（≥981px）中性风里星标仍然是金（功能色不跟着变灰）',
+  /@media \(min-width: 981px\)[\s\S]*--star-gold: #c8892a;[\s\S]*--star-gold: #d8a44a;/.test(styleSrc));
+
+console.log('\n编辑面收敛（Markdown / 富文本双模式已下线）');ok('顶栏不再有格式分段开关', !/id="formatSwitch"/.test(indexSrc) && !/data-format="md"/.test(indexSrc));
 ok('Markdown 源码框已从 DOM 移除', !/id="mdPane"/.test(indexSrc) && !/id="mdInput"/.test(indexSrc));
 ok('预览栏已从 DOM 移除', !/id="previewPane"/.test(indexSrc));
 ok('编辑面只有 richPane 一个', !/id="mdPane"/.test(indexSrc) && !/id="previewPane"/.test(indexSrc)

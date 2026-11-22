@@ -197,6 +197,21 @@ ok('重做用 execCommand redo', /execCommand\('redo'\)/.test(js));
 ok('常驻工具条样式在（横排、可换行、有最小高度）',
   /\.toolbar \{[\s\S]{0,300}display: flex;[\s\S]{0,300}flex-wrap: wrap;/.test(css));
 
+/* ---------- 7b. 收藏星标：金色 ---------- */
+console.log('\n收藏星标用金色');
+ok('两个主题都定义了 --star-gold',
+  /--star-gold: #c8892a;/.test(css) && /--star-gold: #d8a44a;/.test(css));
+ok('收藏按钮 on 态用金色（填充 + 描边）',
+  /#starBtn\.on \{ color: var\(--star-gold\); \}/.test(css)
+  && /#starBtn\.on svg \{ fill: var\(--star-gold\); stroke: var\(--star-gold\); \}/.test(css));
+ok('列表卡 / 侧栏树 / 首页卡三处星标都跟着变金',
+  /\.note-card-title svg \{[\s\S]{0,160}var\(--star-gold\)/.test(css)
+  && /\.tree-note-title svg \{[\s\S]{0,160}var\(--star-gold\)/.test(css)
+  && /\.home-card-title svg\.star \{[\s\S]{0,120}var\(--star-gold\)/.test(css)
+  && /<svg class="ico star"/.test(js));
+ok('保存状态的小圆点仍是中性色（没被染成金）',
+  /\.save-state\.saving::before \{ background: var\(--star\); opacity: 1; \}/.test(css));
+
 /* ---------- 8. 存储层单一化（格式收敛） ---------- */
 console.log('\n存储层收敛为单一富文本');
 const serverJs = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');

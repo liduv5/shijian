@@ -69,6 +69,9 @@ html[data-theme="light"] {
   --accent-soft: rgba(67, 64, 58, .09);
   --accent-line: rgba(67, 64, 58, .26);
   --star: #6d6860;
+  /* 收藏星标：整站只有这一处暖色，收藏状态一眼可辨。--star 留给
+     保存状态的小圆点，两者不再共用一个变量。 */
+  --star-gold: #c8892a;
   --danger: #5f5a53;
   --shadow-sm: 0 1px 2px rgba(34, 32, 28, .05);
   --shadow-md: 0 8px 28px -10px rgba(34, 32, 28, .18);
@@ -95,6 +98,7 @@ html[data-theme="dark"] {
   --accent-soft: rgba(213, 208, 199, .13);
   --accent-line: rgba(213, 208, 199, .32);
   --star: #b0aba2;
+  --star-gold: #d8a44a;
   --danger: #b8b3aa;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .25);
   --shadow-md: 0 8px 28px -10px rgba(0, 0, 0, .55);
@@ -671,7 +675,7 @@ html[data-theme="dark"] .tree-row.active .tree-count { background: rgba(0,0,0,.2
   display: flex; align-items: center; gap: 4px;
   overflow: hidden;
 }
-.tree-note-title svg { width: 12px; height: 12px; color: var(--accent); flex: none; }
+.tree-note-title svg { width: 12px; height: 12px; color: var(--star-gold); fill: var(--star-gold); stroke: none; flex: none; }
 .tree-note-name {
   font-size: 13px;
   font-weight: 400;
@@ -852,6 +856,8 @@ html[data-theme="dark"] #homeNewNote:hover {
 .home-card-title svg { width: 14px; height: 14px; flex: none; color: var(--text-3); }
 .home-card-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .home-card.folder .home-card-title svg { color: #d8a340; }
+/* 收藏星标：金色实心，和列表卡 / 侧栏树同一套 */
+.home-card-title svg.star { color: var(--star-gold); fill: var(--star-gold); stroke: none; }
 .home-card-snippet {
   font-size: 12px;
   line-height: 1.6;
@@ -949,7 +955,7 @@ html[data-theme="dark"] #homeNewNote:hover {
   white-space: nowrap;
   flex: 1;
 }
-.note-card-title svg { width: 12px; height: 12px; color: var(--star); fill: var(--star); stroke: none; flex: none; }
+.note-card-title svg { width: 12px; height: 12px; color: var(--star-gold); fill: var(--star-gold); stroke: none; flex: none; }
 
 .note-card-snippet {
   font-size: 12px;
@@ -1064,8 +1070,8 @@ html[data-theme="dark"] #homeNewNote:hover {
   box-shadow: var(--shadow-sm);
 }
 
-#starBtn.on { color: var(--star); }
-#starBtn.on svg { fill: var(--star); stroke: var(--star); }
+#starBtn.on { color: var(--star-gold); }
+#starBtn.on svg { fill: var(--star-gold); stroke: var(--star-gold); }
 
 .meta-row {
   display: flex;

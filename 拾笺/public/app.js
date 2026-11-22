@@ -1134,7 +1134,7 @@
       const snippet = plainText(n).slice(0, 90);
       return `<article class="home-card${batchSel.has(n.id) ? ' selected' : ''}" data-nid="${n.id}">
         <span class="home-card-sel" aria-hidden="true"></span>
-        <div class="home-card-title">${n.starred ? I.starFill.replace('<svg', '<svg class="ico"') : I.doc}<span>${escapeHtml(n.title || '无标题笔记')}</span></div>
+        <div class="home-card-title">${n.starred ? I.starFill.replace('<svg', '<svg class="ico star"') : I.doc}<span>${escapeHtml(n.title || '无标题笔记')}</span></div>
         <p class="home-card-snippet">${escapeHtml(snippet) || '空笔记'}</p>
         <div class="home-card-foot">
           <span class="home-card-path">${escapeHtml(catPath(n.categoryId)) || '未分类'}</span>
