@@ -1885,7 +1885,7 @@
       bar.appendChild(s);
     };
     // 富文本字体/字号下拉：原生 select，选后即复位到占位文字
-    // 左侧挂一个字母标（T 字体 / Z 字号 / L 行距）：后两个都只显示数字，没标分不出
+    // 左侧挂一个小标签（T 字体 / Z 字号 / 行=行距）：后两个都只显示数字，没标分不出
     const sel = (title, opts, onChange, cls, tag) => {
       const wrap = document.createElement('label');
       wrap.className = 'tb-pick';
@@ -1958,7 +1958,7 @@
       applyRichLh();
       try { localStorage.setItem('sj_rich_lh', String(px)); } catch (_) {}
       syncLhPicker();
-    }, 'is-lh', 'L');
+    }, 'is-lh', '行');
     syncLhPicker();
     const clearBtn = btn('<span class="tb-text" style="font-weight:600">Tx</span>', '清除格式', () => exec('removeFormat'), '');
     clearBtn.style.marginLeft = 'auto';

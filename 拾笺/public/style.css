@@ -1161,7 +1161,7 @@ body.sj-note-read .meta-cat .meta-caret { display: none; }
 /* 字体 / 字号下拉：吞掉原生箭头自带的那一大块留白，改自绘小箭头。
    宽度按内容走（field-sizing）+ 一条保底宽度：纯按内容走会窄得像个裸文字，
    全按最长选项又会空一大截，取中间。 */
-/* 字体 / 字号 / 行距：左边一个小字母标（T / Z / L，L = line-height，避开同排的 H1/H2/H3）。字号和行距都只显示
+/* 字体 / 字号 / 行距：左边一个小标签（T 字体 / Z 字号 / 行=行距）。字号和行距都只显示
    一个数字，光看数字 + 箭头分不清谁是谁。label 包着 select，点字母也能展开。 */
 .tb-pick {
   display: inline-flex;
@@ -1182,7 +1182,7 @@ body.sj-note-read .meta-cat .meta-caret { display: none; }
   line-height: 1;
   letter-spacing: .01em;
   color: var(--text-3);
-  padding-right: 1px;
+  padding-right: 2px;
   user-select: none;
 }
 .tb-pick:hover { background-color: var(--surface-2); }

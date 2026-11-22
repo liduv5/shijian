@@ -995,9 +995,9 @@ ok('下拉有保底宽度、点开不描黑框',
   && /execFontSize\(v\), 'is-size', 'Z'\)/.test(appSrc)
   && /\.tb-select:focus-visible \{ outline: none;/.test(styleSrc));
 /* 字号和行距都只显示一个数字，光看「28 + 箭头」分不出谁是谁 → 前面挂字母标。 */
-ok('字体/字号/行距各自带字母标 T / Z / L',
+ok('字体/字号/行距各自带标签 T / Z / 行',
   /execFont\('fontName', v\), '', 'T'\)/.test(appSrc)
-  && /'is-size', 'Z'\)/.test(appSrc) && /'is-lh', 'L'\)/.test(appSrc)
+  && /'is-size', 'Z'\)/.test(appSrc) && /'is-lh', '行'\)/.test(appSrc)
   && /const wrap = document\.createElement\('label'\);[\s\S]{0,200}wrap\.className = 'tb-pick'/.test(appSrc)
   && /\.tb-pick-tag \{[\s\S]{0,300}font-size: 11\.5px/.test(styleSrc));
 ok('深色主题下下拉箭头换一套颜色（不至于黑底看不见）',
