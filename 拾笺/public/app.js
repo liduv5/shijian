@@ -1957,9 +1957,41 @@
 
   /* 笔记正文 → 可直接放进富文本容器的 HTML。
      存储层只有富文本一种格式，这里只做一次净化。 */
+  /* 正文 HTML 进编辑面前先过一遍体检。两件事必须在这里做，
+     不然会一路带到下一次保存：
+       ① 内联 caret-color —— 手机端用 styleWithCSS 上色时，Chrome 会把当时
+          计算出来的 caret-color 一起写进 span（那边是自绘光标，body 上有
+          sj-caret-drawn，所以无所谓）。桌面端没有自绘光标，这个样式留在正文里
+          就等于「点进去看不见光标」，看着像光标落不下去。
+       ② 列表里混进来的段落 —— <ol><li>…</li><p><br></p><li>…</li></ol>
+          不是合法结构，列表项之间会多出一大段空档，点进去光标停在空段落里，
+          上下两项的编号也会错乱。空的直接删，有内容的挪到列表后面。 */
+  function normalizeRich(html) {
+    if (!html) return '';
+    const box = document.createElement('div');
+    box.innerHTML = html;
+    box.querySelectorAll('[style]').forEach((el) => {
+      if (el.style.getPropertyValue('caret-color')) el.style.removeProperty('caret-color');
+      if (!(el.getAttribute('style') || '').replace(/;\s*$/, '').trim()) el.removeAttribute('style');
+    });
+    box.querySelectorAll('ol, ul').forEach((list) => {
+      let anchor = list;
+      Array.from(list.children).forEach((ch) => {
+        if (ch.tagName === 'LI' || ch.tagName === 'OL' || ch.tagName === 'UL') return;
+        if (!ch.textContent.replace(/[\s\u00a0\u200b]+/g, '') && !ch.querySelector('img,pre,table,hr')) {
+          ch.remove();
+          return;
+        }
+        anchor.after(ch);
+        anchor = ch;
+      });
+    });
+    return box.innerHTML;
+  }
+
   function noteHtml(note) {
     if (!note) return '';
-    return DOMPurify.sanitize(note.content ? String(note.content) : '');
+    return normalizeRich(DOMPurify.sanitize(note.content ? String(note.content) : ''));
   }
 
   /* 保存：编辑期间只标脏、不写盘；离开编辑页时统一落盘。
@@ -2039,6 +2071,8 @@
   function renderToolbar() {
     const note = currentNote();
     const bar = $('#toolbar');
+    /* 换笔记会重建工具条：色板跟着收掉，别浮在下一篇笔记上 */
+    closeColorPop();
     bar.innerHTML = '';
     if (!note) return;
 
@@ -2095,6 +2129,13 @@
       ['28', '28'],
       ['32', '32'],
     ], (v) => execFontSize(v));
+    /* 文字颜色：和手机端同一套 6 色 + 默认。按钮下面那道小横线是
+       上一次用的颜色，点开才出色板（色板挂在 body 上，滚出工具条也看得见）。 */
+    const colorBtn = btn(
+      '<span class="tb-color"><b>A</b><i id="tbColorMark"></i></span>',
+      '文字颜色', () => toggleColorPop(colorBtn)
+    );
+    paintColorMark();
     sep();
     btn('<span class="tb-text">H1</span>', '一级标题', () => exec('formatBlock', '<h1>'));
     btn('<span class="tb-text">H2</span>', '二级标题', () => exec('formatBlock', '<h2>'));
@@ -2134,8 +2175,179 @@
     lhBtn.title = '正文行距：' + LH_LABELS[LH_STEPS.indexOf(state.richLh)] + '（点击切换）';
     const lhTxt = lhBtn.querySelector('#lhBtnText');
     if (lhTxt) lhTxt.textContent = '行距' + LH_LABELS[LH_STEPS.indexOf(state.richLh)];
-    const clearBtn = btn('<span class="tb-text" style="font-weight:600">Tx</span>', '清除格式', () => exec('removeFormat'), '');
+    const clearBtn = btn('<span class="tb-text" style="font-weight:600">Tx</span>', '清除格式', clearFormat, '');
     clearBtn.style.marginLeft = 'auto';
+  }
+
+  /* ---- 文字颜色 ---- */
+  const TEXT_COLORS = [
+    ['#d13b32', '红色'], ['#f2c53d', '黄色'], ['#63a95c', '绿色'],
+    ['#61b0d9', '蓝色'], ['#4b46d8', '靛蓝'], ['#a554cd', '紫色'],
+  ];
+  let lastTextColor = '';
+  let colorPop = null;
+  let colorPopAnchor = null;
+
+  function paintColorMark() {
+    const mark = document.getElementById('tbColorMark');
+    if (!mark) return;
+    mark.style.background = lastTextColor || '';
+  }
+
+  function closeColorPop() {
+    if (!colorPop) return;
+    colorPop.remove();
+    colorPop = null;
+    document.removeEventListener('mousedown', onDocDownColorPop, true);
+    document.removeEventListener('keydown', onKeyColorPop);
+    if (colorPopAnchor) {
+      colorPopAnchor.classList.remove('active');
+      colorPopAnchor = null;
+    }
+  }
+
+  function onKeyColorPop(e) {
+    if (e.key === 'Escape') closeColorPop();
+  }
+
+  function onDocDownColorPop(e) {
+    if (!colorPop) return;
+    if (colorPop.contains(e.target)) return;
+    if (colorPopAnchor && colorPopAnchor.contains(e.target)) return;
+    closeColorPop();
+  }
+
+  function toggleColorPop(anchor) {
+    if (colorPop) { closeColorPop(); return; }
+    const pop = document.createElement('div');
+    pop.className = 'tb-color-pop';
+    pop.innerHTML = TEXT_COLORS.map(([c, name]) =>
+      `<button type="button" class="tb-color-dot" data-color="${c}" title="${name}" style="--c:${c}"></button>`
+    ).join('') + '<button type="button" class="tb-color-dot ring" data-color="default" title="默认颜色"></button>';
+    /* 色板在正文外面：mousedown 不拦下来的话，点一下焦点就从正文跑走，
+       选区变灰，颜色落不到刚选中的字上。 */
+    pop.addEventListener('mousedown', (e) => e.preventDefault());
+    pop.addEventListener('click', (e) => {
+      const dot = e.target.closest('[data-color]');
+      if (!dot) return;
+      applyTextColor(dot.dataset.color);
+      closeColorPop();
+    });
+    document.body.appendChild(pop);
+    /* 贴在按钮下沿；贴到窗口右边或底边就往回收 */
+    const r = anchor.getBoundingClientRect();
+    const w = pop.offsetWidth;
+    const h = pop.offsetHeight;
+    const left = Math.min(r.left, window.innerWidth - w - 10);
+    let top = r.bottom + 6;
+    if (top + h > window.innerHeight - 10) top = r.top - h - 6;
+    pop.style.left = Math.max(8, left) + 'px';
+    pop.style.top = Math.max(8, top) + 'px';
+    colorPop = pop;
+    colorPopAnchor = anchor;
+    anchor.classList.add('active');
+    /* 下一拍再挂全局监听，否则这次点击自己就把色板关了 */
+    setTimeout(() => {
+      document.addEventListener('mousedown', onDocDownColorPop, true);
+      document.addEventListener('keydown', onKeyColorPop);
+    }, 0);
+  }
+
+  /* 只有光标没有选区时，先选中光标所在那一段再上色 —— 和手机端、
+     字号一个规矩：不选就点，浏览器只会给「下一次输入」记个颜色，
+     现有文字一点变化都没有，用户以为按钮坏了。 */
+  function applyTextColor(color) {
+    const pane = $('#richPane');
+    if (!pane) return;
+    prepareRange();
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const collapsed = sel.getRangeAt(0).collapsed;
+    const block = collapsed ? selectBlockAtCaret() : null;
+    const range = sel.getRangeAt(0);
+    if (color === 'default') {
+      /* 「默认」不是写死一个颜色：直接把内联 color 抹掉，回到主题色，
+         深色主题下才不会留下一行黑字。 */
+      stripCharStyles(range, ['color']);
+      lastTextColor = '';
+    } else {
+      try { document.execCommand('styleWithCSS', false, true); } catch (_) {}
+      try { document.execCommand('foreColor', false, color); } catch (_) {}
+      lastTextColor = color;
+    }
+    paintColorMark();
+    /* 只是光标、整段是自动选上的：上完色把光标放回段末。
+       留着整段选中，用户接着打字就会把这一行整段覆盖掉。 */
+    if (collapsed && block && block.isConnected) {
+      const r = document.createRange();
+      r.selectNodeContents(block);
+      r.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(r);
+      savedRange = r.cloneRange();
+    }
+    onRichInput();
+  }
+
+  /* 清除格式：只清「字上的」东西（粗斜下划线、颜色、字号、字体、底色），
+     结构（标题、列表、对齐）留着。浏览器自带的 removeFormat 有两个坑：
+       ① 只有光标没有选区时它什么也不做，点了毫无反应；
+       ② 它只认自己那几个命令，内联 style 里的 color / font-size
+          / caret-color 会原样留着，看起来像「清了个寂寞」。 */
+  const CHAR_STYLE_PROPS = ['color', 'background-color', 'background', 'font-size', 'font-family', 'caret-color', 'text-shadow'];
+
+  function stripCharStyles(range, props = CHAR_STYLE_PROPS) {
+    const pane = $('#richPane');
+    if (!pane || !range) return;
+    Array.from(pane.querySelectorAll('[style]')).forEach((el) => {
+      let hit = false;
+      try { hit = range.intersectsNode(el); } catch (_) { return; }
+      if (!hit) return;
+      props.forEach((p) => el.style.removeProperty(p));
+      if (!(el.getAttribute('style') || '').replace(/;\s*$/, '').trim()) el.removeAttribute('style');
+    });
+  }
+
+  function clearFormat() {
+    const pane = $('#richPane');
+    if (!pane) return;
+    prepareRange();
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const collapsed = sel.getRangeAt(0).collapsed;
+    const block = collapsed ? selectBlockAtCaret() : null;
+    try { document.execCommand('styleWithCSS', false, false); } catch (_) {}
+    try { document.execCommand('removeFormat'); } catch (_) {}
+    const after = sel.rangeCount ? sel.getRangeAt(0) : null;
+    if (after) stripCharStyles(after);
+    /* 清空的 span 一并拆掉，不然以后再加格式会越套越深 */
+    Array.from(pane.querySelectorAll('span:not([class]):not([id])')).forEach((sp) => {
+      if (!sp.attributes.length) sp.replaceWith(...Array.from(sp.childNodes));
+    });
+    /* 只有光标时整段被选中了：清完把光标放回段末，接着打字不会覆盖整段 */
+    if (collapsed && block && block.isConnected) {
+      const r = document.createRange();
+      r.selectNodeContents(block);
+      r.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(r);
+      savedRange = r.cloneRange();
+    }
+    onRichInput();
+  }
+
+  /* 把光标所在的那一段（P / LI / 标题 / 引用）整段选中 */
+  function selectBlockAtCaret() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    const el = closestBlock(sel.getRangeAt(0).startContainer);
+    if (!el) return null;
+    const nr = document.createRange();
+    nr.selectNodeContents(el);
+    sel.removeAllRanges();
+    sel.addRange(nr);
+    savedRange = nr.cloneRange();
+    return el;
   }
 
   /* 富文本辅助 */

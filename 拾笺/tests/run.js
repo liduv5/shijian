@@ -96,6 +96,36 @@ ok('工具条能插入表格', /btn\(I\.table, '插入表格', insertRichTable\)
 ok('对齐类命令用 styleWithCSS=true（否则净化会把样式抹掉）',
   /function cssCmd\([\s\S]{0,300}styleWithCSS', false, true/.test(js));
 
+/* ---------- 4b. 文字颜色 / 清除格式 ---------- */
+console.log('\n文字颜色与清除格式');
+ok('工具条有文字颜色按钮', /'文字颜色', \(\) => toggleColorPop\(colorBtn\)/.test(js));
+ok('色板和手机端同一套 6 色 + 默认',
+  /const TEXT_COLORS = \[/.test(js) && /#d13b32/.test(js) && /#a554cd/.test(js)
+  && /data-color="default"/.test(js));
+ok('上色走 foreColor（styleWithCSS=true 才留得住内联 color）',
+  /execCommand\('foreColor', false, color\)/.test(js)
+  && /function applyTextColor[\s\S]{0,600}styleWithCSS', false, true/.test(js));
+ok('只有光标时先选中整段再上色（和手机端一个规矩）',
+  /const block = collapsed \? selectBlockAtCaret\(\) : null;/.test(js)
+  && /function selectBlockAtCaret\(/.test(js));
+ok('「默认颜色」是抹掉内联 color，不是写死一个色值',
+  /stripCharStyles\(range, \['color'\]\)/.test(js) && !/color === 'default' \? getComputedStyle/.test(js));
+ok('清除格式有自己的实现（不再是一句 exec(removeFormat)）',
+  /function clearFormat\(\)/.test(js) && !/'清除格式', \(\) => exec\('removeFormat'\)/.test(js));
+ok('清除格式会自己扫内联 style（removeFormat 只管它认识的那几个命令）',
+  /stripCharStyles\(after\)/.test(js) && /'caret-color'/.test(js));
+ok('清除格式后把光标放回段末（不会留着整段选中被覆盖）',
+  /if \(collapsed && block && block\.isConnected\)/.test(js));
+ok('色板挂在 body 上（工具条换行也裁不到）',
+  /document\.body\.appendChild\(pop\)/.test(js) && /\.tb-color-pop \{[\s\S]{0,80}position: fixed/.test(css));
+
+/* ---------- 4c. 正文载入体检 ---------- */
+console.log('\n正文载入体检（caret-color / 列表野段落）');
+ok('noteHtml 先净化再过体检', /return normalizeRich\(DOMPurify\.sanitize\(/.test(js));
+ok('抹掉内联 caret-color（手机端上色留下的透明光标）',
+  /function normalizeRich[\s\S]{0,700}caret-color/.test(js));
+ok('列表里混进来的段落会被清理', /querySelectorAll\('ol, ul'\)/.test(js));
+
 /* ---------- 5. 两种形态的 CSS ---------- */
 console.log('\n两种形态的样式');
 ok('阅读态隐藏常驻格式工具条', /body\.sj-note-read \.toolbar \{ display: none; \}/.test(css));
@@ -119,7 +149,7 @@ console.log('\n数据格式与保存链路未受影响');
 ok('富文本仍存 innerHTML', /note\.content = \$\('#richPane'\)\.innerHTML;/.test(js));
 ok('存储层单一化：正文恒为富文本，无 md 渲染分支',
   /function noteHtml\(/.test(js)
-  && /return DOMPurify\.sanitize\(note\.content \? String\(note\.content\) : ''\);/.test(js)
+  && /DOMPurify\.sanitize\(note\.content \? String\(note\.content\) : ''\)/.test(js)
   && !/note\.format === 'rich'/.test(js));
 ok('富文本仍经 DOMPurify 净化', /DOMPurify\.sanitize\(note\.content \|\| ''\)/.test(js));
 ok('标脏 / 落盘链路没变', /function markDirty\(\)/.test(js) && /function saveNow\(\)/.test(js));

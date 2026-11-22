@@ -1164,6 +1164,36 @@ html[data-theme="dark"] #homeNewNote:hover {
 .tb-select:hover { background: var(--surface-2); color: var(--text); }
 .tb-select option { background: var(--surface); color: var(--text); }
 
+/* 文字颜色：A 字下面那道横线就是当前色，点开出色板 */
+.tb-color { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; line-height: 1; }
+.tb-color b { font-weight: 700; font-size: 12.5px; letter-spacing: -.02em; }
+.tb-color i { display: block; width: 13px; height: 2.5px; border-radius: 2px; background: currentColor; }
+.tb-color-pop {
+  position: fixed;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .16);
+}
+.tb-color-dot {
+  width: 19px;
+  height: 19px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--c, transparent);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06);
+  cursor: pointer;
+  transition: transform .12s var(--ease);
+}
+.tb-color-dot:hover { transform: scale(1.12); }
+.tb-color-dot.ring { background: transparent; border: 4px solid var(--text); }
+
 /* 编辑主体 */
 .editor-body {
   flex: 1;

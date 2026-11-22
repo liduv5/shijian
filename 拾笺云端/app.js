@@ -1736,11 +1736,41 @@
   }
 
   /* 笔记正文 → 可直接放进富文本容器的 HTML。
-     存储层只有富文本一种格式，这里只做一次净化。 */
+     存储层只有富文本一种格式，这里只做一次净化 + 体检。 */
   function noteHtml(note) {
     if (!note) return '';
     const c = note.content ? String(note.content) : '';
-    return DOMPurify.sanitize(c);
+    return normalizeRich(DOMPurify.sanitize(c));
+  }
+
+  /* 正文 HTML 进编辑面前先过一遍体检，两件事必须在这里做：
+       ① 内联 caret-color —— 本机是自绘光标（body.sj-caret-drawn 把原生光标
+          设成透明），Chrome 执行 foreColor 时会把当时算出来的 caret-color
+          一起写进 span。这份内容同步到桌面端后没有自绘光标，光标就成了隐形，
+          点进去像「落不下去」。这里统一抹掉，别再往外带。
+       ② 列表里混进来的段落 —— <ol><li>…</li><p><br></p><li>…</li></ol>
+          不是合法结构，列表项之间会多一大段空档，点进去光标停在空段落里。 */
+  function normalizeRich(html) {
+    if (!html) return '';
+    const box = document.createElement('div');
+    box.innerHTML = html;
+    box.querySelectorAll('[style]').forEach((el) => {
+      if (el.style.getPropertyValue('caret-color')) el.style.removeProperty('caret-color');
+      if (!(el.getAttribute('style') || '').replace(/;\s*$/, '').trim()) el.removeAttribute('style');
+    });
+    box.querySelectorAll('ol, ul').forEach((list) => {
+      let anchor = list;
+      Array.from(list.children).forEach((ch) => {
+        if (ch.tagName === 'LI' || ch.tagName === 'OL' || ch.tagName === 'UL') return;
+        if (!ch.textContent.replace(/[\s\u00a0\u200b]+/g, '') && !ch.querySelector('img,pre,table,hr')) {
+          ch.remove();
+          return;
+        }
+        anchor.after(ch);
+        anchor = ch;
+      });
+    });
+    return box.innerHTML;
   }
 
   /* 保存：编辑期间只标脏、不写盘；离开编辑页时统一落盘。

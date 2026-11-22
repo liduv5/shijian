@@ -887,8 +887,13 @@ ok('编辑面只有 richPane 一个', !/id="mdPane"/.test(indexSrc) && !/id="pre
   && /id="richPane"/.test(indexSrc) && !/\$\('#mdPane'\)/.test(appSrc));
 ok('存储层单一化：正文恒为富文本，无 md 渲染分支',
   /function noteHtml\(/.test(appSrc)
-  && /return DOMPurify\.sanitize\(c\);/.test(appSrc)
+  && /normalizeRich\(DOMPurify\.sanitize\(c\)\)/.test(appSrc)
   && !/note\.format === 'rich'/.test(appSrc));
+/* 手机端上色时 Chrome 会把 caret-color 一起写进 span；桌面端没有自绘光标，
+   这条样式同步过去就是「光标隐形」。载入即抹掉，别再往外带。 */
+ok('正文载入体检：抹掉内联 caret-color、清掉列表里的野段落',
+  /function normalizeRich[\s\S]{0,900}caret-color/.test(appSrc)
+  && /querySelectorAll\('ol, ul'\)/.test(appSrc));
 ok('Markdown 笔记一被编辑即升级为富文本', /note\.content = \$\('#richPane'\)\.innerHTML;[\s\S]{0,80}note\.format = 'rich';/.test(appSrc));
 ok('新建笔记默认富文本', /categoryId: target, title: '', content: '',[\s\S]{0,120}format: 'rich'/.test(appSrc));
 ok('旧的 textarea 事件已摘掉', !/addEventListener\('input', onMdInput\)/.test(appSrc)
