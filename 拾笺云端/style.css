@@ -3614,6 +3614,13 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
   .sj-meta-cat.is-empty { color: var(--text-3); }
   .sj-meta-cat:active { background: var(--accent-soft); }
   .sj-meta-cat.hidden { display: none; }
+  /* 阅读态是纯阅读：分类胶囊只当标签看，不给 ▾、不给按压反馈、不响应点击。
+     要换分类就点正文进编辑态（用户 2026-11-22 要求）。 */
+  body.sj-note-open:not(.sj-note-edit) .sj-meta-cat {
+    pointer-events: none; background: transparent; padding: 0;
+    color: var(--text-3);
+  }
+  body.sj-note-open:not(.sj-note-edit) .sj-meta-cat::after { content: none; }
   .sj-meta-date {
     display: inline-flex; align-items: center; flex: none;
     font-family: var(--font-ui); font-size: 12.5px; color: var(--text-3);

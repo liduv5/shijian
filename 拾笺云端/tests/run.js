@@ -732,7 +732,7 @@ ok('底栏「更多」点了有反应：菜单不被同一次点击关掉，锚�
   /ctxJustOpened = true;\s*setTimeout\(\(\) => \{ ctxJustOpened = false; \}, 0\);/.test(appSrc) &&
   /document\.addEventListener\('click', \(e\) => \{\s*if \(ctxJustOpened\) return;/.test(appSrc) &&
   /* 编辑态详情底栏是 display:none，拿它的 rect 全是 0，菜单会被钳到屏幕左上角 */
-  /function openNoteMore\(anchor, note\) \{[\s\S]{0,300}anchor\.getBoundingClientRect\(\)[\s\S]{0,700}同步到云端[\s\S]{0,200}\{ above: true, anchor \}/.test(appSrc) &&
+  /function openNoteMore\(anchor, note\) \{[\s\S]{0,300}anchor\.getBoundingClientRect\(\)[\s\S]{0,700}移动到分类[\s\S]{0,200}\{ above: true, anchor \}/.test(appSrc) &&
   /* above：ay 当菜单底边算，整个菜单落在工具条上方，不压住那排图标；
      锚点在就每次按它的实时位置重算（输入法收起后底栏挪了，菜单得跟） */
   /function placeCtx\(x, y, opts\) \{[\s\S]{0,1100}ctxAnchor && ctxAnchor\.isConnected[\s\S]{0,420}o\.above \? ay - ch : ay/.test(appSrc) &&
@@ -753,7 +753,7 @@ ok('输入法收起后菜单跟着底栏回到底部，不再悬在半空',
   /function hideCtx\(\) \{[\s\S]{0,260}ctxFollowOff\(\);/.test(appSrc) &&
   /* 输入法收起有时不派发 resize，补几拍兜底重贴 */
   /\[120, 320, 700\]\.forEach/.test(appSrc) &&
-  /同步到云端[\s\S]{0,160}\{ above: true, anchor \}/.test(appSrc));
+  /移动到分类[\s\S]{0,160}\{ above: true, anchor \}/.test(appSrc));
 
 ok('菜单弹出不横跳：定位用布局尺寸 offsetWidth，不受 pop 缩放动画影响',
   /* .ctx-menu 有 animation:pop .13s（scale .96→1），动画期间 getBoundingClientRect()
@@ -891,15 +891,27 @@ ok('打开笔记时菜单换成笔记动作：分享 / 收藏 / 源码 / 历史 
   && /act: 'n-delete'/.test(appSrc) && /act: 'n-md'/.test(appSrc)
   && /act: 'n-history'/.test(appSrc)
   && /const rows = note \? noteMoreRows\(note\) : MORE_ROWS;/.test(appSrc));
-ok('笔记菜单不再有「移动到分类」「同步到云端」（分类改标题下胶囊，同步只留首页）',
+ok('笔记菜单不再有「移动到分类」「同步到云端」（换类在编辑态，同步只留首页）',
   !/n-move/.test(appSrc) && !/n-sync/.test(appSrc)
   && !/label: '移动到分类'/.test(appSrc.slice(appSrc.indexOf('function noteMoreRows'),
                                              appSrc.indexOf('function renderMoreMenu')))
   && /act: 'sync', label: '同步到云端'/.test(appSrc));
-ok('分类入口仍在标题下方，阅读态也点得动',
-  /\$\('#sjMetaCat'\)|META_CAT\.addEventListener\('click'/.test(appSrc)
-  && /if \(note\) openCategoryPicker\(note\);/.test(appSrc)
-  && !/body\.sj-note-open:not\(\.sj-note-edit\) \.sj-meta-cat \{[\s\S]{0,80}display: none/.test(styleSrc));
+ok('阅读态是纯阅读：分类胶囊不响应点击，也不给 ▾ 暗示',
+  /if \(!document\.body\.classList\.contains\('sj-note-edit'\)\) return;/.test(appSrc)
+  && /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-meta-cat \{[\s\S]{0,160}pointer-events: none/.test(styleSrc)
+  && /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-meta-cat::after \{ content: none; \}/.test(styleSrc));
+ok('编辑态点胶囊仍能换类',
+  /META_CAT\.addEventListener\('click'/.test(appSrc)
+  && /if \(note\) openCategoryPicker\(note\);/.test(appSrc));
+ok('编辑态底栏「⋯」只留「移动到分类」',
+  (function () {
+    const a = appSrc.indexOf('function openNoteMore(anchor, note)');
+    const b = appSrc.indexOf('function openNoteMore(anchor, note)') >= 0
+      ? appSrc.indexOf('\n    }', a) : -1;
+    const body = a >= 0 && b > a ? appSrc.slice(a, b) : '';
+    return /移动到分类/.test(body) && !/Markdown 源码/.test(body)
+      && !/历史版本/.test(body) && !/同步到云端/.test(body);
+  })());
 ok('列表首页仍是原来那套全局菜单（两套内容按有没有打开笔记切）',
   /act: 'tree', label: '目录分类'/.test(appSrc) && /MORE_ROWS/.test(appSrc));
 ok('笔记菜单的动作全转手给现有按钮，不另写一套',

@@ -6168,15 +6168,14 @@
     /* 详情页「更多」菜单：锚点一定要用真正被点到的那个按钮。
        编辑态下详情底栏是 display:none，拿它的 rect 会得到全 0，
        菜单就被钳到屏幕左上角——看着像没反应。所以两处入口各传自己的按钮。 */
+    /* 编辑态底栏「⋯」：只留「移动到分类」（用户 2026-11-22 要求）。
+       源码 / 历史版本在阅读态的右上角菜单里还有；同步是库级动作，只在首页。
+       分类换到这儿，是因为阅读态定位成纯阅读，标题下那颗胶囊不可点了。 */
     function openNoteMore(anchor, note) {
       if (!anchor || !note) return;
       const r = anchor.getBoundingClientRect();
       showCtx(r.right - 120, r.top - 8, [
-        { label: 'Markdown 源码', icon: ICON_ALL, onClick: () => showMarkdownSource() },
-        { label: '历史版本', icon: ICON_ALL, onClick: () => { const el = $('#historyBtn'); if (el) el.click(); } },
         { label: '移动到分类', icon: I.folder, onClick: () => openCategoryPicker(note) },
-        { sep: true },
-        { label: '同步到云端', icon: I.download, onClick: () => { if (window.SJSync) window.SJSync.open(); } },
       ], { above: true, anchor });
     }
 
@@ -6330,10 +6329,13 @@
       if (e.target.closest && e.target.closest('#richPane img')) return;
       clearImgSel();
     });
-    /* 标题下方的分类：点一下就换类（复用原有的分类选择弹层） */
+    /* 标题下方的分类：编辑态点一下换类（复用原有的分类选择弹层）。
+       阅读态是纯阅读，不做任何编辑动作 —— 这里直接不响应（用户 2026-11-22 要求），
+       要换分类就点正文进编辑态，再点这颗胶囊或底栏「⋯ → 移动到分类」。 */
     if (META_CAT) META_CAT.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      if (!document.body.classList.contains('sj-note-edit')) return;
       const note = currentNote();
       if (note) openCategoryPicker(note);
     });
