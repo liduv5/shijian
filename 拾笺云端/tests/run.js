@@ -995,6 +995,18 @@ ok('下拉有保底宽度、点开不描黑框',
   && /\.tb-select:focus-visible \{ outline: none;/.test(styleSrc));
 ok('深色主题下下拉箭头换一套颜色（不至于黑底看不见）',
   /html\[data-theme="dark"\] \.tb-select \{\s*background-image: url\("data:image\/svg\+xml/.test(styleSrc));
+/* 行距原来三档点击循环，改成像素下拉（和字号同一套控件）。 */
+ok('行距是像素下拉（16–48），不再是三档循环',
+  /const LH_PX = \[16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 44, 48\]/.test(appSrc)
+  && /state\.richLh = px;/.test(appSrc)
+  && !/LH_STEPS/.test(appSrc) && !/LH_LABELS/.test(appSrc)
+  && /setProperty\('--sj-rich-lh', state\.richLh \+ 'px'\)/.test(appSrc)
+  && /if \(v < 3\) return Math\.min\(64, Math\.max\(14, Math\.round\(v \* 16 \/ 2\) \* 2\)\)/.test(appSrc)
+  && /line-height: var\(--sj-rich-lh, 28px\)/.test(styleSrc));
+ok('行距下拉回显当前值（不在预设档就临时补一档）',
+  /function syncLhPicker\(\)[\s\S]{0,700}data-temp/.test(appSrc)
+  && /tbLhSel\.value = v;/.test(appSrc)
+  && /\.tb-select\.is-lh \{ min-width: 52px; \}/.test(styleSrc));
 ok('Markdown 笔记一被编辑即升级为富文本', /note\.content = \$\('#richPane'\)\.innerHTML;[\s\S]{0,80}note\.format = 'rich';/.test(appSrc));
 ok('新建笔记默认富文本', /categoryId: target, title: '', content: '',[\s\S]{0,120}format: 'rich'/.test(appSrc));
 ok('旧的 textarea 事件已摘掉', !/addEventListener\('input', onMdInput\)/.test(appSrc)

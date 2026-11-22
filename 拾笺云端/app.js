@@ -54,7 +54,13 @@
     tree: {},
     viewMode: localStorage.getItem('sj_view') || 'split',
     theme: localStorage.getItem('sj_theme') || 'light',
-    richLh: (function () { const v = parseFloat(localStorage.getItem('sj_rich_lh')); return [1.8, 1.5, 1.3].includes(v) ? v : 1.8; })(),
+    /* 正文行距，单位 px（原来存倍数 1.8/1.5/1.3，老值乘 16px 换算过来） */
+    richLh: (function () {
+      const v = parseFloat(localStorage.getItem('sj_rich_lh'));
+      if (!isFinite(v)) return 28;
+      if (v < 3) return Math.min(64, Math.max(14, Math.round(v * 16 / 2) * 2));
+      return Math.min(64, Math.max(14, Math.round(v / 2) * 2));
+    })(),
     dirty: false,
   };
 
@@ -1934,21 +1940,18 @@
     btn(I.table, '表格', () => insertRichTable());
     btn(I.hr, '分隔线', () => exec('insertHorizontalRule'));
     sep();
-    const LH_STEPS = [1.8, 1.5, 1.3];
-    const LH_LABELS = ['标准', '适中', '紧凑'];
-    const lhBtn = btn('<span class="tb-text" id="lhBtnText">行距</span>', '切换正文行距', () => {
-      const i = (LH_STEPS.indexOf(state.richLh) + 1) % LH_STEPS.length;
-      state.richLh = LH_STEPS[i];
+    /* 正文行距：直接给像素值（原来只有标准/适中/紧凑三档，不够用）。
+       和字号一样是个下拉，选完立刻生效，值记在本机。 */
+    const LH_PX = [16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 44, 48];
+    tbLhSel = sel('正文行距（像素）', LH_PX.map((v) => [String(v), String(v)]), (v) => {
+      const px = parseFloat(v);
+      if (!isFinite(px)) return;
+      state.richLh = px;
       applyRichLh();
-      try { localStorage.setItem('sj_rich_lh', String(state.richLh)); } catch (_) {}
-      const label = LH_LABELS[i];
-      const txt = lhBtn.querySelector('#lhBtnText');
-      if (txt) txt.textContent = '行距' + label;
-      lhBtn.title = '正文行距：' + label + '（点击切换）';
-    });
-    lhBtn.title = '正文行距：' + LH_LABELS[LH_STEPS.indexOf(state.richLh)] + '（点击切换）';
-    const lhTxt = lhBtn.querySelector('#lhBtnText');
-    if (lhTxt) lhTxt.textContent = '行距' + LH_LABELS[LH_STEPS.indexOf(state.richLh)];
+      try { localStorage.setItem('sj_rich_lh', String(px)); } catch (_) {}
+      syncLhPicker();
+    }, 'is-lh');
+    syncLhPicker();
     const clearBtn = btn('<span class="tb-text" style="font-weight:600">Tx</span>', '清除格式', () => exec('removeFormat'), '');
     clearBtn.style.marginLeft = 'auto';
   }
@@ -5197,9 +5200,26 @@
     });
   });
 
-  /* 富文本正文行距（显示偏好，存本机） */
+  /* 富文本正文行距（显示偏好，存本机）。值是像素，直接写进 line-height。 */
   function applyRichLh() {
-    document.documentElement.style.setProperty('--sj-rich-lh', String(state.richLh));
+    document.documentElement.style.setProperty('--sj-rich-lh', state.richLh + 'px');
+  }
+
+  /* 行距下拉回显：值不在预设档里（老数据换算出来的奇数）就临时补一档 */
+  let tbLhSel = null;
+  function syncLhPicker() {
+    if (!tbLhSel) return;
+    const v = String(state.richLh);
+    if (!Array.from(tbLhSel.options).some((o) => o.value === v)) {
+      Array.from(tbLhSel.querySelectorAll('option[data-temp]')).forEach((o) => o.remove());
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      opt.setAttribute('data-temp', '1');
+      tbLhSel.appendChild(opt);
+    }
+    tbLhSel.value = v;
+    tbLhSel.title = '正文行距 ' + v + 'px';
   }
 
   /* 主题 */

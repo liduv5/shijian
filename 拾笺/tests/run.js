@@ -154,6 +154,20 @@ ok('点开下拉不描黑框（键盘聚焦改用底色提示）',
   && /\.tb-select:focus-visible \{ outline: none;/.test(css)
   && !/\.tb-select:focus-visible \{ outline: 2px solid/.test(css));
 
+/* 行距原来是「标准/适中/紧凑」三档点击循环，实际不够用（用户反馈），
+   改成和字号一样的像素下拉。老值存的是倍数，载入时按 16px 正文字号换算。 */
+ok('行距是像素下拉（16–48），不再是三档循环',
+  /const LH_PX = \[16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 44, 48\]/.test(js)
+  && /state\.richLh = px;/.test(js)
+  && !/LH_STEPS/.test(js) && !/LH_LABELS/.test(js));
+ok('行距写进 CSS 变量时带 px，老倍数自动换算成像素',
+  /setProperty\('--sj-rich-lh', state\.richLh \+ 'px'\)/.test(js)
+  && /if \(v < 3\) return Math\.min\(64, Math\.max\(14, Math\.round\(v \* 16 \/ 2\) \* 2\)\)/.test(js)
+  && /line-height: var\(--sj-rich-lh, 28px\)/.test(css));
+ok('行距下拉回显当前值（不在预设档就临时补一档）',
+  /function syncLhPicker\(\)[\s\S]{0,700}data-temp/.test(js)
+  && /tbLhSel\.value = v;/.test(js));
+
 /* ---------- 4d. 正文载入体检 ---------- */
 console.log('\n正文载入体检（caret-color / 列表野段落）');
 ok('noteHtml 先净化再过体检', /return normalizeRich\(DOMPurify\.sanitize\(/.test(js));

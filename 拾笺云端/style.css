@@ -958,6 +958,7 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   transition: background-color .14s, color .14s;
 }
 .tb-select.is-size { min-width: 48px; }
+.tb-select.is-lh { min-width: 52px; }
 html[data-theme="dark"] .tb-select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238f948f' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E");
 }
@@ -987,7 +988,9 @@ html[data-theme="dark"] .tb-select {
   font-size: 16px;
 }
 /* 行距变量须压过下方 .markdown-body 的 line-height（richPane 同时带两个类） */
-.rich-pane.markdown-body { line-height: var(--sj-rich-lh, 1.8); }
+/* 行距变量须压过下方 .markdown-body 的 line-height（richPane 同时带两个类）。
+   值是像素（下拉里选的 16–48），标题另有自己的行高不受影响。 */
+.rich-pane.markdown-body { line-height: var(--sj-rich-lh, 28px); }
 .rich-pane:empty::before {
   content: "开始书写…";
   color: var(--text-3);
