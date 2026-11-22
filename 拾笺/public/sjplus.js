@@ -269,7 +269,8 @@
     const attById = {};
     (n.attachments || []).forEach((a) => { attById[a.id] = attFile(a); });
     let body = String(n.content || '');
-    if (n.format === 'rich') body = htmlToMd(body, n);
+    /* 正文恒为富文本，转成 Markdown 再落盘（保险箱是一整套 md 文件 + 附件） */
+    body = htmlToMd(body, n);
     body = body.replace(/\/api\/files\/([A-Za-z0-9_-]+)/g,
       (m, id) => attById[id] ? 'files/' + attById[id] : m);
     const title = String(n.title || '无标题笔记');

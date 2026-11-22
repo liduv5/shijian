@@ -8,6 +8,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
+const { mdToRich, toRichHtml } = require('./lib/mdconv.js');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -93,7 +94,7 @@ function seed() {
 
 - **左侧目录树**：支持无限层级，点箭头收起 / 展开
 - **中间笔记列表**：显示当前类别下的笔记
-- **右侧编辑器**：Markdown 与富文本随时切换
+- **右侧编辑器**：所见即所得，格式在底部工具条里调
 
 ## 试试这些
 
@@ -168,13 +169,13 @@ const debounce = (fn, wait = 300) => {
   const notes = [
     {
       id: uid(), categoryId: cStudy.id, title: '欢迎使用拾笺',
-      content: welcome, format: 'md', starred: true,
+      content: mdToRich(welcome), format: 'rich', starred: true,
       tags: ['入门', '使用说明'],
       attachments: [], createdAt: now() - 3600_000, updatedAt: now() - 60_000,
     },
     {
       id: uid(), categoryId: cFront.id, title: 'CSS 布局速查',
-      content: codeNote, format: 'md', starred: false,
+      content: mdToRich(codeNote), format: 'rich', starred: false,
       tags: ['前端', 'CSS'],
       attachments: [], createdAt: now() - 7200_000, updatedAt: now() - 3600_000,
     },
@@ -591,8 +592,11 @@ async function handleApi(req, res, pathname, query) {
         id: uid(),
         categoryId: body.categoryId && findCategory(body.categoryId) ? body.categoryId : null,
         title: body.title || '',
-        content: body.content || '',
-        format: body.format === 'rich' ? 'rich' : 'md',
+        /* 存储层只有富文本一种格式。老客户端 / 随手记仍可能送来
+           format:'md'（甚至纯文本），这里统一转成 HTML 再落库，
+           库里就不会重新长出第二种格式。 */
+        content: toRichHtml({ content: body.content || '', format: body.format }),
+        format: 'rich',
         starred: !!body.starred,
         tags: Array.isArray(body.tags)
           ? [...new Set(body.tags.map((t) => String(t).trim()).filter(Boolean))].slice(0, 10)
@@ -618,16 +622,19 @@ async function handleApi(req, res, pathname, query) {
 
       const contentChanged = typeof body.content === 'string' && body.content !== note.content;
       const titleChanged = typeof body.title === 'string' && body.title !== note.title;
-      const formatChanged = (body.format === 'md' || body.format === 'rich') && body.format !== note.format;
-      if (contentChanged || titleChanged || formatChanged) {
+      if (contentChanged || titleChanged) {
         /* -72：forceVersion 是前端从未发过的死参数，已移除。
            手动存版本改走 POST /api/notes/:id/versions 专门端点。 */
-        snapshotVersion(note, formatChanged ? 'format' : 'auto');
+        snapshotVersion(note, 'auto');
       }
 
       if (typeof body.title === 'string') note.title = body.title;
-      if (typeof body.content === 'string') note.content = body.content;
-      if (body.format === 'md' || body.format === 'rich') note.format = body.format;
+      if (typeof body.content === 'string') {
+        /* 客户端现在一律发富文本；若仍带 format:'md'（老客户端），
+           在这里转成 HTML，格式收敛在服务端完成。 */
+        note.content = toRichHtml({ content: body.content, format: body.format });
+      }
+      note.format = 'rich';
       if (body.categoryId !== undefined) {
         note.categoryId = body.categoryId && findCategory(body.categoryId) ? body.categoryId : null;
       }
@@ -683,8 +690,9 @@ async function handleApi(req, res, pathname, query) {
       if (!v) return sendError(res, 404, '版本不存在');
       snapshotVersion(note, 'restore');
       note.title = v.title;
-      note.content = v.content;
-      note.format = v.format;
+      /* 历史版本可能存的是收敛前的 md 源码，还原时一并转成 HTML。 */
+      note.content = toRichHtml({ content: v.content || '', format: v.format });
+      note.format = 'rich';
       note.updatedAt = now();
       scheduleSave();
       return sendJSON(res, 200, note);
@@ -914,8 +922,10 @@ async function importAll(req, res, query) {
     const finalAtt = exist && !attachments.length ? (exist.attachments || []) : attachments;
     const fields = {
       title: String(n.title || '无标题笔记').slice(0, 200),
-      content: String(n.content || ''),
-      format: n.format === 'rich' ? 'rich' : 'md',
+      /* 云端库里可能还躺着 format:'md' 的旧行（收敛前推上去的）。
+         导入时统一转成 HTML，格式收敛在这里完成。 */
+      content: toRichHtml({ content: String(n.content || ''), format: n.format }),
+      format: 'rich',
       categoryId: alias.get(n.categoryId) || (catIds.has(n.categoryId) ? n.categoryId : null),
       starred: !!n.starred,
       tags: Array.isArray(n.tags) ? n.tags.map(String).slice(0, 10) : [],

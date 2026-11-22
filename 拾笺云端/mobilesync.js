@@ -20,7 +20,7 @@
   const LS_EMAIL = 'sj_cloud_session_email';
   const LS_LAST = 'sj_last_sync';
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对。 */
-  const BUILD = '2026-11-22-156';
+  const BUILD = '2026-11-22-157';
   let session = null;
   let pendingOtp = null;
   let cooldownTimer = null;
@@ -154,8 +154,12 @@
       id: n.id,
       category_key: n.categoryId || null,
       title: n.title || '',
-      content: n.content || '',
-      format: n.format === 'rich' ? 'rich' : 'md',
+      /* 上传前确保正文是富文本 HTML：本地若还有 md 笔记
+         （老备份导入的），在这里转掉，别把 md 源码标成 rich 存进云端。 */
+      content: (n.format === 'rich' || !window.SJMDConv)
+        ? String(n.content || '')
+        : window.SJMDConv.mdToRich(String(n.content || '')),
+      format: 'rich',
       starred: !!n.starred,
       tags: Array.isArray(n.tags) ? n.tags : [],
       created_at: new Date(Number(n.createdAt) || Date.now()).toISOString(),
@@ -181,24 +185,18 @@
     }
     return [];
   }
-  /* 早期云端数据漏列 format 时，富文本正文会在 Markdown 编辑器里显示成源码。
-     这个特征只在 format 缺失时兜底 —— Markdown 里内联 <img> 是合法写法，
-     不能再凭它推翻明确的 format 字段。 */
-  function looksRichContent(content) {
-    return typeof content === 'string'
-      && /<img\s[^>]*src=["'](?:\/api\/files\/|data:image\/)/i.test(content);
-  }
+  /* 云端库可能还躺着收敛前推上去的 format:'md' 旧行。
+     读出来时先转成富文本 —— 存储层只有富文本一种格式，
+     旧数据不会把第二种格式带回来。 */
   function rowToNote(r) {
     const att = parseAtts(r.attachments);
-    /* format 明确时以字段为准：用户主动「富文本 → Markdown」后正文会合法
-       保留内联 <img>，不能再按内容把这类笔记判回 rich。只有旧数据漏列
-       （format 缺失）时才按内容兜底。 */
-    const fmt = (r.format === 'rich' || r.format === 'md')
-      ? r.format
-      : (looksRichContent(r.content) ? 'rich' : 'md');
+    const isRich = r.format === 'rich';
+    const content = isRich
+      ? String(r.content || '')
+      : (window.SJMDConv ? window.SJMDConv.mdToRich(String(r.content || '')) : String(r.content || ''));
     return {
-      id: r.id, title: r.title, content: r.content,
-      format: fmt,
+      id: r.id, title: r.title, content,
+      format: 'rich',
       categoryId: r.category_key || null, starred: !!r.starred,
       tags: Array.isArray(r.tags) ? r.tags : [], attachments: att,
       createdAt: r.created_at ? Date.parse(r.created_at) : Date.now(),

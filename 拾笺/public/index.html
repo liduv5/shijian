@@ -222,12 +222,7 @@
           <h1 class="sj-rh-title" id="sjReadTitle"></h1>
           <div class="sj-rh-meta" id="sjRhMeta"></div>
         </div>
-        <!-- mdPane 已退居幕后：正文统一在 richPane 里编辑，
-             Markdown 笔记读时渲染成 HTML，写时自动升级为富文本。 -->
-        <div class="md-pane hidden" id="mdPane">
-          <textarea id="mdInput" spellcheck="false" placeholder="用 Markdown 记录点什么…"></textarea>
-        </div>
-        <div class="preview-pane markdown-body hidden" id="previewPane"></div>
+        <!-- 正文只有这一个容器：存储层是富文本，读出来就是 HTML -->
         <div class="rich-pane markdown-body" id="richPane" contenteditable="true" spellcheck="false"></div>
       </div>
 

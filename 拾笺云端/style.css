@@ -951,44 +951,6 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   overflow: hidden;
 }
 
-.md-pane {
-  flex: 1 1 50%;
-  min-width: 0;
-  display: flex;
-  border-right: 1px solid var(--border);
-  overflow: hidden;
-}
-.md-pane.full { border-right: none; }
-
-#mdInput {
-  flex: 1;
-  width: 100%;
-  border: none;
-  outline: none;
-  resize: none;
-  background: none;
-  padding: 22px 28px 120px 32px;
-  font-size: 14.5px;
-  line-height: 1.85;
-  color: var(--text);
-  font-family: var(--font-ui);
-  tab-size: 2;
-}
-#mdInput::placeholder { color: var(--text-3); }
-
-.preview-pane {
-  flex: 1 1 50%;
-  min-width: 0;
-  overflow-y: auto;
-  padding: 22px 32px 120px 28px;
-}
-
-.editor-body.mode-edit .preview-pane { display: none; }
-.editor-body.is-rich .md-pane,
-.editor-body.is-rich .preview-pane { display: none; }
-.editor-body.mode-edit .md-pane { border-right: none; }
-.editor-body.mode-preview .md-pane { display: none; }
-
 .rich-pane {
   flex: 1;
   width: 100%;
@@ -1905,8 +1867,6 @@ html[data-theme="dark"] .sj-tip {
   :root { --sidebar-w: 290px; --list-w: 268px; }
   .editor-head { padding-left: 24px; padding-right: 16px; }
   .meta-row, .toolbar { padding-left: 24px; padding-right: 16px; }
-  #mdInput { padding-left: 24px; padding-right: 20px; }
-  .preview-pane { padding-left: 20px; padding-right: 24px; }
 }
 
 /* 手机端顶栏与抽屉遮罩：宽屏不出现 */
@@ -2074,9 +2034,6 @@ html[data-theme="dark"] .sj-tip {
   .toolbar::-webkit-scrollbar { display: none; }
   .tb-btn { flex: 0 0 auto; min-width: 32px; height: 32px; }
   .tb-sep { flex: 0 0 auto; }
-  #mdInput, .rich-pane, .preview-pane { font-size: 16px; } /* 16px 以下 iOS 聚焦会自动放大 */
-  #mdInput { padding: 14px 16px 120px; }
-  .preview-pane { padding: 14px 16px 120px; }
   .rich-pane { padding: 14px 16px 120px; }
   /* 样式面板升降会改正文区高度，浏览器默认的 scroll-anchor 会顺手挪一下
      scrollTop，和面板动画叠在一起就是「抖一下」。正文滚到哪里由脚本自己算。 */
@@ -3547,9 +3504,7 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
     transition: bottom .18s var(--ease);
   }
   /* 详情页底栏占位，正文末尾不被遮住 */
-  body.sj-note-open #mdInput,
-  body.sj-note-open .rich-pane,
-  body.sj-note-open .preview-pane {
+  body.sj-note-open .rich-pane {
     padding-bottom: calc(180px + env(safe-area-inset-bottom, 0px));
   }
 
@@ -3715,22 +3670,16 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
   body.sj-note-open:not(.sj-note-edit) .word-count { display: none; }
   body.sj-note-open:not(.sj-note-edit) .tag-row,
   body.sj-note-open:not(.sj-note-edit) .toolbar { display: none; }
-  body.sj-note-open:not(.sj-note-edit) .rich-pane,
-  body.sj-note-open:not(.sj-note-edit) .preview-pane {
+  body.sj-note-open:not(.sj-note-edit) .rich-pane {
     font-size: 19px; line-height: 1.78; padding: 4px 20px calc(180px + env(safe-area-inset-bottom, 0px));
   }
   /* 阅读态按截图收紧段间距：正文是连续的诗行/短段，段落之间不该空出一行 */
   body.sj-note-open:not(.sj-note-edit) .rich-pane p,
-  body.sj-note-open:not(.sj-note-edit) .rich-pane div,
-  body.sj-note-open:not(.sj-note-edit) .preview-pane p,
-  body.sj-note-open:not(.sj-note-edit) .preview-pane div {
+  body.sj-note-open:not(.sj-note-edit) .rich-pane div {
     margin: 0 0 2px;
   }
   /* 阅读态顶栏已有返回箭头，底栏不再重复一个「返回」 */
   body.sj-note-open:not(.sj-note-edit) .sj-detail-bar button[data-act="back"] { display: none; }
-
-  /* 手机端不提供 Markdown / 富文本切换 */
-  #formatSwitch { display: none; }
 
   /* ---- 编辑态：紧凑头部 + 编辑工具条 ---- */
   body.sj-note-edit .editor-head { display: none; }
@@ -3741,14 +3690,11 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
   body.sj-note-edit .tag-row { display: none; }
   body.sj-note-edit .toolbar { display: none; }
   /* 手机端不再借桌面那条窄工具条：A 按钮改为弹出底部「样式」面板 */
-  body.sj-note-edit .rich-pane,
-  body.sj-note-edit .preview-pane {
+  body.sj-note-edit .rich-pane {
     font-size: 19px; line-height: 1.86; padding: 2px 20px calc(180px + env(safe-area-inset-bottom, 0px));
   }
   body.sj-note-edit .rich-pane p,
-  body.sj-note-edit .rich-pane div,
-  body.sj-note-edit .preview-pane p,
-  body.sj-note-edit .preview-pane div { margin: 0 0 2px; }
+  body.sj-note-edit .rich-pane div { margin: 0 0 2px; }
   body.sj-note-edit .sj-detail-bar { display: none !important; }
 
   /* 编辑态底部工具条：格式 / 图片 / 附件 / 收藏 / 更多 */
@@ -3997,19 +3943,19 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
   html[data-theme="light"] body.sj-note-open[data-paper="4"] .editor-pane { background: #f7f0dd; }
 
   /* 待办列表：列表符号换成方框，点方框打勾（class 落在 li 上，随笔记内容一起存） */
-  .rich-pane ul.sj-task, .preview-pane ul.sj-task {
+  .rich-pane ul.sj-task {
     list-style: none; padding-left: 0;
   }
-  .rich-pane ul.sj-task li, .preview-pane ul.sj-task li {
+  .rich-pane ul.sj-task li {
     position: relative; padding-left: 26px;
   }
-  .rich-pane ul.sj-task li::before, .preview-pane ul.sj-task li::before {
+  .rich-pane ul.sj-task li::before {
     content: '☐';
     position: absolute; left: 2px; top: 0;
     width: 22px; height: 22px; line-height: 22px;
     text-align: center; font-size: 15px; color: var(--text-2);
   }
-  .rich-pane ul.sj-task li.done::before, .preview-pane ul.sj-task li.done::before {
+  .rich-pane ul.sj-task li.done::before {
     content: '☑'; color: var(--accent);
   }
   .rich-pane ul.sj-task li.done { color: var(--text-3); text-decoration: line-through; }

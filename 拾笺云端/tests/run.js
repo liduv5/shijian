@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-156 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-157 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-22-156';
+const BUILD = '2026-11-22-157';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -222,8 +222,8 @@ ok('随手记手机端（≤980px）配色与主程序手机端一致：冷灰�
 ok('随手记手机端卡片默认固定在偏上位置（一进入即在键盘上方，不依赖键盘事件）',
   /* 手机端 body 从居中改为顶部对齐 + 固定上边距 */
   /@media \(max-width: 980px\) \{[\s\S]{0,80}body \{ justify-content: flex-start; padding-top: clamp\(20px, 9vh, 84px\); \}/.test(quickSrc) &&
-  /* 桌面端仍保持居中（未被顶部对齐污染） */
-  /body \{[\s\S]{0,200}justify-content: center;/.test(quickSrc) &&
+  /* 桌面端仍是 base body 规则居中（未被手机端块的顶部对齐污染） */
+  /body \{\s*margin: 0; min-height: 100dvh; padding: 24px 18px;[\s\S]{0,300}justify-content: center;/.test(quickSrc) &&
   /* 旧的键盘检测方案已移除，避免残留 */
   quickSrc.indexOf('kb-open') < 0 &&
   quickSrc.indexOf('base - vv.height') < 0);
@@ -433,10 +433,10 @@ ok('分类面板按华为截图做整页展开：页头带▲、浅灰底不压�
 
 ok('分类面板字号/行高/图标/系统字体按截图放大，分隔线从各行文字(--dl)起',
   /\.sj-cat-hero \.sj-home-title \{[\s\S]{0,220}font-size: 26px; font-weight: 700/.test(styleSrc) &&
-  /\.sj-cat-row \{[\s\S]{0,320}min-height: 62px; padding: 0 2px;/.test(styleSrc) &&
-  /\.sj-cat-row \{[\s\S]{0,320}font-family: var\(--mgr-font, var\(--font-ui\)\); font-size: 17px/.test(styleSrc) &&
+  /\.sj-cat-row \{[\s\S]{0,600}min-height: 62px; padding: 0 2px;/.test(styleSrc) &&
+  /\.sj-cat-row \{[\s\S]{0,600}font-family: var\(--mgr-font, var\(--font-ui\)\); font-size: 17px/.test(styleSrc) &&
   /\.sj-cat-row \.ico \{ width: 23px; height: 23px/.test(styleSrc) &&
-  styleSrc.indexOf('.sj-cat-sheet {\n    position: fixed; z-index: 68;') >= 0 &&
+  /\.sj-cat-sheet \{\s*position: fixed; z-index: 68;/.test(styleSrc) &&
   styleSrc.indexOf('--mgr-font: -apple-system, BlinkMacSystemFont, "HarmonyOS Sans SC"') >= 0 &&
   styleSrc.indexOf('left: var(--dl, 52px); right: 18px; top: 0;') >= 0 &&
   appSrc.indexOf('--dl:${dl}px') >= 0 &&
@@ -475,13 +475,13 @@ ok('打开笔记默认阅读态、点正文才进编辑态（draft 直接进编�
   appSrc.indexOf("if (a === 'nh-done') { setNoteMode('read'); return; }") >= 0);
 
 ok('手机端不再有 Markdown / 富文本切换，标题与返回箭头同一行、大字正文按截图',
-  styleSrc.indexOf('#formatSwitch { display: none; }') >= 0 &&
+  !/formatSwitch/.test(styleSrc) && !/formatSwitch/.test(indexSrc) &&
   appSrc.indexOf("format: 'rich'") >= 0 &&
   // 顶栏小标题：默认隐藏（opacity:0），等正文大标题滚过去才淡入接管
   /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \.title-input \{[\s\S]{0,200}font-size: 20px; font-weight: 700[\s\S]{0,120}opacity: 0/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.editor-head \{ display: none; \}/.test(styleSrc) &&
   /\.sj-rh-title \{[\s\S]{0,160}font-size: 27px/.test(styleSrc) &&
-  /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane,[\s\S]{0,120}font-size: 19px; line-height: 1\.78/.test(styleSrc) &&
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane \{[\s\S]{0,120}font-size: 19px; line-height: 1\.78/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-detail-bar button\[data-act="back"\] \{ display: none; \}/.test(styleSrc) &&
   styleSrc.indexOf('.sj-meta-cat {') >= 0);
 
@@ -874,12 +874,14 @@ ok('加号落到底部且与首次安装提示条避让',
 
 console.log('\n编辑面收敛（Markdown / 富文本双模式已下线）');
 ok('顶栏不再有格式分段开关', !/id="formatSwitch"/.test(indexSrc) && !/data-format="md"/.test(indexSrc));
-ok('Markdown 源码框永久隐藏', /class="md-pane hidden" id="mdPane"/.test(indexSrc));
-ok('预览栏永久隐藏', /class="preview-pane markdown-body hidden" id="previewPane"/.test(indexSrc));
-ok('编辑面只有 richPane 一个', /function applyFormat\(\)/.test(appSrc)
-  && /\$\('#mdPane'\)\.classList\.add\('hidden'\)/.test(appSrc)
-  && /\$\('#richPane'\)\.classList\.remove\('hidden'\)/.test(appSrc));
-ok('Markdown 笔记读时渲染成 HTML', /function noteHtml\(/.test(appSrc) && /renderMarkdown\(c\)/.test(appSrc));
+ok('Markdown 源码框已从 DOM 移除', !/id="mdPane"/.test(indexSrc) && !/id="mdInput"/.test(indexSrc));
+ok('预览栏已从 DOM 移除', !/id="previewPane"/.test(indexSrc));
+ok('编辑面只有 richPane 一个', !/id="mdPane"/.test(indexSrc) && !/id="previewPane"/.test(indexSrc)
+  && /id="richPane"/.test(indexSrc) && !/\$\('#mdPane'\)/.test(appSrc));
+ok('存储层单一化：正文恒为富文本，无 md 渲染分支',
+  /function noteHtml\(/.test(appSrc)
+  && /return DOMPurify\.sanitize\(c\);/.test(appSrc)
+  && !/note\.format === 'rich'/.test(appSrc));
 ok('Markdown 笔记一被编辑即升级为富文本', /note\.content = \$\('#richPane'\)\.innerHTML;[\s\S]{0,80}note\.format = 'rich';/.test(appSrc));
 ok('新建笔记默认富文本', /categoryId: target, title: '', content: '',[\s\S]{0,120}format: 'rich'/.test(appSrc));
 ok('旧的 textarea 事件已摘掉', !/addEventListener\('input', onMdInput\)/.test(appSrc)

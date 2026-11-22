@@ -340,11 +340,12 @@
     for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
     return (h >>> 0).toString(36) + '-' + s.length;
   }
-  function itemOf(title, content, format) {
+  function itemOf(title, content) {
     const t = String(title || '随手记');
     const c = String(content || '');
-    return { title: t.slice(0, 60), content: c,
-      format: format === 'rich' ? 'rich' : 'md', sig: sigOf(t + '|' + c) };
+    /* 随手记是纯文本（用户随手打的字），不是 Markdown。
+       存储层只有富文本一种格式，格式统一由主程序那一端处理。 */
+    return { title: t.slice(0, 60), content: c, sig: sigOf(t + '|' + c) };
   }
   /* 旧版本往本分区 sj_mobile_v1 写过的速记，删图标前先带回去 */
   function legacy() {
@@ -356,7 +357,7 @@
     const d = read('sj_mobile_v1', {});
     return (Array.isArray(d.notes) ? d.notes : [])
       .filter((n) => n && !n.deletedAt && String(n.content || '').trim())
-      .map((n) => itemOf(n.title, n.content, n.format));
+      .map((n) => itemOf(n.title, n.content));
   }
   function pending() { const a = read(PENDING, []); return Array.isArray(a) ? a : []; }
   function fresh() {
@@ -533,7 +534,7 @@
    安装，每次打开主程序都触发 controllerchange → 整页自动刷新。 */
 (function () {
   if (!('serviceWorker' in navigator) || location.protocol !== 'https:') return;
-  var SWV = '2026-11-22-156';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
+  var SWV = '2026-11-22-157';   /* 发布清单第五处，与 index.html 的 SWV 一致 */
   var sc = new URLSearchParams(location.search).get('sharecode') || 'X4WPKTHLIN';
   var url = '/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SWV;
   navigator.serviceWorker.getRegistration().then(function (reg) {

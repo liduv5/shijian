@@ -32,13 +32,12 @@
     } catch (e) {
       console.warn('读取本地数据失败', e);
     }
-    /* 旧云端数据漏写 format，富文本正文才会被当成 Markdown 显示成源码。
-       只在 format 缺失/非法时兜底；format 已是 md 的笔记（含用户主动从
-       富文本转过来、正文合法保留内联 <img> 的）必须尊重字段，否则会把
-       用户刚做的格式转换又改回去。 */
+    /* 存储层只有富文本一种格式：库里若还有 md 笔记（老备份导入的），
+       在这里一次性转成 HTML，别让第二种格式继续存在。 */
     let healed = 0;
     db.notes.forEach((n) => {
-      if (n && n.format !== 'rich' && n.format !== 'md' && looksRichContent(n.content)) {
+      if (n && n.format !== 'rich') {
+        n.content = window.SJMDConv ? window.SJMDConv.mdToRich(String(n.content || '')) : String(n.content || '');
         n.format = 'rich'; healed++;
       }
     });
@@ -50,12 +49,6 @@
     try { localStorage.setItem('sj_main_lib', '1'); } catch (_) {}
   }
 
-  /* 富文本编辑器插入的图片固定写成 <img src="/api/files/…> 或 data:image/…。
-     只在 format 缺失/非法时用它兜底，不推翻明确的 format 字段。 */
-  function looksRichContent(content) {
-    return typeof content === 'string'
-      && /<img\s[^>]*src=["'](?:\/api\/files\/|data:image\/)/i.test(content);
-  }
   /* 二进制进 IndexedDB，localStorage 只留附件元信息：
      data 单张 3～8MB，写进 LS 必爆 5MB 配额且失败静默。 */
   const stored = new Set();   // 已确认写进附件仓的 id，避免每次 save 重复落库
@@ -356,7 +349,7 @@
       categoryId: n.categoryId || null,
       title: n.title || '',
       content: n.content || '',
-      format: n.format === 'rich' ? 'rich' : 'md',
+      format: 'rich',
       starred: !!n.starred,
       tags: Array.isArray(n.tags) ? n.tags.slice(0, 10) : [],
       attachments: Array.isArray(n.attachments) ? clone(n.attachments) : [],
@@ -384,7 +377,7 @@
       ts: Date.now(),
       title: note.title || '',
       content: note.content || '',
-      format: note.format === 'rich' ? 'rich' : 'md',
+      format: 'rich',
       reason: reason || 'auto',
     });
     if (list.length > MAX_VERSIONS) list.length = MAX_VERSIONS;
@@ -522,8 +515,12 @@
           id: uid(),
           categoryId: body.categoryId || null,
           title: body.title || '',
-          content: body.content || '',
-          format: body.format === 'rich' ? 'rich' : 'md',
+          /* 存储层只有富文本：老客户端仍送 format:'md' 时，
+             在这里转成 HTML 再落库。 */
+          content: (window.SJMDConv && body.format !== 'rich')
+            ? window.SJMDConv.mdToRich(String(body.content || ''))
+            : String(body.content || ''),
+          format: 'rich',
           starred: !!body.starred,
           tags: Array.isArray(body.tags)
             ? [...new Set(body.tags.map((t) => String(t).trim()).filter(Boolean))].slice(0, 10)
@@ -551,13 +548,18 @@
         if (!note) throw new Error('笔记不存在');
         const contentChanged = typeof body.content === 'string' && body.content !== note.content;
         const titleChanged = typeof body.title === 'string' && body.title !== note.title;
-        const formatChanged = (body.format === 'md' || body.format === 'rich') && body.format !== note.format;
-        if (contentChanged || titleChanged || formatChanged) {
-          snapshot(note, formatChanged ? 'format' : 'auto');
+        if (contentChanged || titleChanged) {
+          snapshot(note, 'auto');
         }
         if (typeof body.title === 'string') note.title = body.title;
-        if (typeof body.content === 'string') note.content = body.content;
-        if (body.format === 'md' || body.format === 'rich') note.format = body.format;
+        if (typeof body.content === 'string') {
+          /* 客户端现在一律发富文本；若仍带 format:'md'（老客户端），
+             在这里转成 HTML，格式收敛在数据层完成。 */
+          note.content = (window.SJMDConv && body.format !== 'rich')
+            ? window.SJMDConv.mdToRich(String(body.content))
+            : String(body.content);
+        }
+        note.format = 'rich';
         if (body.categoryId !== undefined) note.categoryId = body.categoryId || null;
         if (typeof body.starred === 'boolean') note.starred = body.starred;
         if (Array.isArray(body.tags)) {
@@ -615,8 +617,11 @@
         if (!note || !v) throw new Error('版本不存在');
         snapshot(note, 'restore');
         note.title = v.title;
-        note.content = v.content;
-        note.format = v.format;
+        /* 历史版本可能存的是收敛前的 md 源码，还原时一并转成 HTML。 */
+        note.content = (window.SJMDConv && v.format !== 'rich')
+          ? window.SJMDConv.mdToRich(String(v.content || ''))
+          : String(v.content || '');
+        note.format = 'rich';
         note.updatedAt = Date.now();
         save();
         return clone(note);
@@ -689,8 +694,12 @@
         db.notes.push(cleanNote({
           id: n.id,
           categoryId: catIds.has(n.categoryId) ? n.categoryId : null,
-          title: n.title || '', content: String(n.content || ''),
-          format: n.format === 'rich' ? 'rich' : 'md',
+          title: n.title || '',
+          /* 导入的备份里可能还有 md 笔记，在这里转成 HTML。 */
+          content: (window.SJMDConv && n.format !== 'rich')
+            ? window.SJMDConv.mdToRich(String(n.content || ''))
+            : String(n.content || ''),
+          format: 'rich',
           starred: !!n.starred,
           tags: Array.isArray(n.tags) ? n.tags : [],
           attachments: Array.isArray(n.attachments) ? clone(n.attachments.filter((a) => a && a.id)) : [],

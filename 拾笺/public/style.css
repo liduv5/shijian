@@ -1158,44 +1158,6 @@ html[data-theme="dark"] #homeNewNote:hover {
   overflow: hidden;
 }
 
-.md-pane {
-  flex: 1 1 50%;
-  min-width: 0;
-  display: flex;
-  border-right: 1px solid var(--border);
-  overflow: hidden;
-}
-.md-pane.full { border-right: none; }
-
-#mdInput {
-  flex: 1;
-  width: 100%;
-  border: none;
-  outline: none;
-  resize: none;
-  background: none;
-  padding: 22px 28px 120px 32px;
-  font-size: 14.5px;
-  line-height: 1.85;
-  color: var(--text);
-  font-family: var(--font-ui);
-  tab-size: 2;
-}
-#mdInput::placeholder { color: var(--text-3); }
-
-.preview-pane {
-  flex: 1 1 50%;
-  min-width: 0;
-  overflow-y: auto;
-  padding: 22px 32px 120px 28px;
-}
-
-.editor-body.mode-edit .preview-pane { display: none; }
-.editor-body.is-rich .md-pane,
-.editor-body.is-rich .preview-pane { display: none; }
-.editor-body.mode-edit .md-pane { border-right: none; }
-.editor-body.mode-preview .md-pane { display: none; }
-
 .rich-pane {
   flex: 1;
   width: 100%;
@@ -2086,8 +2048,6 @@ html[data-theme="dark"] .sj-tip {
   :root { --sidebar-w: 290px; --list-w: 268px; }
   .editor-head { padding-left: 24px; padding-right: 16px; }
   .meta-row, .toolbar { padding-left: 24px; padding-right: 16px; }
-  #mdInput { padding-left: 24px; padding-right: 20px; }
-  .preview-pane { padding-left: 20px; padding-right: 24px; }
 }
 
 /* 手机端顶栏与抽屉遮罩：宽屏不出现 */
@@ -2234,10 +2194,7 @@ html[data-theme="dark"] .sj-tip {
   .toolbar::-webkit-scrollbar { display: none; }
   .tb-btn { flex: 0 0 auto; min-width: 32px; height: 32px; }
   .tb-sep { flex: 0 0 auto; }
-  #mdInput, .rich-pane, .preview-pane { font-size: 16px; } /* 16px 以下 iOS 聚焦会自动放大 */
-  #mdInput { padding: 14px 16px 120px; }
-  .preview-pane { padding: 14px 16px 120px; }
-  .rich-pane { padding: 14px 16px 120px; }
+  .rich-pane { font-size: 16px; padding: 14px 16px 120px; } /* 16px 以下 iOS 聚焦会自动放大 */
   .note-card { padding: 13px 14px; }
 }
 
@@ -2731,8 +2688,7 @@ body.sj-note-edit .editor-body {
   overflow: hidden;
 }
 /* 阅读态的正文保持一个适眼的行宽并居中 —— 宽屏下拉满整行太散，读着费劲 */
-body.sj-note-read .rich-pane,
-body.sj-note-read .preview-pane {
+body.sj-note-read .rich-pane {
   overflow: visible;
   max-width: 760px;
   margin: 0 auto;
@@ -2783,13 +2739,11 @@ body.sj-note-read .title-input {
 body.sj-note-read.sj-head-solid .title-input { opacity: 1; pointer-events: auto; }
 
 /* 阅读态正文：字号行距放大到「读」的比例，标题层级更清楚 */
-body.sj-note-read .rich-pane,
-body.sj-note-read .preview-pane {
+body.sj-note-read .rich-pane {
   font-size: 17px; line-height: 1.85;
   padding: 0 4px 140px;
 }
-body.sj-note-read .rich-pane img,
-body.sj-note-read .preview-pane img {
+body.sj-note-read .rich-pane img {
   max-width: 100%; height: auto; border-radius: 10px; display: block; margin: 12px 0;
 }
 

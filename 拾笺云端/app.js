@@ -74,14 +74,13 @@
   const draftFields = (n) => ({
     categoryId: n.categoryId || null,
     title: n.title || '', content: n.content || '',
-    format: n.format === 'rich' ? 'rich' : 'md',
+    format: 'rich',
     starred: !!n.starred, tags: (n.tags || []).slice(),
   });
 
-  /* 富文本编辑器空聚焦会留下 <p><br></p>；Markdown 里的尖括号是正文，不能剥。 */
-  function blankContent(s, rich) {
+  /* 富文本编辑器空聚焦会留下 <p><br></p>，判空时要剥掉标签只剩文本。 */
+  function blankContent(s) {
     const t = String(s || '');
-    if (!rich) return !t.trim();
     return !t.replace(/<br\s*\/?>/gi, '').replace(/<[^>]+>/g, '')
       .replace(/&nbsp;|\u00a0/gi, ' ').trim();
   }
@@ -89,7 +88,7 @@
   function isBlankNote(n) {
     if (!n) return true;
     if (String(n.title || '').trim()) return false;
-    if (!blankContent(n.content, n.format === 'rich')) return false;
+    if (!blankContent(n.content)) return false;
     if (n.tags && n.tags.length) return false;
     if (n.attachments && n.attachments.length) return false;
     if (n.starred) return false;
@@ -215,6 +214,9 @@
     html = DOMPurify.sanitize(html, { ADD_ATTR: ['target', 'rel'] });
     return html;
   }
+  /* mdconv.js 已在业务脚本之前加载（mobilesync.js 要用它转换云端旧行），
+     这里复用同一套渲染入口，避免两处实现漂移。 */
+  window.SJRenderMarkdown = renderMarkdown;
 
   function decorate(container) {
     container.querySelectorAll('pre').forEach((pre) => {
@@ -650,20 +652,11 @@
   };
 
   function plainText(note) {
-    let t = note.content || '';
-    if (note.format === 'rich') {
-      /* 用 DOMParser 取纯文本：不挂载节点、不加载资源、不触发 onerror。
-         直接 innerHTML 会让 <img onerror> 在游离节点里也发起加载并执行，
-         恶意备份/云端数据可借此窃取全部笔记（存储型 XSS）。 */
-      t = new DOMParser().parseFromString(String(t), 'text/html').body.textContent || '';
-    } else {
-      t = t
-        .replace(/```[\s\S]*?```/g, ' [代码] ')
-        .replace(/!\[[^\]]*\]\([^)]*\)/g, ' [图片] ')
-        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-        .replace(/[#>*_`~|-]/g, ' ')
-        .replace(/\n+/g, ' ');
-    }
+    /* 用 DOMParser 取纯文本：不挂载节点、不加载资源、不触发 onerror。
+       直接 innerHTML 会让 <img onerror> 在游离节点里也发起加载并执行，
+       恶意备份/云端数据可借此窃取全部笔记（存储型 XSS）。 */
+    const t = new DOMParser()
+      .parseFromString(String(note.content || ''), 'text/html').body.textContent || '';
     return t.replace(/\s+/g, ' ').trim();
   }
 
@@ -849,7 +842,7 @@
     if (!list.length) { toast('先勾选笔记'); return; }
     const parts = list.map((n) => {
       let body = n.content || '';
-      if (n.format === 'rich' && typeof td !== 'undefined' && td && td.turndown) {
+      if (typeof td !== 'undefined' && td && td.turndown) {
         try { body = td.turndown(body); } catch (_) {}
       }
       return `# ${n.title || '无标题笔记'}\n\n${body}\n`;
@@ -1594,7 +1587,7 @@
       const raw = JSON.stringify({
         id: note.id || '', draft: state.selNote === DRAFT_ID,
         title: note.title || '', content: note.content || '',
-        format: note.format === 'rich' ? 'rich' : 'md',
+        format: 'rich',
         categoryId: note.categoryId || null, starred: !!note.starred,
         tags: (note.tags || []).slice(), at: Date.now(),
       });
@@ -1640,13 +1633,11 @@
     if (!n) return false;
     Object.assign(n, {
       title: d.title || '', content: d.content || '',
-      format: d.format === 'rich' ? 'rich' : 'md',
+      format: 'rich',
       starred: !!d.starred, tags: Array.isArray(d.tags) ? d.tags.slice() : [],
     });
     $('#titleInput').value = n.title || '';
-    $('#mdInput').value = n.format === 'rich' ? '' : (n.content || '');
     $('#richPane').innerHTML = noteHtml(n);
-    viewFormat = n.format === 'rich' ? 'rich' : 'md';
     applyFormat();
     renderNoteTags(); renderList(); wordCount();
     markDirty();
@@ -1673,14 +1664,6 @@
     $('#wordCount').textContent = `${t.length} 字`;
   }
 
-  /* 旧云端数据漏写 format 时，富文本正文会被当成 Markdown 显示成源码。
-     这个特征只用于 format 缺失/非法的兜底：Markdown 里内联 <img> 是合法写法
-     （富文本转 Markdown 会保留宽度），不能再凭它把 md 判回 rich。 */
-  function looksRichContent(content) {
-    return typeof content === 'string'
-      && /<img\s[^>]*src=["'](?:\/api\/files\/|data:image\/)/i.test(content);
-  }
-
   function openNote(id, { focusTitle = false } = {}) {
     /* 离开当前笔记：先把脏数据落盘，再切换选中项。所有打开笔记的路径
        （列表、搜索、双链、外部调用）都会经过这里，不用逐个补钩子。 */
@@ -1694,10 +1677,6 @@
     /* 运行时兜底：local.js 已在读取入口批量修过，这里再兜一层
        （同步 setState 灌进来的数据不经过 load）。只处理 format 缺失的旧数据，
        并把修正持久化。 */
-    if (note.format !== 'rich' && note.format !== 'md' && looksRichContent(note.content)) {
-      note.format = 'rich';
-      api(`/api/notes/${note.id}`, { method: 'PATCH', body: { format: 'rich' } }).catch(() => {});
-    }
     state.selNote = id;
     /* 打开笔记时让左侧分类树定位到该笔记所在分类：展开其分类与祖先链，
        高亮由 renderTree 内的 treeActiveCat() 统一驱动（笔记只在自己的分类下高亮，
@@ -1708,7 +1687,6 @@
     }
     state.dirty = false;
     savedSnapshot = snapshot(note);
-    viewFormat = note.format === 'rich' ? 'rich' : 'md';
 
     $('#emptyState').classList.add('hidden');
     $('#editorWrap').classList.remove('hidden');
@@ -1716,14 +1694,11 @@
     $('#titleInput').value = note.title || '';
     $('#starBtn').classList.toggle('on', !!note.starred);
 
-    /* 正文统一进富文本容器：Markdown 笔记读时渲染成 HTML 放进来，
-       一旦被编辑就由 onRichInput 自动升级为富文本存储。
-       没被编辑过的 Markdown 笔记仍然是原样的 md 源码，不会被改写。 */
-    $('#mdInput').value = viewFormat === 'rich' ? '' : note.content || '';
+    /* 正文统一进富文本容器：存储层只有富文本一种格式，
+       读出来直接就是 HTML，不需要任何渲染分支。 */
     $('#richPane').innerHTML = noteHtml(note);
     decorate($('#richPane'));
     $('#richPane').classList.remove('hidden');
-    $('#mdPane').classList.add('hidden');
 
     $('#metaInfo').textContent = metaInfoText(note);
     setSaveState('', `已保存 ${new Date(note.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`);
@@ -1752,20 +1727,16 @@
   function applyFormat() {
     const note = currentNote();
     if (!note) return;
-    $('#mdPane').classList.add('hidden');
-    $('#previewPane').classList.add('hidden');
     $('#richPane').classList.remove('hidden');
     $('#editorBody').classList.add('is-rich');
   }
 
   /* 笔记正文 → 可直接放进富文本容器的 HTML。
-     富文本笔记用原样 HTML，Markdown 笔记渲染成 HTML，两个来源都过一遍 DOMPurify。 */
+     存储层只有富文本一种格式，这里只做一次净化。 */
   function noteHtml(note) {
     if (!note) return '';
     const c = note.content ? String(note.content) : '';
-    return note.format === 'rich'
-      ? DOMPurify.sanitize(c)
-      : DOMPurify.sanitize(renderMarkdown(c));
+    return DOMPurify.sanitize(c);
   }
 
   /* 保存：编辑期间只标脏、不写盘；离开编辑页时统一落盘。
@@ -1774,9 +1745,8 @@
   let savedSnapshot = '';
   /* 编辑器当前显示的存储格式。内容统一在富文本容器里编辑，
      Markdown 笔记一被输入就由 onRichInput 升级为 rich。 */
-  let viewFormat = 'rich';
   function snapshot(n) {
-    return JSON.stringify([n.title || '', n.content || '', n.format || 'md',
+    return JSON.stringify([n.title || '', n.content || '',
       n.categoryId || null, !!n.starred, n.tags || []]);
   }
   function markDirty() {
@@ -1812,7 +1782,7 @@
       const updated = await api(`/api/notes/${note.id}`, {
         method: 'PATCH',
         body: {
-          title: note.title, content: note.content, format: note.format,
+          title: note.title, content: note.content, format: 'rich',
           categoryId: note.categoryId, starred: note.starred, tags: note.tags || [],
         },
       });
@@ -2632,11 +2602,32 @@
     if (html) {
       const clean = DOMPurify.sanitize(html, { FORBID_TAGS: ['style', 'script', 'meta', 'link'] });
       document.execCommand('insertHTML', false, clean);
+    } else if (looksLikeMarkdown(text)) {
+      /* 识别为 Markdown：渲染成 HTML 再插入，保留排版 */
+      document.execCommand('insertHTML', false, renderMarkdown(text));
     } else {
       document.execCommand('insertText', false, text);
     }
     onRichInput();
   });
+
+  /* 粘贴纯文本时判断它是不是 Markdown 语法。
+     存储层收敛为富文本后，用户从别处复制的 md 源码（# 标题、- 列表、
+     ``` 代码块 等）如果原样插进去就只是一堆符号。这里识别出来转成
+     排版后的 HTML —— Markdown 速记的能力保住了，只是不再占用一种
+     存储格式。判断不靠「像不像」，而是看有没有明确的 md 标记。 */
+  function looksLikeMarkdown(text) {
+    const t = String(text || '');
+    if (!t.trim() || t.length > 20000) return false;
+    return /(^|\n)\s{0,3}#{1,6}\s+\S/.test(t)          /* 标题 */
+      || /(^|\n)\s{0,3}([-*+]|\d+\.)\s+\S/.test(t)    /* 列表 */
+      || /(^|\n)\s{0,3}>\s+\S/.test(t)                 /* 引用 */
+      || /```/.test(t)                                    /* 代码块 */
+      || /\*\*[^*\n]+\*\*/.test(t)                     /* 加粗 */
+      || /(^|\n)\s{0,3}\|[^\n]+\|\s*\n/.test(t)     /* 表格 */
+      || /!\[[^\]]*\]\([^)]+\)/.test(t)               /* 图片 */
+      || /\[[^\]]+\]\([^)]+\)/.test(t);               /* 链接 */
+  }
 
   /* ---------------------------------------------------------- 悬停提示
      原生 title 是系统画的带黑框白底方块：样式一处都改不了，出现在附件卡片上
@@ -2804,7 +2795,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-22-156';
+  const APP_BUILD = '2026-11-22-157';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -4067,7 +4058,6 @@
     state.selNote = null;
     state.dirty = false;
     savedSnapshot = '';
-    viewFormat = 'md';
     closeTagInput();
     const tl = $('#tagList');
     if (tl) tl.innerHTML = '';
@@ -4164,9 +4154,7 @@
       try {
         const full = await api(`/api/notes/${note.id}/versions/${v.id}`);
         picked = full;
-        prevEl.innerHTML = full.format === 'rich'
-          ? DOMPurify.sanitize(full.content || '')
-          : renderMarkdown(full.content || '');
+        prevEl.innerHTML = DOMPurify.sanitize(full.content || '');
         restoreBtn.disabled = false;
         hint.textContent = `版本时间：${fmtFull(full.ts)}　·　${(full.content || '').length} 字`;
       } catch (e) {
@@ -4252,12 +4240,8 @@
     const note = currentNote();
     if (!note) return;
     let src = '';
-    if (note.format === 'rich') {
-      try { src = td.turndown(note.content || ''); }
-      catch (_) { src = note.content || ''; }
-    } else {
-      src = note.content || '';
-    }
+    try { src = td.turndown(note.content || ''); }
+    catch (_) { src = note.content || ''; }
     const m = openModal(`
       <h3>Markdown 源码</h3>
       <textarea class="sj-src-box" readonly spellcheck="false"></textarea>
@@ -4284,9 +4268,7 @@
     const note = currentNote();
     if (!note) return;
     await saveNow();
-    const html = note.format === 'rich'
-      ? DOMPurify.sanitize(note.content || '')
-      : renderMarkdown(note.content || '');
+    const html = DOMPurify.sanitize(note.content || '');
     try {
       if (kind === 'docx') {
         toast('正在生成 Word 文档…');
@@ -4295,7 +4277,7 @@
       } else if (kind === 'pdf') {
         NoteExport.toPdf({ title: note.title, html, tags: note.tags, updatedAt: note.updatedAt });
       } else {
-        const md = note.format === 'md' ? note.content : td.turndown(html);
+        const md = td.turndown(html);
         NoteExport.toMarkdown({ title: note.title, content: md });
         toast('Markdown 已导出');
       }
@@ -4934,14 +4916,6 @@
     if (!$('#tagInput').classList.contains('hidden')) commitTag();
   });
 
-  $('#mdInput').addEventListener('paste', async (e) => {
-    const files = Array.from(e.clipboardData.files || []);
-    if (files.length) {
-      e.preventDefault();
-      await uploadFiles(files, { insert: true });
-    }
-  });
-
   /* 插入图片：手机端先弹本应用的「拍照 / 从相册选择 / 取消」。
      以前点图片按钮直接跳系统选择器，那个页面只有「完成」、没有取消或返回，
      选不到图就出不来（用户 2026-11-21 反馈）。桌面端的文件框自带取消，照旧直开。 */
@@ -5174,10 +5148,8 @@
     if (mod && (e.key === 'b' || e.key === 'i')) {
       const note = currentNote();
       if (!note) return;
-      if (viewFormat === 'rich') {
-        e.preventDefault();
-        exec(e.key === 'b' ? 'bold' : 'italic');
-      }
+      e.preventDefault();
+      exec(e.key === 'b' ? 'bold' : 'italic');
       return;
     }
     if (e.key === 'Escape') {
@@ -5264,7 +5236,10 @@
         if (have.has(title + '|' + it.content)) { seen.push(it.sig); done.add(it.sig); continue; }
         try {
           await api('/api/notes', { method: 'POST', body: {
-            title, content: it.content, format: it.format === 'rich' ? 'rich' : 'md',
+            /* 随手记是纯文本（quick.html 的用户输入），不是 Markdown。
+               存储层只有富文本一种格式：内容按纯文本处理，
+               由服务端的 mdconv 层转成 HTML 再落库。 */
+            title, content: it.content, format: 'rich',
           } });
           seen.push(it.sig); done.add(it.sig); added++;
           if (it.cut) cut++;
@@ -6848,7 +6823,7 @@
       if (STYLE_SHEET.contains(e.target)) return;
       const t = e.target;
       if (t.closest && (t.closest('[data-act="fmt"]') || t.closest('.editor-pane')
-        || t.closest('#richPane') || t.closest('#mdInput') || t.closest('.sj-note-head'))) return;
+        || t.closest('#richPane') || t.closest('.sj-note-head'))) return;
       closeStyleSheet();
     });
     /* 转屏、键盘收起都会改变可视高度：面板高度重算一次，光标行的位置也跟着重算；
@@ -6893,22 +6868,16 @@
         }
       } catch (_) {}
     }
-    /* 手机端只认富文本：Markdown 里的图片是 `![](data:image/…)` / `![](/api/files/…)`
-       这种长串源码，直接丢进 textarea 就是用户说的「一长串压缩码」。
-       进编辑前先渲染成富文本，图片回到 <img>，才能正常显示、删除、换位置。
-       只在真正输入后由 onRichInput 把 format 写成 rich，光看不动不改数据。 */
-    /* 正文只有富文本一个编辑面：Markdown 笔记打开时就已经渲染成 HTML 放进了
-       richPane，进编辑态不用再转一次。真要兜底（数据在打开之后才被换过）
-       才重新渲染一遍。 */
+    /* 正文只有富文本一个编辑面：存储层已经是富文本，
+       打开笔记时就已经是 HTML 放进 richPane 了，
+       进编辑态不需要再转一次。 */
     function toRichEditor() {
-      if (viewFormat === 'rich') return;
       const note = currentNote();
       const pane = $('#richPane');
       if (pane && note) {
         pane.innerHTML = noteHtml(note);
         decorate(pane);
       }
-      viewFormat = 'rich';
       applyFormat();
       renderToolbar();
       decorateRichAttachments();
@@ -7058,7 +7027,7 @@
        编辑态点图片 → 选中并弹出图片操作条，点别处收起。 */
     if (BODY_BOX) BODY_BOX.addEventListener('click', (e) => {
       if (!NARROW() || !currentNote()) return;
-      const img = e.target.closest ? e.target.closest('#richPane img, #previewPane img') : null;
+      const img = e.target.closest ? e.target.closest('#richPane img') : null;
       if (document.body.classList.contains('sj-note-edit')) {
         /* 待办列表：点左边那个方框打勾 / 取消勾，点文字仍然是正常放光标 */
         const li = e.target.closest ? e.target.closest('#richPane ul.sj-task > li') : null;
@@ -7075,7 +7044,6 @@
         if (inRich) { e.preventDefault(); selectImg(inRich); return; }
         clearImgSel();
         /* Markdown 源码框自带原生键盘行为，交给它自己处理 */
-        if (e.target.closest && e.target.closest('#mdInput')) return;
         /* 样式面板开着时点正文 = 只挪光标、不弹输入法：
            面板留着继续调格式，光标竖线看得见，能确认自己在改哪一行。
            想打字就先点 A 或 × 收起面板（收起后才唤起键盘）。 */
@@ -7094,7 +7062,7 @@
       /* 阅读态点图片：同样进编辑，并把同一张图选中，省得再点一次 */
       let idx = -1;
       if (img) {
-        const pane = img.closest('#richPane') || img.closest('#previewPane');
+        const pane = img.closest('#richPane');
         if (pane) idx = Array.prototype.indexOf.call(pane.querySelectorAll('img'), img);
       }
       setNoteMode('edit', { x: e.clientX, y: e.clientY });

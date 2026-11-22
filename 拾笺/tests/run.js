@@ -13,6 +13,8 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const html = read('index.html');
 const js = read('app.js');
 const css = read('style.css');
+const syncJs = read('sync.js');
+const sjplusJs = read('sjplus.js');
 
 let pass = 0, fail = 0;
 function ok(name, cond) {
@@ -87,7 +89,7 @@ ok('编辑态把插图/附件/收藏收进底部工具条',
   /body\.sj-note-edit #imgBtn,[\s\S]{0,120}#attachBtn,[\s\S]{0,120}#starBtn \{ display: none; \}/.test(css));
 ok('顶栏小标题默认透明', /body\.sj-note-read \.title-input \{[\s\S]{0,160}opacity: 0;/.test(css));
 ok('接管后恢复不透明', /body\.sj-note-read\.sj-head-solid \.title-input \{ opacity: 1;/.test(css));
-ok('阅读态正文保持适眼行宽', /body\.sj-note-read \.rich-pane,[\s\S]{0,120}max-width: 760px;/.test(css));
+ok('阅读态正文保持适眼行宽', /body\.sj-note-read \.rich-pane \{[\s\S]{0,120}max-width: 760px;/.test(css));
 ok('底部工具条样式存在', /\.sj-edit-bar \{[\s\S]{0,400}border-radius: 999px;/.test(css));
 ok('格式面板从右侧滑出', /\.sj-style-panel \{[\s\S]{0,300}right: 0;/.test(css));
 ok('格式面板不遮顶栏（top 用变量）', /top: var\(--sj-sp-top/.test(css));
@@ -95,7 +97,10 @@ ok('格式面板不遮顶栏（top 用变量）', /top: var\(--sj-sp-top/.test(c
 /* ---------- 6. 数据格式没被动过（回归保护） ---------- */
 console.log('\n数据格式与保存链路未受影响');
 ok('富文本仍存 innerHTML', /note\.content = \$\('#richPane'\)\.innerHTML;/.test(js));
-ok('Markdown 笔记读时渲染成 HTML', /function noteHtml\(/.test(js) && /renderMarkdown\(c\)/.test(js));
+ok('存储层单一化：正文恒为富文本，无 md 渲染分支',
+  /function noteHtml\(/.test(js)
+  && /return DOMPurify\.sanitize\(note\.content \? String\(note\.content\) : ''\);/.test(js)
+  && !/note\.format === 'rich'/.test(js));
 ok('富文本仍经 DOMPurify 净化', /DOMPurify\.sanitize\(note\.content \|\| ''\)/.test(js));
 ok('标脏 / 落盘链路没变', /function markDirty\(\)/.test(js) && /function saveNow\(\)/.test(js));
 ok('顶栏不再有格式分段开关', !/data-format="md"/.test(html) && !/id="formatSwitch"/.test(html));
@@ -106,10 +111,9 @@ ok('删除按钮仍在', /id="deleteNoteBtn"/.test(html));
 
 /* ---------- 6b. 编辑面收敛：正文只有富文本一个编辑面 ---------- */
 console.log('\n编辑面收敛（Markdown / 富文本双模式已下线）');
-ok('Markdown 源码框永久隐藏', /class="md-pane hidden" id="mdPane"/.test(html));
-ok('编辑面只有 richPane 一个', /function applyFormat\(\)/.test(js)
-  && /\$\('#mdPane'\)\.classList\.add\('hidden'\)/.test(js)
-  && /\$\('#richPane'\)\.classList\.remove\('hidden'\)/.test(js));
+ok('Markdown 源码框已从 DOM 移除', !/id="mdPane"/.test(html) && !/id="mdInput"/.test(html));
+ok('编辑面只有 richPane 一个', !/id="mdPane"/.test(html) && !/id="previewPane"/.test(html)
+  && /id="richPane"/.test(html) && !/\$\('#mdPane'\)/.test(js));
 ok('Markdown 笔记一被编辑即升级为富文本', /note\.content = \$\('#richPane'\)\.innerHTML;[\s\S]{0,80}note\.format = 'rich';/.test(js));
 ok('新建笔记默认富文本', /categoryId: target, title: '', content: '', format: 'rich'/.test(js));
 ok('旧的 textarea 事件已摘掉', !/addEventListener\('input', onMdInput\)/.test(js)
@@ -117,7 +121,8 @@ ok('旧的 textarea 事件已摘掉', !/addEventListener\('input', onMdInput\)/.
 ok('旧的格式切换函数已摘掉', !/function switchFormat\(/.test(js));
 ok('md 专属的插入助手已摘掉', !/function prefixLine\(/.test(js) && !/function wrapSel\(/.test(js));
 ok('富文本补上了表格插入', /function insertRichTable\(/.test(js));
-ok('Markdown 笔记没被编辑就不改写数据', !/note\.content = \$\('#mdInput'\)\.value;/.test(js));
+ok('正文只经富文本容器写回', !/note\.content = \$\('#mdInput'\)\.value;/.test(js)
+  && /note\.content = \$\('#richPane'\)\.innerHTML;/.test(js));
 
 /* ---------- 7. 与手机端同源的视觉约定 ---------- */
 console.log('\n与手机端一致的约定');
@@ -125,6 +130,40 @@ ok('编辑态有撤销 / 重做（与手机端同一套）', /id="sjUndoBtn"/.te
 ok('撤销用 execCommand undo', /execCommand\('undo'\)/.test(js));
 ok('重做用 execCommand redo', /execCommand\('redo'\)/.test(js));
 ok('工具条用胶囊圆角（与手机端一致）', /border-radius: 999px/.test(css));
+
+/* ---------- 8. 存储层单一化（格式收敛） ---------- */
+console.log('\n存储层收敛为单一富文本');
+const serverJs = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+const mdconvJs = fs.readFileSync(path.join(__dirname, '..', 'lib', 'mdconv.js'), 'utf8');
+ok('客户端不再有 format 分支',
+  !/format === 'rich'/.test(js) && !/format === 'md'/.test(js)
+  && !/format !== 'rich'/.test(js) && !/format !== 'md'/.test(js));
+ok('viewFormat 状态变量已删除', !/viewFormat/.test(js));
+ok('格式嗅探函数已删除', !/looksRichContent/.test(js));
+ok('服务端有 md→rich 转换层', /require\('.\/lib\/mdconv\.js'\)/.test(serverJs)
+  && /function mdToRich\(/.test(mdconvJs) && /function toRichHtml\(/.test(mdconvJs));
+ok('服务端写入路径一律转成富文本',
+  /content: toRichHtml\(\{ content: body\.content/.test(serverJs)
+  && /note\.content = toRichHtml\(\{ content: body\.content/.test(serverJs)
+  && /content: toRichHtml\(\{ content: String\(n\.content/.test(serverJs));
+ok('服务端落库格式恒为 rich',
+  /format: 'rich',/.test(serverJs) && !/format: body\.format === 'rich' \? 'rich' : 'md'/.test(serverJs));
+ok('服务端种子笔记已是富文本',
+  /content: mdToRich\(welcome\), format: 'rich'/.test(serverJs)
+  && /content: mdToRich\(codeNote\), format: 'rich'/.test(serverJs));
+ok('服务端转换层拦住了危险协议',
+  /isDangerousUrl/.test(mdconvJs) && /javascript:/.test(mdconvJs)
+  && /DANGEROUS_ATTR/.test(mdconvJs));
+ok('客户端保留 Markdown 出口：源码查看', /function showMarkdownSource\(/.test(js)
+  && /td\.turndown/.test(js));
+ok('客户端保留 Markdown 出口：导出 .md', /NoteExport\.toMarkdown/.test(js));
+ok('保险箱导出仍是 Markdown', /function noteMd\(/.test(sjplusJs) && /function htmlToMd\(/.test(sjplusJs));
+ok('粘贴 Markdown 会自动识别成排版', /function looksLikeMarkdown\(/.test(js)
+  && /renderMarkdown\(text\)/.test(js));
+ok('云端旧 md 行拉回本地时转成富文本', /SJRenderMarkdown/.test(js) && /SJRenderMarkdown/.test(syncJs));
+ok('renderMarkdown 已导出到全局供 sync.js 用',
+  /window\.SJRenderMarkdown = renderMarkdown/.test(js));
+ok('迁移脚本存在且可执行', fs.existsSync(path.join(__dirname, '..', 'scripts', 'migrate-to-rich.js')));
 
 console.log(`\n结果：${pass} 通过，${fail} 失败`);
 process.exit(fail ? 1 : 0);
