@@ -61,12 +61,12 @@ ok('滚动时重新计算', /addEventListener\('scroll'[\s\S]{0,120}placeReadTit
 console.log('\n格式面板');
 ok('有 renderStylePanel 渲染函数', /function renderStylePanel\(/.test(js));
 ok('有 openStylePanel / closeStylePanel', /function openStylePanel\(/.test(js) && /function closeStylePanel\(/.test(js));
-ok('面板内容随 Markdown / 富文本切换', /if \(viewFormat === 'md'\)/.test(js));
+ok('面板只有一套（不再按格式分叉）', !/if \(viewFormat === 'md'\)/.test(js));
 ok('富文本面板有文字组', /group\('文字'\)/.test(js));
 ok('富文本面板有段落组', /group\('段落'\)/.test(js));
 ok('富文本面板有对齐组', /group\('对齐'\)/.test(js));
 ok('富文本面板有列表组', /group\('列表'\)/.test(js));
-ok('富文本面板有字号组', /group\('字号'\)/.test(js));
+ok('富文本面板有字号组', /sj-sp-sizes/.test(js) && /textContent = '字号'/.test(js));
 ok('面板会自己存一份选区（面板是浮层，正文会失焦）',
   /function capturePanelRange\(/.test(js) && /function restorePanelRange\(/.test(js));
 ok('点格式按钮前先恢复选区', /restorePanelRange\(\);\s*\n\s*fn\(\);/.test(js));
@@ -95,13 +95,29 @@ ok('格式面板不遮顶栏（top 用变量）', /top: var\(--sj-sp-top/.test(c
 /* ---------- 6. 数据格式没被动过（回归保护） ---------- */
 console.log('\n数据格式与保存链路未受影响');
 ok('富文本仍存 innerHTML', /note\.content = \$\('#richPane'\)\.innerHTML;/.test(js));
-ok('Markdown 仍存 textarea 的 value', /note\.content = \$\('#mdInput'\)\.value;/.test(js));
+ok('Markdown 笔记读时渲染成 HTML', /function noteHtml\(/.test(js) && /renderMarkdown\(c\)/.test(js));
 ok('富文本仍经 DOMPurify 净化', /DOMPurify\.sanitize\(note\.content \|\| ''\)/.test(js));
 ok('标脏 / 落盘链路没变', /function markDirty\(\)/.test(js) && /function saveNow\(\)/.test(js));
-ok('Markdown / 富文本切换仍保留', /data-format="md"/.test(html) && /data-format="rich"/.test(html));
+ok('顶栏不再有格式分段开关', !/data-format="md"/.test(html) && !/id="formatSwitch"/.test(html));
+ok('源码降级为二级入口', /function showMarkdownSource\(/.test(js) && /Markdown 源码/.test(js));
 ok('历史版本按钮仍在', /id="historyBtn"/.test(html));
 ok('导出按钮仍在', /id="exportBtn2"/.test(html));
 ok('删除按钮仍在', /id="deleteNoteBtn"/.test(html));
+
+/* ---------- 6b. 编辑面收敛：正文只有富文本一个编辑面 ---------- */
+console.log('\n编辑面收敛（Markdown / 富文本双模式已下线）');
+ok('Markdown 源码框永久隐藏', /class="md-pane hidden" id="mdPane"/.test(html));
+ok('编辑面只有 richPane 一个', /function applyFormat\(\)/.test(js)
+  && /\$\('#mdPane'\)\.classList\.add\('hidden'\)/.test(js)
+  && /\$\('#richPane'\)\.classList\.remove\('hidden'\)/.test(js));
+ok('Markdown 笔记一被编辑即升级为富文本', /note\.content = \$\('#richPane'\)\.innerHTML;[\s\S]{0,80}note\.format = 'rich';/.test(js));
+ok('新建笔记默认富文本', /categoryId: target, title: '', content: '', format: 'rich'/.test(js));
+ok('旧的 textarea 事件已摘掉', !/addEventListener\('input', onMdInput\)/.test(js)
+  && !/function onMdInput\(/.test(js));
+ok('旧的格式切换函数已摘掉', !/function switchFormat\(/.test(js));
+ok('md 专属的插入助手已摘掉', !/function prefixLine\(/.test(js) && !/function wrapSel\(/.test(js));
+ok('富文本补上了表格插入', /function insertRichTable\(/.test(js));
+ok('Markdown 笔记没被编辑就不改写数据', !/note\.content = \$\('#mdInput'\)\.value;/.test(js));
 
 /* ---------- 7. 与手机端同源的视觉约定 ---------- */
 console.log('\n与手机端一致的约定');

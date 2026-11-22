@@ -162,10 +162,6 @@
         </button>
         <input id="titleInput" class="title-input" placeholder="无标题笔记" spellcheck="false">
         <div class="editor-actions">
-          <div class="segmented" id="formatSwitch">
-            <button data-format="md">Markdown</button>
-            <button data-format="rich">富文本</button>
-          </div>
           <button class="icon-btn" id="starBtn" title="收藏">
             <svg viewBox="0 0 24 24" class="ico"><path d="M12 3.6l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.8l5.9-.8z"/></svg>
           </button>
@@ -226,10 +222,12 @@
           <h1 class="sj-rh-title" id="sjReadTitle"></h1>
           <div class="sj-rh-meta" id="sjRhMeta"></div>
         </div>
-        <div class="md-pane" id="mdPane">
+        <!-- mdPane 已退居幕后：正文统一在 richPane 里编辑，
+             Markdown 笔记读时渲染成 HTML，写时自动升级为富文本。 -->
+        <div class="md-pane hidden" id="mdPane">
           <textarea id="mdInput" spellcheck="false" placeholder="用 Markdown 记录点什么…"></textarea>
         </div>
-        <div class="preview-pane markdown-body" id="previewPane"></div>
+        <div class="preview-pane markdown-body hidden" id="previewPane"></div>
         <div class="rich-pane markdown-body" id="richPane" contenteditable="true" spellcheck="false"></div>
       </div>
 

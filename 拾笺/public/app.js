@@ -324,68 +324,7 @@
     }
     if (imgMode === 'rich') {
       onRichInput();
-    } else {
-      commitMdImgWidth(pct);
-      const pane = $('#previewPane');
-      const again = pane ? pane.querySelectorAll('img')[imgIdx] : null;
-      if (again) {
-        imgEl = again;
-        again.classList.add('sj-img-picked');
-      }
     }
-  }
-
-  function resetStyleWidth(tag, pct) {
-    const m = tag.match(/\sstyle\s*=\s*("([^"]*)"|'([^']*)')/i);
-    const cur = m ? (m[2] != null ? m[2] : m[3]) || '' : '';
-    const kept = cur.split(';').map((s) => s.trim())
-      .filter((s) => s && !/^width\s*:/i.test(s));
-    if (pct != null) kept.push(`width:${pct}%`);
-    const attr = kept.length ? ` style="${kept.join(';')}"` : '';
-    if (m) return tag.replace(m[0], attr);
-    return attr ? tag.replace(/\s*\/?>$/, (s) => `${attr}${s}`) : tag;
-  }
-
-  /* 按出现顺序收集正文里的图片标记，跳过围栏代码块与行内 code
-     （marked 不会把代码块里的 ![]() 渲染成图，若计入索引会整体错位） */
-  function mdImageTokens(md) {
-    const holes = [];
-    const fenceRe = /```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`/g;
-    let f;
-    while ((f = fenceRe.exec(md))) holes.push([f.index, f.index + f[0].length]);
-    const re = /<img\b[^>]*>|!\[[^\]]*\]\(\s*[^)\s]+(?:\s+"[^"]*")?\s*\)/gi;
-    const out = [];
-    let m;
-    while ((m = re.exec(md))) {
-      const s = m.index, e = s + m[0].length;
-      let inside = false;
-      for (let i = 0; i < holes.length; i++) {
-        if (s >= holes[i][0] && e <= holes[i][1]) { inside = true; break; }
-      }
-      if (!inside) out.push({ start: s, end: e, text: m[0] });
-    }
-    return out;
-  }
-
-  function commitMdImgWidth(pct) {
-    const ta = $('#mdInput');
-    if (!ta || imgIdx < 0) return;
-    const toks = mdImageTokens(ta.value);
-    const tok = toks[imgIdx];
-    if (!tok) return;
-    let out;
-    if (tok.text.charAt(0) === '<') {
-      out = resetStyleWidth(tok.text, pct);
-    } else {
-      if (pct == null) return;
-      const m = tok.text.match(/^!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"[^"]*")?\s*\)$/);
-      if (!m) return;
-      const alt = (m[1] || '').replace(/"/g, '&quot;');
-      out = `<img src="${m[2]}" alt="${alt}" style="width:${pct}%">`;
-    }
-    const md = ta.value;
-    ta.value = md.slice(0, tok.start) + out + md.slice(tok.end);
-    onMdInput();
   }
 
   function openImgSizer(img, mode, idx) {
@@ -1684,7 +1623,7 @@
   function restoreEditDraft(d) {
     if (d.draft && !draftNote) {
       draftNote = {
-        id: DRAFT_ID, title: '', content: '', format: 'md',
+        id: DRAFT_ID, title: '', content: '', format: 'rich',
         categoryId: d.categoryId || null, starred: false, tags: [],
         attachments: [], createdAt: Date.now(), updatedAt: Date.now(),
       };
@@ -1704,10 +1643,9 @@
     });
     $('#titleInput').value = n.title || '';
     $('#mdInput').value = n.format === 'rich' ? '' : (n.content || '');
-    $('#richPane').innerHTML = n.format === 'rich' ? DOMPurify.sanitize(n.content || '') : '';
+    $('#richPane').innerHTML = noteHtml(n);
     viewFormat = n.format === 'rich' ? 'rich' : 'md';
-    applyFormat(viewFormat);
-    if (viewFormat === 'md') refreshPreview();
+    applyFormat();
     renderNoteTags(); renderList(); wordCount();
     markDirty();
     toast('已恢复上次未保存的内容，离开时会保存');
@@ -1817,15 +1755,9 @@
       const ti = $('#titleInput');
       if (ti) { ti.readOnly = false; ti.style.opacity = ''; }
       document.body.classList.remove('sj-head-solid');
-      /* 进编辑态时把 Markdown 切到可写的源码态（原来在阅读态是渲染出来的） */
-      if (viewFormat === 'md') {
-        state.viewMode = 'edit';
-        applyFormat('md');
-        renderToolbar();
-      }
       if (opts.focus !== false) {
         setTimeout(() => {
-          const t = viewFormat === 'rich' ? $('#richPane') : $('#mdInput');
+          const t = $('#richPane');
           if (t) t.focus();
         }, 0);
       }
@@ -1838,12 +1770,6 @@
       if (EDIT_BAR) EDIT_BAR.classList.add('hidden');
       const ti = $('#titleInput');
       if (ti) ti.readOnly = true;
-      /* Markdown 回到渲染态（阅读态看的是排版结果，不是源码） */
-      if (viewFormat === 'md') {
-        state.viewMode = 'preview';
-        applyFormat('md');
-        renderToolbar();
-      }
       placeReadTitle();
     }
   }
@@ -1931,31 +1857,8 @@
       return b;
     };
 
-    if (viewFormat === 'md') {
-      /* Markdown 源码态：这些是往光标处插语法的 */
-      const g1 = group('结构');
-      spBtn(g1, '<span class="sj-sp-glyph">H1</span>', '一级标题', () => prefixLine('# '));
-      spBtn(g1, '<span class="sj-sp-glyph">H2</span>', '二级标题', () => prefixLine('## '));
-      spBtn(g1, '<span class="sj-sp-glyph">H3</span>', '三级标题', () => prefixLine('### '));
-      spBtn(g1, '<span class="sj-sp-glyph">正文</span>', '正文', () => prefixLine(''));
-      const g2 = group('强调');
-      spBtn(g2, '<span class="sj-sp-glyph b">B</span>', '加粗', () => wrapSel('**', '**', '粗体'));
-      spBtn(g2, '<span class="sj-sp-glyph i">I</span>', '斜体', () => wrapSel('*', '*', '斜体'));
-      spBtn(g2, '<span class="sj-sp-glyph u">U</span>', '下划线', () => wrapSel('<u>', '</u>', '下划线'));
-      spBtn(g2, I.strike, '删除线', () => wrapSel('~~', '~~', '删除线'));
-      const g3 = group('列表');
-      spBtn(g3, I.list, '无序列表', () => prefixLine('- '));
-      spBtn(g3, I.listOrdered, '有序列表', () => prefixLine('1. '));
-      spBtn(g3, I.check, '任务列表', () => prefixLine('- [ ] '));
-      spBtn(g3, I.quote, '引用', () => prefixLine('> '));
-      const g4 = group('插入');
-      spBtn(g4, I.link, '链接', () => insertLink());
-      spBtn(g4, I.table, '表格', () => insertTable());
-      spBtn(g4, I.hr, '分隔线', () => insertAtCursor('\n---\n'));
-      return;
-    }
-
-    /* 富文本：作用在正文选区上 */
+    /* 富文本：作用在正文选区上。Markdown 笔记进来时已渲染成 HTML，
+       一视同仁用同一套格式命令。 */
     const g1 = group('文字');
     spBtn(g1, '<span class="sj-sp-glyph b">B</span>', '加粗', () => exec('bold'));
     spBtn(g1, '<span class="sj-sp-glyph i">I</span>', '斜体', () => exec('italic'));
@@ -1974,7 +1877,6 @@
     spBtn(g4, I.list, '无序列表', () => exec('insertUnorderedList'));
     spBtn(g4, I.listOrdered, '有序列表', () => exec('insertOrderedList'));
     spBtn(g4, I.quote, '引用', () => exec('formatBlock', '<blockquote>'));
-    const g5 = group('字号');
     const sg = document.createElement('div');
     sg.className = 'sj-sp-sizes';
     const sizes = [['14', '小'], ['16', '中'], ['18', '大'], ['22', '特大']];
@@ -2002,8 +1904,16 @@
       const url = prompt('请输入链接地址', 'https://');
       if (url) exec('createLink', url);
     });
+    spBtn(g6, I.table, '表格', () => insertRichTable());
     spBtn(g6, I.hr, '分隔线', () => exec('insertHorizontalRule'));
     spBtn(g6, '<span class="sj-sp-glyph">Tx</span>', '清除格式', () => exec('removeFormat'));
+  }
+
+  /* 富文本插入表格：3×3 空表，占位符用不换行空格撑开单元格 */
+  function insertRichTable() {
+    const row = '<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>';
+    const html = '<table class="sj-table"><tbody>' + row + row + row + '</tbody></table><p><br></p>';
+    exec('insertHTML', html);
   }
 
   function openStylePanel() {
@@ -2069,28 +1979,25 @@
     savedSnapshot = snapshot(note);
     viewFormat = note.format === 'rich' ? 'rich' : 'md';
 
-    /* 打开已有笔记默认进 Markdown 阅读态；新建草稿保持编辑态以便输入。
-       富文本笔记本来就是渲染态，无需切换。 */
-    if (viewFormat === 'md') {
-      state.viewMode = id === DRAFT_ID ? 'edit' : 'preview';
-    }
-
     $('#emptyState').classList.add('hidden');
     $('#editorWrap').classList.remove('hidden');
 
     $('#titleInput').value = note.title || '';
     $('#starBtn').classList.toggle('on', !!note.starred);
 
+    /* 正文统一进富文本容器：Markdown 笔记读时渲染成 HTML 放进来，
+       一旦被编辑就由 onRichInput 自动升级为富文本存储。
+       没被编辑过的 Markdown 笔记仍然是原样的 md 源码，不会被改写。 */
     $('#mdInput').value = viewFormat === 'rich' ? '' : note.content || '';
-    $('#richPane').innerHTML = viewFormat === 'rich' ? DOMPurify.sanitize(note.content || '') : '';
-    $('#richPane').classList.toggle('hidden', viewFormat !== 'rich');
-    $('#mdPane').classList.toggle('hidden', viewFormat !== 'md');
+    $('#richPane').innerHTML = noteHtml(note);
+    decorate($('#richPane'));
+    $('#richPane').classList.remove('hidden');
+    $('#mdPane').classList.add('hidden');
 
     $('#metaInfo').textContent = metaInfoText(note);
     setSaveState('', `已保存 ${new Date(note.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`);
 
-    applyFormat(viewFormat);
-    if (viewFormat === 'md') refreshPreview();
+    applyFormat();
     renderToolbar();
     renderAttachments();
     renderNoteTags();
@@ -2103,18 +2010,12 @@
     $('#attachPanel').classList.toggle('hidden', !(note.attachments && note.attachments.length));
 
     /* 形态同步：已有笔记进阅读态（先读后写），新建草稿直接进编辑态。
-       Markdown 笔记在阅读态显示渲染结果，编辑态切回源码。 */
+       正文只有富文本一个编辑面，Markdown 笔记进来时已经是渲染好的 HTML。 */
     syncNoteMode(note);
     if (id === DRAFT_ID) {
       setNoteMode(true, { focus: false });
     } else {
       setNoteMode(false);
-    }
-    /* 富文本在阅读态不可编辑（由 setNoteMode 处理），Markdown 渲染结果要先刷出来 */
-    if (viewFormat === 'md') {
-      state.viewMode = id === DRAFT_ID ? 'edit' : 'preview';
-      applyFormat(viewFormat);
-      refreshPreview();
     }
 
     if (focusTitle) {
@@ -2129,10 +2030,10 @@
   function enterEditAt(clientX, clientY) {
     if (noteMode === 'edit') return;
     setNoteMode(true, { focus: false });
-    const target = viewFormat === 'rich' ? $('#richPane') : $('#mdInput');
+    const target = $('#richPane');
     if (!target) return;
     target.focus();
-    if (viewFormat === 'rich' && clientX != null) {
+    if (clientX != null) {
       try {
         const sel = window.getSelection();
         if (sel && sel.rangeCount) {
@@ -2188,6 +2089,7 @@
         closeStylePanel();
         const r = btn.getBoundingClientRect();
         showCtx(r.left - 120, r.top - 150, [
+          { label: 'Markdown 源码', icon: I.code, onClick: () => showMarkdownSource() },
           { label: '历史版本', icon: I.dots, onClick: () => $('#historyBtn').click() },
           { label: '导出', icon: I.download, onClick: () => $('#exportBtn2').click() },
           { sep: true },
@@ -2213,36 +2115,33 @@
     closeStylePanel();
   });
 
-  function applyFormat(format) {
+  /* 正文只有富文本一个编辑面：Markdown 笔记读时渲染成 HTML，
+     写时自动升级为富文本存储。这个函数只负责把编辑面的显隐摆平。 */
+  function applyFormat() {
     const note = currentNote();
     if (!note) return;
-    const isMd = format !== 'rich';
-    $$('#formatSwitch button').forEach((b) => b.classList.toggle('on', (b.dataset.format === 'md') === isMd));
-    $('#mdPane').classList.toggle('hidden', !isMd);
-    $('#richPane').classList.toggle('hidden', isMd);
-    $('#editorBody').classList.toggle('is-rich', !isMd);
-    // 打开时默认进预览态（见 openNote），但打开后仍可手动切到 编辑/分屏
-    const mode = NARROW() && state.viewMode === 'split' ? 'edit' : state.viewMode;
-    $('#editorBody').classList.toggle('mode-edit', isMd && mode === 'edit');
-    $('#editorBody').classList.toggle('mode-preview', isMd && mode === 'preview');
+    $('#mdPane').classList.add('hidden');
+    $('#richPane').classList.remove('hidden');
+    $('#editorBody').classList.add('is-rich');
   }
 
-  function refreshPreview() {
-    const note = currentNote();
-    if (!note || viewFormat !== 'md') return;
-    const html = renderMarkdown($('#mdInput').value);
-    const pane = $('#previewPane');
-    pane.innerHTML = html;
-    decorate(pane);
+  /* 笔记正文 → 可直接放进富文本容器的 HTML。
+     富文本笔记用原样 HTML，Markdown 笔记渲染成 HTML，两个来源都过一遍 DOMPurify。 */
+  function noteHtml(note) {
+    if (!note) return '';
+    const c = note.content ? String(note.content) : '';
+    return note.format === 'rich'
+      ? DOMPurify.sanitize(c)
+      : DOMPurify.sanitize(renderMarkdown(c));
   }
 
   /* 保存：编辑期间只标脏、不写盘；离开编辑页时统一落盘。
      快照用来识别「改完又改回原样」——内容和已存版本一致就不写盘。
      编辑模式属于视图状态：切换只改显示，不写回笔记、不标脏。 */
   let savedSnapshot = '';
-  /* 编辑器当前显示的模式，可能与笔记数据里的 format 不同。
-     只有在新模式下真正输入，内容与模式才一起写回笔记。 */
-  let viewFormat = 'md';
+  /* 编辑器当前显示的存储格式。内容统一在富文本容器里编辑，
+     Markdown 笔记一被输入就由 onRichInput 升级为 rich。 */
+  let viewFormat = 'rich';
   function snapshot(n) {
     return JSON.stringify([n.title || '', n.content || '', n.format || 'md',
       n.categoryId || null, !!n.starred, n.tags || []]);
@@ -2299,20 +2198,9 @@
     }
   }
 
-  /* 正文输入：只有真正输入才把编辑器内容与该编辑器对应的模式写回笔记。
-     用字面格式而非 viewFormat：内容来自哪个编辑器，数据格式就必须是哪个，
-     即使有外部代码误触了隐藏编辑器的 input 事件也不会产生格式错配。 */
-  function onMdInput() {
-    const note = currentNote();
-    if (!note) return;
-    note.content = $('#mdInput').value;
-    note.format = 'md';
-    note.updatedAt = Date.now();
-    refreshPreview();
-    wordCount();
-    markDirty();
-  }
-
+  /* 正文输入：内容与格式一起写回笔记。
+     正文只有富文本一个编辑面，所以写回时格式恒为 rich ——
+     Markdown 笔记被编辑一次，就自动升级成富文本存储。 */
   function onRichInput() {
     const note = currentNote();
     if (!note) return;
@@ -2323,35 +2211,7 @@
     markDirty();
   }
 
-  /* 编辑模式是视图状态，不是内容修改：切换时只在编辑器 DOM 里转换显示，
-     不写回 note、不标脏、不改 updatedAt。只有在新模式下真正输入，
-     onMdInput / onRichInput 才把内容与模式一起写回并标脏。
-     因此单纯切模式（含来回切）离开时不会产生保存 / 同步 / 时间戳变化。 */
-  async function switchFormat(target) {
-    if (!currentNote() || viewFormat === target) return;
-    if (target === 'rich') {
-      $('#richPane').innerHTML = DOMPurify.sanitize(renderMarkdown($('#mdInput').value));
-      $('#mdPane').classList.add('hidden');
-      $('#richPane').classList.remove('hidden');
-    } else {
-      $('#mdInput').value = td.turndown($('#richPane').innerHTML)
-        .replace(/- {3}\[([ xX])\]/g, '- [$1]')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
-      $('#richPane').classList.add('hidden');
-      $('#mdPane').classList.remove('hidden');
-    }
-    viewFormat = target;
-    applyFormat(viewFormat);
-    renderToolbar();
-    if (viewFormat === 'md') refreshPreview();
-    else decorateRichAttachments();
-    toast(viewFormat === 'md' ? '已转为 Markdown，可查看源码' : '已转为富文本，可所见即所得编辑');
-  }
-
-  function decorateRichAttachments() {
-    // 富文本中的图片保持原生，无需额外处理
-  }
+  /* 富文本里的图片保持原生，无需额外处理。 */
 
   /* ---------------------------------------------------------- 工具栏 */
   function renderToolbar() {
@@ -2386,46 +2246,7 @@
       return s;
     };
 
-    if (viewFormat === 'md') {
-      // 视图切换（窄屏不提供分屏，两栏放不下）；打开时默认预览，但可手动切到编辑
-      const narrow = NARROW();
-      const cur = narrow && state.viewMode === 'split' ? 'edit' : state.viewMode;
-      const views = [
-        { k: 'edit', icon: I.pen, t: '仅编辑' },
-        { k: 'split', icon: I.columns, t: '分屏' },
-        { k: 'preview', icon: I.eye, t: '仅预览' },
-      ].filter((v) => !narrow || v.k !== 'split');
-      views.forEach((v) => {
-        btn(v.icon, v.t, () => {
-          state.viewMode = v.k;
-          localStorage.setItem('sj_view', v.k);
-          applyFormat(viewFormat);
-          renderToolbar();
-        }, cur === v.k ? 'active' : '');
-      });
-      sep();
-      btn('<span class="tb-text">H1</span>', '一级标题', () => prefixLine('# '));
-      btn('<span class="tb-text">H2</span>', '二级标题', () => prefixLine('## '));
-      btn('<span class="tb-text">H3</span>', '三级标题', () => prefixLine('### '));
-      sep();
-      btn(I.bold, '加粗  ⌘B', () => wrapSel('**', '**', '粗体'));
-      btn(I.italic, '斜体  ⌘I', () => wrapSel('*', '*', '斜体'));
-      btn(I.strike, '删除线', () => wrapSel('~~', '~~', '删除线'));
-      btn(I.code, '行内代码', () => wrapSel('`', '`', 'code'));
-      sep();
-      btn(I.quote, '引用', () => prefixLine('> '));
-      btn(I.list, '无序列表', () => prefixLine('- '));
-      btn(I.listOrdered, '有序列表', () => prefixLine('1. '));
-      btn(I.check, '任务列表', () => prefixLine('- [ ] '));
-      sep();
-      btn(I.code, '代码块', insertCodeBlock);
-      btn(I.link, '链接  ⌘K', insertLink);
-      btn(I.table, '表格', insertTable);
-      btn(I.hr, '分隔线', () => insertAtCursor('\n---\n'));
-      return;
-    }
-
-    // 富文本
+    // 富文本：正文只有这一套工具条
     btn(I.bold, '加粗', () => exec('bold'));
     btn(I.italic, '斜体', () => exec('italic'));
     btn(I.strike, '删除线', () => exec('strikeThrough'));
@@ -2485,80 +2306,6 @@
     if (lhTxt) lhTxt.textContent = '行距' + LH_LABELS[LH_STEPS.indexOf(state.richLh)];
     const clearBtn = btn('<span class="tb-text" style="font-weight:600">Tx</span>', '清除格式', () => exec('removeFormat'), '');
     clearBtn.style.marginLeft = 'auto';
-  }
-
-  /* markdown 编辑辅助 */
-  function insertAtCursor(text) {
-    const ta = $('#mdInput');
-    const s = ta.selectionStart, e = ta.selectionEnd;
-    const val = ta.value;
-    ta.value = val.slice(0, s) + text + val.slice(e);
-    ta.selectionStart = ta.selectionEnd = s + text.length;
-    ta.focus();
-    onMdInput();
-  }
-
-  function wrapSel(before, after, placeholder) {
-    const ta = $('#mdInput');
-    const s = ta.selectionStart, e = ta.selectionEnd;
-    const val = ta.value;
-    const sel = val.slice(s, e) || placeholder;
-    ta.value = val.slice(0, s) + before + sel + after + val.slice(e);
-    ta.selectionStart = s + before.length;
-    ta.selectionEnd = s + before.length + sel.length;
-    ta.focus();
-    onMdInput();
-  }
-
-  function prefixLine(prefix) {
-    const ta = $('#mdInput');
-    const val = ta.value;
-    const s = ta.selectionStart, e = ta.selectionEnd;
-    const lineStart = val.lastIndexOf('\n', s - 1) + 1;
-    let lineEnd = val.indexOf('\n', e);
-    if (lineEnd === -1) lineEnd = val.length;
-    const block = val.slice(lineStart, lineEnd);
-    const changed = block
-      .split('\n')
-      .map((l) => (l.startsWith(prefix) ? l.slice(prefix.length) : prefix + l))
-      .join('\n');
-    ta.value = val.slice(0, lineStart) + changed + val.slice(lineEnd);
-    ta.selectionStart = lineStart;
-    ta.selectionEnd = lineStart + changed.length;
-    ta.focus();
-    onMdInput();
-  }
-
-  function insertCodeBlock() {
-    const ta = $('#mdInput');
-    const s = ta.selectionStart, e = ta.selectionEnd;
-    const val = ta.value;
-    const sel = val.slice(s, e) || '在这里写代码';
-    const text = `\n\`\`\`js\n${sel}\n\`\`\`\n`;
-    ta.value = val.slice(0, s) + text + val.slice(e);
-    const pos = s + 7;
-    ta.selectionStart = pos;
-    ta.selectionEnd = pos + sel.length;
-    ta.focus();
-    onMdInput();
-  }
-
-  function insertLink() {
-    const ta = $('#mdInput');
-    const s = ta.selectionStart, e = ta.selectionEnd;
-    const val = ta.value;
-    const sel = val.slice(s, e) || '链接文字';
-    const text = `[${sel}](https://)`;
-    ta.value = val.slice(0, s) + text + val.slice(e);
-    ta.selectionStart = s + text.length - 1;
-    ta.selectionEnd = s + text.length - 1;
-    ta.focus();
-    onMdInput();
-  }
-
-  function insertTable() {
-    const text = `\n| 列一 | 列二 | 列三 |\n| --- | --- | --- |\n| 内容 | 内容 | 内容 |\n`;
-    insertAtCursor(text);
   }
 
   /* 富文本辅助 */
@@ -3322,23 +3069,13 @@
     const note = currentNote();
     if (!note) return;
     const isImg = /^image\//.test(a.type);
-    if (viewFormat === 'rich') {
-      const pane = $('#richPane');
-      pane.focus();
-      const html = isImg
-        ? `<img src="${attDisplaySrc(a)}" alt="${escapeHtml(a.name)}" style="max-width:100%;height:auto;border-radius:8px;display:block;margin:8px 0">`
-        : `<a href="${attDisplaySrc(a)}" target="_blank">${escapeHtml(a.name)}</a>`;
-      document.execCommand('insertHTML', false, html);
-      onRichInput();
-    } else {
-      const ta = $('#mdInput');
-      const s = ta.selectionStart;
-      const md = isImg ? `\n![${a.name}](/api/files/${a.id})\n` : `\n[${a.name}](/api/files/${a.id})\n`;
-      ta.value = ta.value.slice(0, s) + md + ta.value.slice(ta.selectionEnd);
-      ta.selectionStart = ta.selectionEnd = s + md.length;
-      ta.focus();
-      onMdInput();
-    }
+    const pane = $('#richPane');
+    pane.focus();
+    const html = isImg
+      ? `<img src="${attDisplaySrc(a)}" alt="${escapeHtml(a.name)}" style="max-width:100%;height:auto;border-radius:8px;display:block;margin:8px 0">`
+      : `<a href="${attDisplaySrc(a)}" target="_blank">${escapeHtml(a.name)}</a>`;
+    document.execCommand('insertHTML', false, html);
+    onRichInput();
     toast('已插入正文');
   }
 
@@ -3568,7 +3305,7 @@
     const t = Date.now();
     draftNote = {
       id: DRAFT_ID,
-      categoryId: target, title: '', content: '', format: 'md',
+      categoryId: target, title: '', content: '', format: 'rich',
       starred: false, tags: [], attachments: [],
       createdAt: t, updatedAt: t,
     };
@@ -3750,10 +3487,45 @@
     showCtx(r.right - 208, r.bottom + 6, [
       { label: '导出为 Word (.docx)', icon: I.doc, onClick: () => doExport('docx') },
       { label: '导出为 PDF（打印）', icon: I.eye, onClick: () => doExport('pdf') },
-      { label: '导出为 Markdown (.md)', icon: I.code, onClick: () => doExport('md') },
+      { label: '导出为 Markdown (.md)', icon: I.download, onClick: () => doExport('md') },
+      { label: '查看 / 复制 Markdown 源码', icon: I.code, onClick: () => showMarkdownSource() },
       { label: '存为版本（手动快照）', icon: I.doc, onClick: () => saveAsVersion() },
       { label: '🔒 加密备份（.vault）', icon: I.lock || I.doc, onClick: () => { if (window.SJE2EE) window.SJE2EE.openPanel(); } },
     ]);
+  }
+
+  /* 查看 Markdown 源码：正文统一用富文本编辑，源码退到这里来。
+     富文本笔记转成 Markdown，Markdown 笔记给原文，可直接复制走。 */
+  function showMarkdownSource() {
+    const note = currentNote();
+    if (!note) return;
+    let src = '';
+    if (note.format === 'rich') {
+      try { src = td.turndown(note.content || ''); }
+      catch (_) { src = note.content || ''; }
+    } else {
+      src = note.content || '';
+    }
+    const m = openModal(`
+      <h3>Markdown 源码</h3>
+      <textarea class="sj-src-box" readonly spellcheck="false"></textarea>
+      <div class="modal-actions">
+        <button class="btn ghost" data-act="cancel">关闭</button>
+        <button class="btn primary" data-act="copy">复制源码</button>
+      </div>`);
+    const box = m.querySelector('.sj-src-box');
+    box.value = src;
+    m.querySelector('[data-act="cancel"]').onclick = closeModal;
+    m.querySelector('[data-act="copy"]').onclick = async () => {
+      closeModal();
+      try {
+        await navigator.clipboard.writeText(src);
+        toast('源码已复制');
+      } catch (_) {
+        toast('复制失败，请手动选中复制');
+      }
+    };
+    box.focus();
   }
 
   async function doExport(kind) {
@@ -4209,7 +3981,7 @@
     if (now !== wasNarrow) {
       wasNarrow = now;
       const note = currentNote();
-      if (note) { applyFormat(viewFormat); renderToolbar(); }
+      if (note) { applyFormat(); renderToolbar(); }
     }
   });
 
@@ -4282,18 +4054,11 @@
   $('#titleInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (currentNote() && viewFormat === 'md') $('#mdInput').focus();
-      else $('#richPane').focus();
+      $('#richPane').focus();
     }
   });
 
-  $('#mdInput').addEventListener('input', onMdInput);
   $('#richPane').addEventListener('input', onRichInput);
-
-  $('#formatSwitch').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (b) switchFormat(b.dataset.format);
-  });
 
   $('#starBtn').addEventListener('click', () => {
     const note = currentNote();
@@ -4317,26 +4082,17 @@
   /* 华为风编辑态顶栏：撤销 / 重做 / 完成 */
   $('#sjUndoBtn').addEventListener('click', () => {
     const pane = $('#richPane');
-    if (viewFormat === 'rich' && pane) {
-      pane.focus();
-      try { document.execCommand('undo'); } catch (_) {}
-      onRichInput();
-    } else {
-      /* Markdown 是 textarea，浏览器自身的 undo 栈管不了，交给文本域原生行为 */
-      const ta = $('#mdInput');
-      if (ta) { ta.focus(); try { document.execCommand('undo'); } catch (_) {} }
-    }
+    if (!pane) return;
+    pane.focus();
+    try { document.execCommand('undo'); } catch (_) {}
+    onRichInput();
   });
   $('#sjRedoBtn').addEventListener('click', () => {
     const pane = $('#richPane');
-    if (viewFormat === 'rich' && pane) {
-      pane.focus();
-      try { document.execCommand('redo'); } catch (_) {}
-      onRichInput();
-    } else {
-      const ta = $('#mdInput');
-      if (ta) { ta.focus(); try { document.execCommand('redo'); } catch (_) {} }
-    }
+    if (!pane) return;
+    pane.focus();
+    try { document.execCommand('redo'); } catch (_) {}
+    onRichInput();
   });
   $('#sjDoneBtn').addEventListener('click', () => {
     setNoteMode(false);
@@ -4358,14 +4114,6 @@
     if (!$('#tagInput').classList.contains('hidden')) commitTag();
   });
 
-  $('#mdInput').addEventListener('paste', async (e) => {
-    const files = Array.from(e.clipboardData.files || []);
-    if (files.length) {
-      e.preventDefault();
-      await uploadFiles(files, { insert: true });
-    }
-  });
-
   /* 插入图片：专门入口，选中图片后自动插入正文 */
   $('#imgBtn').addEventListener('click', () => {
     if (!currentNote()) { toast('请先新建或选择一篇笔记'); return; }
@@ -4376,7 +4124,6 @@
   });
   /* 点正文里的图片 → 弹尺寸工具条 */
   bindImgResize($('#richPane'), 'rich');
-  bindImgResize($('#previewPane'), 'md');
   $('#attachBtn').addEventListener('click', () => {
     const note = currentNote();
     if (!note) return;
@@ -4513,9 +4260,9 @@
     if (mod && (e.key === 'b' || e.key === 'i')) {
       const note = currentNote();
       if (!note) return;
-      if (viewFormat === 'md') {
+      if (noteMode === 'edit') {
         e.preventDefault();
-        wrapSel(e.key === 'b' ? '**' : '*', e.key === 'b' ? '**' : '*', e.key === 'b' ? '粗体' : '斜体');
+        exec(e.key === 'b' ? 'bold' : 'italic');
       }
       return;
     }
