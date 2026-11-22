@@ -2109,7 +2109,7 @@
     };
     /* 字体 / 字号下拉：选完不回占位文字 —— syncFontPickers 会把光标处
        真实的字体和大小重新算出来显示，下拉里「选中的那条」就是当前值。 */
-    /* 下拉左侧挂一个字母标（T 字体 / Z 字号 / H 行距）：字号和行距都只显示
+    /* 下拉左侧挂一个字母标（T 字体 / Z 字号 / L 行距）：字号和行距都只显示
        一个数字，没标分不出哪个是哪个。用 label 包住，点字母也能展开下拉。 */
     const sel = (title, opts, onChange, cls, tag) => {
       const wrap = document.createElement('label');
@@ -2200,7 +2200,7 @@
       applyRichLh();
       try { localStorage.setItem('sj_rich_lh', String(px)); } catch (_) {}
       syncLhPicker();
-    }, 'is-lh', 'H');
+    }, 'is-lh', 'L');
     syncLhPicker();
     const clearBtn = btn('<span class="tb-text" style="font-weight:600">Tx</span>', '清除格式', clearFormat, '');
     clearBtn.style.marginLeft = 'auto';

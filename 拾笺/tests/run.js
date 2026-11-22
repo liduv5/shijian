@@ -151,10 +151,10 @@ ok('下拉有保底宽度，不至于窄成一行裸文字',
   && /s\.className = 'tb-select' \+ \(cls \? ' ' \+ cls : ''\)/.test(js)
   && /execFontSize\(v\), 'is-size', 'Z'\)/.test(js));
 /* 字号和行距都只显示一个数字，光看「28 + 箭头」分不出谁是谁 → 前面挂字母标。 */
-ok('字体/字号/行距各自带字母标 T / Z / H',
+ok('字体/字号/行距各自带字母标 T / Z / L',
   /execFont\('fontName', v\), '', 'T'\)/.test(js)
-  && /'is-size', 'Z'\)/.test(js) && /'is-lh', 'H'\)/.test(js)
-  && /\.tb-pick-tag \{[\s\S]{0,300}font-size: 10\.5px/.test(css)
+  && /'is-size', 'Z'\)/.test(js) && /'is-lh', 'L'\)/.test(js)
+  && /\.tb-pick-tag \{[\s\S]{0,300}font-size: 11\.5px/.test(css)
   && /\.tb-pick:hover \{ background-color: var\(--surface-2\); \}/.test(css));
 ok('点开下拉不描黑框（键盘聚焦改用底色提示）',
   /\.tb-select:focus \{ outline: none; \}/.test(css)
