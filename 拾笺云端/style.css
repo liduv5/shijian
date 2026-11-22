@@ -931,19 +931,35 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
 .tb-btn.active { background: var(--accent-soft); color: var(--accent); }
 .tb-sep { width: 1px; height: 15px; background: var(--border); margin: 0 5px; flex: none; }
 .tb-text { font-weight: 700; font-size: 12.5px; letter-spacing: -.02em; }
+/* 字体 / 字号下拉：吞掉原生箭头自带的那一大块留白，改自绘小箭头。
+   宽度按内容走（field-sizing），否则短内容会被原生 select 按最长选项撑开，
+   两个下拉之间看着就隔着一条沟。 */
 .tb-select {
   height: 27px;
-  padding: 0 4px;
+  width: auto;
+  field-sizing: content;
+  padding: 0 17px 0 7px;
   border: 1px solid transparent;
   border-radius: 6px;
-  background: transparent;
+  background-color: transparent;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238c8579' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  background-size: 10px 10px;
   color: var(--text-2);
   font-size: 12px;
+  line-height: 25px;
   flex: none;
   cursor: pointer;
-  transition: background .14s, color .14s;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: background-color .14s, color .14s;
 }
-.tb-select:hover { background: var(--surface-2); color: var(--text); }
+html[data-theme="dark"] .tb-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238f948f' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E");
+}
+.tb-select:hover { background-color: var(--surface-2); color: var(--text); }
+.tb-select:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 .tb-select option { background: var(--surface); color: var(--text); }
 
 /* 编辑主体 */
