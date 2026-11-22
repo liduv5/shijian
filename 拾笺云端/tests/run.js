@@ -725,7 +725,7 @@ ok('点正文弹键盘后，正文跟着滚到光标那一行（键盘底下那�
   /visualViewport\.addEventListener\('resize', \(\) => \{ revealTypingCaret\(\); \}\)/.test(appSrc) &&
   /interactive-widget=resizes-content/.test(indexSrc));
 
-ok('底栏「更多」点了有反应：菜单不被同一次点击关掉，锚点用真按钮',
+ok('底栏那排按钮点了有反应：菜单不被同一次点击关掉，锚点用真按钮',
   /* showCtx 是在 click 里弹的，事件会继续冒泡到「点别处关菜单」的 document 监听，
      旧写法等于自己关自己——用户看着就是点了没效果 */
   /let ctxJustOpened = false;/.test(appSrc) &&
@@ -737,12 +737,22 @@ ok('底栏「更多」点了有反应：菜单不被同一次点击关掉，锚�
      锚点在就每次按它的实时位置重算（输入法收起后底栏挪了，菜单得跟） */
   /function placeCtx\(x, y, opts\) \{[\s\S]{0,1100}ctxAnchor && ctxAnchor\.isConnected[\s\S]{0,420}o\.above \? ay - ch : ay/.test(appSrc) &&
   /else if \(act === 'more'\) openNoteMore\(b, note\);/.test(appSrc) &&
-  /if \(a === 'more'\) \{ openNoteMore\(b, currentNote\(\)\); return; \}/.test(appSrc) &&
-  (appSrc.match(/openNoteMore\(/g) || []).length === 3 &&
+  /* 编辑工具条的收藏 + 移动分类都走既有逻辑 */
+  /if \(a === 'move-cat'\) \{ const n = currentNote\(\); if \(n\) openCategoryPicker\(n\); return; \}[\s\S]{0,300}const proxy = DETAIL/.test(appSrc) &&
   /* 首次打开没装 PWA 时的提示条压着工具条（89 > 61），详情页里让它躲开 */
-  /body\.sj-note-open \.pwa-tip \{/.test(styleSrc) &&
-  /* 编辑工具条的收藏仍走隐藏底栏那颗按钮的既有逻辑 */
-  /if \(a === 'more'\) \{ openNoteMore\(b, currentNote\(\)\); return; \}[\s\S]{0,220}const proxy = DETAIL/.test(appSrc));
+  /body\.sj-note-open \.pwa-tip \{/.test(styleSrc));
+
+/* 编辑态底栏的「⋯」只剩「移动到分类」一项，那就别留菜单了：直接一颗按钮替掉它。 */
+ok('编辑态底栏把「移动到分类」提成按钮，替掉原来的 ⋯',
+  (function () {
+    const a = indexSrc.indexOf('id="sjEditBar"');
+    const b = a >= 0 ? indexSrc.indexOf('</div>', indexSrc.indexOf('data-act="move-cat"')) : -1;
+    const bar = a >= 0 && b > a ? indexSrc.slice(a, b) : '';
+    return /data-act="move-cat"/.test(bar)
+      && !/data-act="more"/.test(bar)
+      && /data-act="star"/.test(bar)
+      && /aria-label="移动到分类"/.test(bar);
+  })());
 
 ok('输入法收起后菜单跟着底栏回到底部，不再悬在半空',
   /* 点「更多」会失焦、输入法收起，底栏整排往下挪；菜单是 fixed，只在弹出时算一次位置，

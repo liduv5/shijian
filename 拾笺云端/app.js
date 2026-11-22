@@ -7163,8 +7163,9 @@
       }
       if (a === 'img') { const el = $('#imgBtn'); if (el) el.click(); return; }
       if (a === 'attach') { const el = $('#attachBtn'); if (el) el.click(); return; }
-      /* 更多：用工具条自己那颗按钮当锚点（详情底栏这时候是隐藏的，不能用） */
-      if (a === 'more') { openNoteMore(b, currentNote()); return; }
+      /* 移动分类：原来藏在底栏「⋯」里，而那个菜单只剩这一项了（用户 2026-11-22），
+         干脆提成底栏按钮，和收藏并排 —— 少点一层，也不需要那个菜单了。 */
+      if (a === 'move-cat') { const n = currentNote(); if (n) openCategoryPicker(n); return; }
       /* 收藏：复用详情底栏那颗按钮的既有逻辑，不另写一份 */
       const proxy = DETAIL && DETAIL.querySelector(`[data-act="${a}"]`);
       if (proxy) { proxy.click(); setTimeout(syncNoteMode, 0); }
