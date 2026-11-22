@@ -27,17 +27,18 @@ console.log('\n双形态 DOM 骨架');
 ok('阅读态大标题容器存在', /id="sjReadHero"/.test(html));
 ok('大标题文本节点存在', /id="sjReadTitle"/.test(html));
 ok('大标题下的元信息容器存在', /id="sjRhMeta"/.test(html));
-ok('底部编辑工具条存在', /id="sjEditBar"/.test(html));
-ok('格式面板存在', /id="sjStylePanel"/.test(html));
-ok('格式面板内容容器存在', /id="sjStyleBody"/.test(html));
-ok('格式面板遮罩存在', /id="sjStyleMask"/.test(html));
+/* 编辑功能菜单改为「标题 + 分类下面常驻一条」，不再有底部胶囊和右侧弹出面板 */
+ok('编辑工具条常驻（不再有底部胶囊 sjEditBar）', !/id="sjEditBar"/.test(html));
+ok('不再有右侧格式面板（sjStylePanel / sjStyleBody / sjStyleMask 全移除）',
+  !/id="sjStylePanel"/.test(html) && !/id="sjStyleBody"/.test(html) && !/id="sjStyleMask"/.test(html));
+ok('常驻工具条位于分类行之后、标签行之前', (() => {
+  const meta = html.indexOf('class="meta-row"');
+  const bar = html.indexOf('id="toolbar"');
+  const tag = html.indexOf('class="tag-row"');
+  return meta > 0 && bar > meta && tag > bar;
+})());
 ok('顶栏撤销 / 重做 / 完成三个按钮存在',
   /id="sjUndoBtn"/.test(html) && /id="sjRedoBtn"/.test(html) && /id="sjDoneBtn"/.test(html));
-ok('工具条五个按钮齐（格式/插图/附件/收藏/更多）', (() => {
-  const bar = html.match(/id="sjEditBar"[\s\S]*?<\/div>\s*\n/);
-  if (!bar) return false;
-  return ['fmt', 'img', 'attach', 'star', 'more'].every(a => bar[0].includes(`data-act="${a}"`));
-})());
 
 /* ---------- 2. 形态切换的 JS 逻辑 ---------- */
 console.log('\n形态切换逻辑');
@@ -59,19 +60,21 @@ ok('有 placeReadTitle 函数', /function placeReadTitle\(/.test(js));
 ok('按滚动位置算接管进度', /const p = Math\.min\(1, Math\.max\(0, \(headBottom - hero\.bottom\)/.test(js));
 ok('滚动时重新计算', /addEventListener\('scroll'[\s\S]{0,120}placeReadTitle\(\)/.test(js));
 
-/* ---------- 4. 格式面板 ---------- */
-console.log('\n格式面板');
-ok('有 renderStylePanel 渲染函数', /function renderStylePanel\(/.test(js));
-ok('有 openStylePanel / closeStylePanel', /function openStylePanel\(/.test(js) && /function closeStylePanel\(/.test(js));
-ok('面板只有一套（不再按格式分叉）', !/if \(viewFormat === 'md'\)/.test(js));
-ok('富文本面板有文字组', /group\('文字'\)/.test(js));
-ok('富文本面板有段落组', /group\('段落'\)/.test(js));
-ok('富文本面板有对齐组', /group\('对齐'\)/.test(js));
-ok('富文本面板有列表组', /group\('列表'\)/.test(js));
-ok('富文本面板有字号组', /sj-sp-sizes/.test(js) && /textContent = '字号'/.test(js));
-ok('面板会自己存一份选区（面板是浮层，正文会失焦）',
-  /function capturePanelRange\(/.test(js) && /function restorePanelRange\(/.test(js));
-ok('点格式按钮前先恢复选区', /restorePanelRange\(\);\s*\n\s*fn\(\);/.test(js));
+/* ---------- 4. 常驻编辑工具条（取代原弹出式格式面板） ---------- */
+console.log('\n常驻编辑工具条');
+ok('弹出式面板的整套函数已下线',
+  !/function renderStylePanel\(/.test(js) && !/function openStylePanel\(/.test(js)
+  && !/function closeStylePanel\(/.test(js) && !/function toggleStylePanel\(/.test(js));
+ok('面板专用的选区暂存已下线（工具条常驻不抢焦点）',
+  !/panelRange/.test(js) && !/function capturePanelRange\(/.test(js));
+ok('工具条渲染函数仍在', /function renderToolbar\(/.test(js));
+ok('工具条只有一套（不再按格式分叉）', !/if \(viewFormat === 'md'\)/.test(js));
+ok('工具条有下划线', /btn\(I\.underline, '下划线'/.test(js));
+ok('工具条有三档对齐（左/中/右）',
+  /btn\(I\.alignLeft, '左对齐', \(\) => cssCmd\('justifyLeft'\)\)/.test(js)
+  && /btn\(I\.alignCenter, '居中', \(\) => cssCmd\('justifyCenter'\)\)/.test(js)
+  && /btn\(I\.alignRight, '右对齐', \(\) => cssCmd\('justifyRight'\)\)/.test(js));
+ok('工具条能插入表格', /btn\(I\.table, '插入表格', insertRichTable\)/.test(js));
 ok('对齐类命令用 styleWithCSS=true（否则净化会把样式抹掉）',
   /function cssCmd\([\s\S]{0,300}styleWithCSS', false, true/.test(js));
 
@@ -84,15 +87,14 @@ ok('阅读态正文区整块滚动（大标题才跟得动）',
   /body\.sj-note-read \.editor-body \{[\s\S]{0,220}display: block;[\s\S]{0,220}overflow-y: auto;/.test(css));
 ok('编辑态把布局还给 flex（否则源码和预览会上下叠一起）',
   /body\.sj-note-edit \.editor-body \{[\s\S]{0,120}display: flex;/.test(css));
-ok('编辑态隐藏常驻格式工具条', /body\.sj-note-edit \.toolbar \{ display: none; \}/.test(css));
-ok('编辑态把插图/附件/收藏收进底部工具条',
-  /body\.sj-note-edit #imgBtn,[\s\S]{0,120}#attachBtn,[\s\S]{0,120}#starBtn \{ display: none; \}/.test(css));
+ok('编辑态照常显示工具条（不再隐藏）', !/body\.sj-note-edit \.toolbar \{ display: none; \}/.test(css));
+ok('编辑态顶栏的插图/附件/收藏不再被收起',
+  !/body\.sj-note-edit #imgBtn,[\s\S]{0,120}#attachBtn,[\s\S]{0,120}#starBtn \{ display: none; \}/.test(css));
 ok('顶栏小标题默认透明', /body\.sj-note-read \.title-input \{[\s\S]{0,160}opacity: 0;/.test(css));
 ok('接管后恢复不透明', /body\.sj-note-read\.sj-head-solid \.title-input \{ opacity: 1;/.test(css));
 ok('阅读态正文保持适眼行宽', /body\.sj-note-read \.rich-pane \{[\s\S]{0,120}max-width: 760px;/.test(css));
-ok('底部工具条样式存在', /\.sj-edit-bar \{[\s\S]{0,400}border-radius: 999px;/.test(css));
-ok('格式面板从右侧滑出', /\.sj-style-panel \{[\s\S]{0,300}right: 0;/.test(css));
-ok('格式面板不遮顶栏（top 用变量）', /top: var\(--sj-sp-top/.test(css));
+ok('底部胶囊与右侧面板的样式已清除',
+  !/\.sj-edit-bar \{/.test(css) && !/\.sj-style-panel \{/.test(css) && !/\.sj-sp-btn \{/.test(css));
 
 /* ---------- 6. 数据格式没被动过（回归保护） ---------- */
 console.log('\n数据格式与保存链路未受影响');
@@ -129,7 +131,8 @@ console.log('\n与手机端一致的约定');
 ok('编辑态有撤销 / 重做（与手机端同一套）', /id="sjUndoBtn"/.test(html) && /id="sjRedoBtn"/.test(html));
 ok('撤销用 execCommand undo', /execCommand\('undo'\)/.test(js));
 ok('重做用 execCommand redo', /execCommand\('redo'\)/.test(js));
-ok('工具条用胶囊圆角（与手机端一致）', /border-radius: 999px/.test(css));
+ok('常驻工具条样式在（横排、可换行、有最小高度）',
+  /\.toolbar \{[\s\S]{0,300}display: flex;[\s\S]{0,300}flex-wrap: wrap;/.test(css));
 
 /* ---------- 8. 存储层单一化（格式收敛） ---------- */
 console.log('\n存储层收敛为单一富文本');
