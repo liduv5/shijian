@@ -2830,7 +2830,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-22-157';
+  const APP_BUILD = '2026-11-22-158';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -6255,7 +6255,12 @@
         return;
       }
       if (META_CAT.parentElement === META_ROW) return;
-      const dot = META_ROW.querySelector('.meta-dot');
+      /* 只认 .meta-row 的直接子节点：编辑区第二行 #metaInfo 里面也塞了一个
+         <span class="meta-dot">（metaInfoHTML 生成的「分类 · 创建于」），
+         用 querySelector 会先命中它，而它的 parentNode 是 #metaInfo，
+         insertBefore 直接抛 NotFoundError —— 阅读态切回编辑态时分类胶囊
+         就搬不回来（用户 2026-11-22 实机暴露）。 */
+      const dot = [...META_ROW.children].find((el) => el.classList && el.classList.contains('meta-dot'));
       META_ROW.insertBefore(META_CAT, dot || META_ROW.firstChild);
       if (d) META_ROW.insertBefore(d, dot || META_ROW.firstChild);
     }
@@ -7216,9 +7221,10 @@
     const I_STAR = '<svg viewBox="0 0 24 24" class="ico"><path d="M12 3.6l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.8l5.9-.8z"/></svg>';
     const I_SRC = '<svg viewBox="0 0 24 24" class="ico"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg>';
     const I_HIST = '<svg viewBox="0 0 24 24" class="ico"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3 4v5h5"/><path d="M12 8v4.5l3 1.8"/></svg>';
-    const I_MOVE = '<svg viewBox="0 0 24 24" class="ico"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h8A1.5 1.5 0 0 1 20 10v7.5a1.5 1.5 0 0 1-1.5 1.5h-14A1.5 1.5 0 0 1 3 17.5z"/></svg>';
-    const I_SYNC = '<svg viewBox="0 0 24 24" class="ico"><path d="M20 12a8 8 0 0 0-13.7-5.7"/><path d="M4 12a8 8 0 0 0 13.7 5.7"/></svg>';
     const I_DEL = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>';
+    /* 「移动到分类」和「同步到云端」不放这儿（用户 2026-11-22 要求）：
+       分类在标题下方那颗胶囊上改（带 ▾，阅读态也点得动），入口已经够近；
+       同步是库级动作，只在首页那套全局菜单里出现。 */
     function noteMoreRows(note) {
       return [
         { act: 'n-share', label: '分享 / 导出', icon: I_SHARE },
@@ -7227,8 +7233,6 @@
         { sep: true },
         { act: 'n-md', label: 'Markdown 源码', icon: I_SRC },
         { act: 'n-history', label: '历史版本', icon: I_HIST },
-        { act: 'n-move', label: '移动到分类', icon: I_MOVE },
-        { act: 'n-sync', label: '同步到云端', icon: I_SYNC },
         { sep: true },
         { act: 'n-delete', label: '删除笔记', icon: I_DEL, danger: true },
       ];
@@ -7252,7 +7256,6 @@
       if (act === 'n-delete') { const el = $('#deleteNoteBtn'); if (el) el.click(); return; }
       if (act === 'n-md') { showMarkdownSource(); return; }
       if (act === 'n-history') { const el = $('#historyBtn'); if (el) el.click(); return; }
-      if (act === 'n-move') { const n = currentNote(); if (n) openCategoryPicker(n); return; }
       if (act === 'tree') { hideCatSheet(); openDrawer('tree'); }
       else if (act === 'batch') {
         hideCatSheet();

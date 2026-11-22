@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-157 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-158 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-22-157';
+const BUILD = '2026-11-22-158';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -885,12 +885,21 @@ console.log('\n阅读态底栏收进右上角菜单');
 ok('详情底栏不再显示（56px 屏高还给正文）',
   /\.sj-detail-bar \{\s+display: none;/.test(styleSrc)
   && !/sj-detail-bar:not\(\.hidden\) \{ display: flex/.test(styleSrc));
-ok('打开笔记时菜单换成笔记动作：分享 / 收藏 / 删除 + 原「更多」那几项',
+ok('打开笔记时菜单换成笔记动作：分享 / 收藏 / 源码 / 历史 / 删除',
   /function noteMoreRows\(note\) \{/.test(appSrc)
   && /act: 'n-share'/.test(appSrc) && /act: 'n-star'/.test(appSrc)
   && /act: 'n-delete'/.test(appSrc) && /act: 'n-md'/.test(appSrc)
-  && /act: 'n-history'/.test(appSrc) && /act: 'n-move'/.test(appSrc)
+  && /act: 'n-history'/.test(appSrc)
   && /const rows = note \? noteMoreRows\(note\) : MORE_ROWS;/.test(appSrc));
+ok('笔记菜单不再有「移动到分类」「同步到云端」（分类改标题下胶囊，同步只留首页）',
+  !/n-move/.test(appSrc) && !/n-sync/.test(appSrc)
+  && !/label: '移动到分类'/.test(appSrc.slice(appSrc.indexOf('function noteMoreRows'),
+                                             appSrc.indexOf('function renderMoreMenu')))
+  && /act: 'sync', label: '同步到云端'/.test(appSrc));
+ok('分类入口仍在标题下方，阅读态也点得动',
+  /\$\('#sjMetaCat'\)|META_CAT\.addEventListener\('click'/.test(appSrc)
+  && /if \(note\) openCategoryPicker\(note\);/.test(appSrc)
+  && !/body\.sj-note-open:not\(\.sj-note-edit\) \.sj-meta-cat \{[\s\S]{0,80}display: none/.test(styleSrc));
 ok('列表首页仍是原来那套全局菜单（两套内容按有没有打开笔记切）',
   /act: 'tree', label: '目录分类'/.test(appSrc) && /MORE_ROWS/.test(appSrc));
 ok('笔记菜单的动作全转手给现有按钮，不另写一套',
