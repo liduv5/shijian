@@ -564,7 +564,8 @@ html[data-theme="dark"] .ico-moon { display: none; }
   flex: none;
   transition: transform .18s var(--ease), background .15s;
 }
-.caret svg { width: 12px; height: 12px; }
+/* 13px：12px 时箭头看着比 13.5px 的分类名「小一号」，用户反馈太小 */
+.caret svg { width: 13px; height: 13px; }
 .caret:hover { background: var(--surface-3); }
 .tree-row.collapsed .caret { transform: rotate(-90deg); }
 .caret.leaf { visibility: hidden; }
@@ -1135,7 +1136,7 @@ body.sj-note-read #attachBtn { display: none; }
    只让「分类名」本身是热区：原先整行绑 click，鼠标移到「创建于…」上也高亮，
    点日期也弹分类框（用户反馈）。*/
 .meta-cat {
-  display: inline-flex; align-items: center; gap: 3px;
+  display: inline-flex; align-items: center; gap: 4px;
   max-width: 34ch;
   padding: 1px 6px; margin-left: -6px;
   border: 0; border-radius: 6px; background: transparent;
@@ -1146,7 +1147,17 @@ body.sj-note-read #attachBtn { display: none; }
 }
 .meta-cat:hover { color: var(--accent); background: var(--accent-soft); }
 .meta-cat.is-empty { opacity: .82; }
-.meta-caret { font-style: normal; font-size: 9px; opacity: .6; flex: none; }
+/* 分类名后面那颗小三角：12px 的描边箭头，跟 11.5px 的文字同一视觉重量。
+   原来是 9px 的 ▾ 字符 —— 又小又飘，用户反馈「看不清」。 */
+.meta-caret {
+  width: 12px; height: 12px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round;
+  opacity: .62;
+  transform: translateY(.5px);
+  transition: transform .16s var(--ease);
+}
+.meta-cat:hover .meta-caret { opacity: .85; }
 .meta-date { white-space: nowrap; }
 /* 阅读态只读：标题行那颗分类不给 ▾、不 hover、不回手型（用户 2026-11-22 要求） */
 body.sj-note-read .meta-cat { cursor: default; pointer-events: none; }

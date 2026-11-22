@@ -62,9 +62,18 @@
       data: { categories: state.categories || [], notes: notes, versions: state.versions || {} },
     };
     var blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-    var a = document.createElement('a');
     var d = new Date();
-    a.download = '拾笺加密备份-' + d.getFullYear() + ('' + (d.getMonth() + 1)).padStart(2, '0') + ('' + d.getDate()).padStart(2, '0') + '.vault';
+    var name = '拾笺加密备份-' + d.getFullYear() + ('' + (d.getMonth() + 1)).padStart(2, '0') + ('' + d.getDate()).padStart(2, '0') + '.vault';
+    /* 和普通备份一个规矩：先问存哪儿。加密要算一会儿，用户手势可能已经过期，
+       saveBlob 里的 showSaveFilePicker 会被拒并自动退回直接下载，不会丢东西。 */
+    if (window.NoteExport && window.NoteExport.saveBlob) {
+      var r = await window.NoteExport.saveBlob(blob, name, {
+        types: [{ description: '拾笺加密备份', accept: { 'application/octet-stream': ['.vault'] } }],
+      });
+      return r === 'canceled' ? -1 : notes.length;
+    }
+    var a = document.createElement('a');
+    a.download = name;
     a.href = URL.createObjectURL(blob);
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
@@ -109,7 +118,11 @@
     m.querySelector('#e2eeExport').addEventListener('click', async function () {
       var p = m.querySelector('#e2eePass').value;
       if (p.length < 6) return msg('口令至少 6 位');
-      try { var n = await exportVault(p); msg('已导出 ' + n + ' 篇笔记的加密备份', true); }
+      try {
+        var n = await exportVault(p);
+        if (n < 0) return msg('已取消保存');
+        msg('已导出 ' + n + ' 篇笔记的加密备份', true);
+      }
       catch (e) { msg('导出失败：' + e.message); }
     });
     m.querySelector('#e2eeImport').addEventListener('click', async function () {

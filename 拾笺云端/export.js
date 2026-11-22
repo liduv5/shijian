@@ -25,6 +25,56 @@
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   }
 
+  /* ---------------------------------------------- 存文件：先问位置
+     用户 2026-11-22 提：导出备份一点就静默落到下载目录，找不到存哪儿了。
+     改成先弹系统的「另存为」。
+     注意顺序：showSaveFilePicker 必须落在用户点下去那一下的调用栈里，
+     等 fetch 回来再问，浏览器会以 NotAllowedError 拒掉。所以拆成两步——
+     pickSaveHandle() 先要位置，writeHandle() 再灌数据。
+     不支持这套 API 的浏览器（Firefox / Safari）和 Electron 返回 null，
+     调用方退回 <a download>（Electron 自己会弹保存框）。 */
+  function pickSaveHandle(filename, opts = {}) {
+    if (typeof window.showSaveFilePicker !== 'function') return Promise.resolve(null);
+    return window.showSaveFilePicker({
+      suggestedName: filename,
+      types: opts.types || undefined,
+    }).catch((e) => {
+      if (e && e.name === 'AbortError') return 'canceled';   // 用户点了取消
+      return null;                                          // 没手势 / 不支持 → 走老路
+    });
+  }
+
+  async function writeHandle(handle, blob) {
+    const w = await handle.createWritable();
+    await w.write(blob);
+    await w.close();
+  }
+
+  /* 桌面版（Electron）没有 showSaveFilePicker，走主进程的 dialog.showSaveDialog。
+     这条通道没有「必须在点击手势里」的限制，所以可以先取数据再弹框。 */
+  async function saveViaDesktop(blob, filename) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const r = await window.SJDesktop.saveFile(filename, bytes);
+    if (r === 'canceled') return 'canceled';
+    if (r === 'saved') return 'saved';
+    throw new Error(String(r || '保存失败').replace(/^error:/, ''));
+  }
+
+  /* 数据已经在手上时的一步式入口（加密备份用；桌面版直接弹系统框） */
+  async function saveBlob(blob, filename, opts = {}) {
+    if (window.SJDesktop && typeof window.SJDesktop.saveFile === 'function') {
+      return saveViaDesktop(blob, filename);
+    }
+    const handle = await pickSaveHandle(filename, opts);
+    if (handle === 'canceled') return 'canceled';
+    if (handle) {
+      await writeHandle(handle, blob);
+      return 'saved';
+    }
+    download(blob, filename);
+    return 'fallback';
+  }
+
   function metaLine(tags, updatedAt) {
     const d = new Date(updatedAt || Date.now());
     const p = (n) => String(n).padStart(2, '0');
@@ -33,22 +83,52 @@
   }
 
   /* ---------------------------------------------- 图片预处理 */
+  /* data: URL 不能用 fetch 取 —— Chrome 直接抛 "TypeError: Failed to fetch"，
+     粘贴进来的图（正文里就是 data:image/png;base64,…）会全部变成「［图片］」
+     占位文字。所以自己按 base64 解；附件图（/api/files/…）和 blob: 仍走 fetch。 */
+  function dataUrlToBytes(src) {
+    const m = /^data:([^;,]*)(;base64)?,([\s\S]*)$/i.exec(src);
+    if (!m) return null;
+    if (!m[2]) {
+      try { return new TextEncoder().encode(decodeURIComponent(m[3])); } catch (_) { return null; }
+    }
+    let b64 = m[3].replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+    try {
+      const bin = atob(b64);
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function imageSize(src) {
+    return new Promise((resolve) => {
+      const probe = new Image();
+      probe.onload = () => resolve({ w: probe.naturalWidth || 420, h: probe.naturalHeight || 280 });
+      probe.onerror = () => resolve({ w: 420, h: 280 });
+      probe.src = src;
+    });
+  }
+
   async function prepareImages(root) {
     const imgs = Array.from(root.querySelectorAll('img'));
     for (const img of imgs) {
       try {
-        const src = img.getAttribute('src');
+        /* currentSrc 优先：srcset / 懒加载换过图的元素，src 属性可能还是占位 */
+        const src = img.currentSrc || img.getAttribute('src');
         if (!src) continue;
-        const res = await fetch(src);
-        if (!res.ok) continue;
-        const buf = await res.arrayBuffer();
-        const dim = await new Promise((resolve) => {
-          const probe = new Image();
-          probe.onload = () => resolve({ w: probe.naturalWidth, h: probe.naturalHeight });
-          probe.onerror = () => resolve({ w: 420, h: 280 });
-          probe.src = src;
-        });
-        img.__docx = { data: new Uint8Array(buf), w: dim.w, h: dim.h };
+        let bytes = null;
+        if (/^data:/i.test(src)) {
+          bytes = dataUrlToBytes(src);
+        } else {
+          const res = await fetch(src);
+          if (res.ok) bytes = new Uint8Array(await res.arrayBuffer());
+        }
+        if (!bytes || !bytes.length) continue;
+        const dim = await imageSize(src);
+        img.__docx = { data: bytes, w: dim.w, h: dim.h };
       } catch (e) {
         img.__docx = null;
       }
@@ -264,8 +344,19 @@
       } else if (tag === 'DIV' || tag === 'SECTION' || tag === 'ARTICLE') {
         const hasBlockChild = Array.from(child.children).some((c) =>
           ['P', 'DIV', 'UL', 'OL', 'PRE', 'TABLE', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4'].includes(c.tagName));
-        if (hasBlockChild) out.push(...blocksFrom(child, depth + 1));
-        else if (child.textContent.trim() || child.querySelector('img')) out.push(paragraphFrom(child));
+        if (hasBlockChild) {
+          out.push(...blocksFrom(child, depth + 1));
+        } else {
+          /* 这里原来只判断「有没有文字」，于是 <div><img></div>（粘贴图片后
+             编辑器给出的常见结构）会走 paragraphFrom —— 而 inlineRuns 遇到
+             IMG 只吐一行「［图片：…］」占位文字，图片就丢了。现在和 <p>
+             一样拆成「文字段 + 图片段」。 */
+          const imgs = Array.from(child.querySelectorAll('img'));
+          const textOnly = child.cloneNode(true);
+          textOnly.querySelectorAll('img').forEach((i) => i.remove());
+          if (textOnly.textContent.trim()) out.push(paragraphFrom(textOnly));
+          imgs.forEach((img) => out.push(imageParagraph(img)));
+        }
       } else if (tag === 'FIGURE') {
         out.push(...blocksFrom(child, depth + 1));
       } else if (child.textContent.trim()) {
@@ -329,7 +420,7 @@
         <div class="print-meta">${escapeHtml(metaLine(tags, updatedAt))}</div>
       </div>
       <div class="markdown-body">${stripLeadingTitle(html, title).innerHTML}</div>
-      <div class="print-foot">拾笺 · 本地笔记库</div>`;
+      <div class="print-foot">拾笺</div>`;
     document.body.classList.add('printing');
     const cleanup = () => {
       document.body.classList.remove('printing');
@@ -359,5 +450,9 @@
     download(new Blob([md], { type: 'text/markdown;charset=utf-8' }), safeName(title, 'md'));
   }
 
-  window.NoteExport = { toWord, toPdf, toMarkdown, metaLine };
+  window.NoteExport = {
+    toWord, toPdf, toMarkdown, metaLine,
+    /* 备份这类「整库落在磁盘上」的动作要自己问位置，见上面注释 */
+    pickSaveHandle, writeHandle, saveBlob, saveViaDesktop,
+  };
 })();

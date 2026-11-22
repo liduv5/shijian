@@ -13,6 +13,8 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const html = read('index.html');
 const js = read('app.js');
 const css = read('style.css');
+const exportJs = read('export.js');
+const e2eeJs = read('e2ee.js');
 const syncJs = read('sync.js');
 const sjplusJs = read('sjplus.js');
 
@@ -370,6 +372,29 @@ ok('下拉宽度自己量（不依赖 field-sizing）',
   /function fitSel\(s\)/.test(js) && /function measureSel\(s\)/.test(js)
   && /white-space:pre/.test(js)
   && /fitSel\(tbLhSel\)/.test(js));
+
+console.log('\n导出、标题与平台提示（2026-11-22）');
+ok('窗口标题就是「拾笺」', /<title>拾笺<\/title>/.test(html));
+/* 图片在 Word 里丢掉的两个原因：data: 图 fetch 不出来、<div> 里单独一张图
+   走了 paragraphFrom（只吐一行「［图片］」文字）。 */
+ok('导出 Word：data: 图片自己解 base64，不走 fetch',
+  /function dataUrlToBytes\(/.test(exportJs) && /\/\^data:\/i\.test\(src\)/.test(exportJs)
+  && /img\.__docx = \{ data: bytes/.test(exportJs));
+ok('导出 Word：<div> 里单独一张图也插进正文',
+  /const imgs = Array\.from\(child\.querySelectorAll\('img'\)\);[\s\S]{0,220}imgs\.forEach\(\(img\) => out\.push\(imageParagraph\(img\)\)\)/.test(exportJs));
+ok('导出备份先问保存位置，没有 showSaveFilePicker 才回退下载',
+  /function pickSaveHandle\(/.test(exportJs) && /showSaveFilePicker/.test(exportJs)
+  && /pickSaveHandle\(name, \{ types: \[\{ description: '拾笺备份'/.test(js)
+  && /if \(!handle\) \{ window\.location\.href = '\/api\/export'; return; \}/.test(js));
+ok('加密备份也走同一套「先问位置」', /NoteExport\.saveBlob\(blob, name/.test(e2eeJs));
+ok('快捷键提示按平台显示（非 Mac 写 Ctrl K）',
+  /function applyPlatformKeyLabels\(/.test(js) && /'Ctrl K'/.test(js) && /id="searchKbd"/.test(html));
+ok('分类名旁的小三角改成 12px SVG 箭头（原来是 9px 的 ▾ 字符）',
+  /<svg class="meta-caret"/.test(js)
+  && /\.meta-caret \{[\s\S]{0,120}width: 12px; height: 12px/.test(css)
+  && !/\.meta-caret \{ font-style: normal; font-size: 9px/.test(css));
+ok('侧栏分类树的展开箭头放大到 13px',
+  /\.caret svg \{ width: 13px; height: 13px; \}/.test(css));
 
 console.log(`\n结果：${pass} 通过，${fail} 失败`);
 process.exit(fail ? 1 : 0);

@@ -1072,11 +1072,15 @@
   }
   /* 编辑区第二行那句「分类名 ▾ · 创建于 …」。
      分类单独做成按钮：之前整行是一个可点元素，鼠标移到日期上也会高亮，
-     点日期也弹分类选择器 —— 范围太大了。抽成函数是因为改完分类要就地重写这一行。 */
+     点日期也弹分类选择器 —— 范围太大了。抽成函数是因为改完分类要就地重写这一行。
+     三角用 SVG 不用 ▾ 字符：字符大小跟着字体走、9px 显得又小又飘，
+     SVG 能按像素定尺寸，跟旁边的字对齐也更稳。 */
+  const META_CARET = '<svg class="meta-caret" viewBox="0 0 24 24" aria-hidden="true">'
+    + '<path d="M6 9.5l6 6 6-6"/></svg>';
   function metaInfoHTML(note) {
     const cat = catMap().get(note.categoryId);
     const name = escapeHtml(cat ? cat.name : '未分类');
-    return `<button type="button" class="meta-cat${cat ? '' : ' is-empty'}" data-meta-cat="1" aria-label="修改分类">${name}<i class="meta-caret" aria-hidden="true">▾</i></button>`
+    return `<button type="button" class="meta-cat${cat ? '' : ' is-empty'}" data-meta-cat="1" aria-label="修改分类">${name}${META_CARET}</button>`
       + '<span class="meta-dot">·</span>'
       + `<span class="meta-date">创建于 ${escapeHtml(fmtDate(note.createdAt))}</span>`;
   }
@@ -4489,9 +4493,47 @@
     await uploadFiles(Array.from(e.dataTransfer.files));
   });
 
-  $('#exportBtn').addEventListener('click', () => {
+  /* 导出备份（整库 JSON）。
+     桌面版没有 showSaveFilePicker，改走主进程的 dialog.showSaveDialog ——
+     那条通道不挑手势，所以顺序是「先取数据，再弹框」。
+     浏览器里反过来：先弹「另存为」再取数据，因为 showSaveFilePicker 必须
+     落在点击那一拍的调用栈里，等 fetch 回来再问会被 NotAllowedError 拒掉。
+     两样都没有（Firefox / Safari）就退回原来的直接下载。 */
+  $('#exportBtn').addEventListener('click', async () => {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    const name = `拾笺备份-${stamp}.json`;
+    const NE = window.NoteExport;
+
+    if (window.SJDesktop && typeof window.SJDesktop.saveFile === 'function' && NE && NE.saveViaDesktop) {
+      toast('正在导出备份…');
+      try {
+        const res = await fetch('/api/export');
+        if (!res.ok) throw new Error('导出失败（HTTP ' + res.status + '）');
+        const r = await NE.saveViaDesktop(await res.blob(), name);
+        if (r === 'canceled') return;
+        toast('已导出：' + name);
+      } catch (e) {
+        toast('导出失败：' + (e && e.message ? e.message : e));
+      }
+      return;
+    }
+
+    const handle = NE && NE.pickSaveHandle
+      ? await NE.pickSaveHandle(name, { types: [{ description: '拾笺备份', accept: { 'application/json': ['.json'] } }] })
+      : null;
+    if (handle === 'canceled') return;
     toast('正在导出备份…');
-    window.location.href = '/api/export';
+    if (!handle) { window.location.href = '/api/export'; return; }
+    try {
+      const res = await fetch('/api/export');
+      if (!res.ok) throw new Error('导出失败（HTTP ' + res.status + '）');
+      await NE.writeHandle(handle, await res.blob());
+      toast('已导出：' + name);
+    } catch (e) {
+      toast('导出失败：' + (e && e.message ? e.message : e));
+    }
   });
 
   $('#importBtn').addEventListener('click', () => $('#importInput').click());
@@ -4583,6 +4625,23 @@
     localStorage.setItem('sj_theme', t);
   }
   $('#themeBtn').addEventListener('click', () => applyTheme(state.theme === 'light' ? 'dark' : 'light'));
+
+  /* 快捷键提示按平台显示。
+     Windows / Linux 键盘上没有 ⌘ 这颗键，界面上写着 ⌘K 等于让用户去按一个
+     不存在的键（用户 2026-11-22 问「⌘ 是否有效」）。功能本身没问题：下面
+     keydown 里判断的都是 e.metaKey || e.ctrlKey，Windows 上用 Ctrl 全通。 */
+  const IS_MAC = /Mac|iPhone|iPad|iPod/i.test(
+    (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent || ''
+  );
+  function applyPlatformKeyLabels() {
+    const kbd = document.getElementById('searchKbd');
+    if (kbd) kbd.textContent = IS_MAC ? '⌘K' : 'Ctrl K';
+    const undo = document.getElementById('sjUndoBtn');
+    if (undo) undo.title = IS_MAC ? '撤销 (⌘Z)' : '撤销 (Ctrl+Z)';
+    const redo = document.getElementById('sjRedoBtn');
+    if (redo) redo.title = IS_MAC ? '重做 (⌘⇧Z)' : '重做 (Ctrl+Shift+Z)';
+  }
+  applyPlatformKeyLabels();
 
   /* 快捷键 */
   document.addEventListener('keydown', (e) => {

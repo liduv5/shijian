@@ -1100,5 +1100,18 @@ ok('大图层点任意处关闭，Esc 也能关',
   /LB\.addEventListener\('click', lightboxClose\)/.test(appSrc)
   && /if \(LB && !LB\.classList\.contains\('hidden'\)\) \{ lightboxClose\(\); return; \}/.test(appSrc));
 
+console.log('\n标题 / 分类三角 / 导出 Word 图片（2026-11-22）');
+ok('页面标题就是「拾笺」', /<title>拾笺<\/title>/.test(indexSrc));
+ok('PWA 名称就是「拾笺」', (() => {
+  try { return JSON.parse(fs.readFileSync(path.join(CLOUD, 'manifest.webmanifest'), 'utf8')).name === '拾笺'; }
+  catch (_) { return false; }
+})());
+ok('分类名旁的小三角改成 12px SVG 箭头（原来是 9px 的 ▾ 字符）',
+  /<svg class="meta-caret"/.test(appSrc)
+  && /\.meta-caret \{[\s\S]{0,120}width: 12px; height: 12px/.test(styleSrc)
+  && !/\.meta-caret \{ font-style: normal; font-size: 9px/.test(styleSrc));
+ok('侧栏分类树的展开箭头放大到 13px',
+  /\.caret svg \{ width: 13px; height: 13px; \}/.test(styleSrc));
+
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

@@ -792,9 +792,13 @@ function serveFile(req, res, attId) {
 
 function exportAll(res) {
   const body = JSON.stringify({ exportedAt: new Date().toISOString(), ...db }, null, 2);
+  const day = new Date().toISOString().slice(0, 10);
+  /* 回退下载（没有 showSaveFilePicker 的浏览器）也要落到一个看得懂的文件名：
+     filename* 按 RFC 5987 带中文，老浏览器读 filename 的 ASCII 版 */
+  const cn = encodeURIComponent(`拾笺备份-${day}.json`);
   res.writeHead(200, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Content-Disposition': `attachment; filename="shijian-backup-${new Date().toISOString().slice(0, 10)}.json"`,
+    'Content-Disposition': `attachment; filename="shijian-backup-${day}.json"; filename*=UTF-8''${cn}`,
   });
   res.end(body);
 }
@@ -1329,7 +1333,7 @@ function start(port = PORT, host = BIND_HOST, tries = 12) {
         server.removeListener('error', onError);
         const realPort = server.address().port;
         console.log('');
-        console.log('  拾笺 · 本地笔记库已启动');
+        console.log('  拾笺已启动');
         console.log('  http://localhost:' + realPort);
         console.log('  数据目录：' + DATA_DIR);
         if (LAN) {

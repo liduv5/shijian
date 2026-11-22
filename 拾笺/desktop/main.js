@@ -2,9 +2,10 @@
  * 拾笺 · 桌面版入口（Electron）
  * 启动本地服务 → 打开独立窗口。数据存放在系统用户目录，卸载/升级不丢。
  */
-const { app, BrowserWindow, Menu, shell, dialog } = require('electron');
+const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require('electron');
 const path = require('path');
 const net = require('net');
+const fsp = require('fs').promises;
 
 // 数据目录放到用户目录（macOS: ~/Library/Application Support/拾笺/data）
 process.env.SHIJIAN_DATA_DIR = process.env.SHIJIAN_DATA_DIR
@@ -40,6 +41,10 @@ async function createWindow() {
     backgroundColor: '#f4f3ef',
     autoHideMenuBar: true,
     webPreferences: {
+      /* 只为一件事开 preload：导出时弹系统「另存为」。
+         Electron 没有 showSaveFilePicker，网页里那套选位置的办法用不了，
+         不给这条通道的话导出只能静默落到下载目录（用户 2026-11-22 反馈）。 */
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
@@ -59,6 +64,25 @@ async function createWindow() {
   await mainWindow.loadURL(`http://127.0.0.1:${realPort}`);
   mainWindow.on('closed', () => { mainWindow = null; });
 }
+
+/* 导出备份：弹系统保存框，写到用户选的位置。
+   defaultPath 指到下载目录 + 建议文件名，用户只改目录就行。 */
+ipcMain.handle('sj:save-file', async (event, payload) => {
+  const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+  const name = String((payload && payload.defaultName) || '拾笺导出.bin');
+  const res = await dialog.showSaveDialog(win, {
+    title: '选择保存位置',
+    defaultPath: path.join(app.getPath('downloads'), name),
+    buttonLabel: '保存',
+  });
+  if (res.canceled || !res.filePath) return 'canceled';
+  try {
+    await fsp.writeFile(res.filePath, Buffer.from(payload.bytes));
+    return 'saved';
+  } catch (e) {
+    return 'error:' + (e && e.message ? e.message : e);
+  }
+});
 
 function buildMenu() {
   const template = [

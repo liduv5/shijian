@@ -1065,11 +1065,15 @@
   }
   /* 编辑区第二行那句「分类名 ▾ · 创建于 …」。
      分类单独做成按钮：之前整行是一个可点元素，鼠标移到日期上也会高亮，
-     点日期也弹分类选择器 —— 范围太大了。抽成函数是因为改完分类要就地重写这一行。 */
+     点日期也弹分类选择器 —— 范围太大了。抽成函数是因为改完分类要就地重写这一行。
+     三角用 SVG 不用 ▾ 字符：字符大小跟着字体走、9px 显得又小又飘，
+     SVG 能按像素定尺寸，跟旁边的字对齐也更稳。 */
+  const META_CARET = '<svg class="meta-caret" viewBox="0 0 24 24" aria-hidden="true">'
+    + '<path d="M6 9.5l6 6 6-6"/></svg>';
   function metaInfoHTML(note) {
     const cat = catMap().get(note.categoryId);
     const name = escapeHtml(cat ? cat.name : '未分类');
-    return `<button type="button" class="meta-cat${cat ? '' : ' is-empty'}" data-meta-cat="1" aria-label="修改分类">${name}<i class="meta-caret" aria-hidden="true">▾</i></button>`
+    return `<button type="button" class="meta-cat${cat ? '' : ' is-empty'}" data-meta-cat="1" aria-label="修改分类">${name}${META_CARET}</button>`
       + '<span class="meta-dot">·</span>'
       + `<span class="meta-date">创建于 ${escapeHtml(fmtDate(note.createdAt))}</span>`;
   }
@@ -5128,18 +5132,37 @@
     await uploadFiles(Array.from(e.dataTransfer.files));
   });
 
+  /* 导出备份。先弹「另存为」让用户选位置，选完再收集数据 —— 顺序不能反：
+     showSaveFilePicker 必须在点击那一拍的调用栈里，等数据准备好再问会被
+     浏览器以 NotAllowedError 拒掉。不支持这套 API 的浏览器退回直接下载，
+     行为与之前一致。 */
   $('#exportBtn').addEventListener('click', async () => {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    const name = `拾笺备份-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.json`;
+    const NE = window.NoteExport;
+    let handle = null;
+    try {
+      handle = NE && NE.pickSaveHandle
+        ? await NE.pickSaveHandle(name, { types: [{ description: '拾笺备份', accept: { 'application/json': ['.json'] } }] })
+        : null;
+    } catch (_) { handle = null; }
+    if (handle === 'canceled') return;
     toast('正在导出备份…');
+    if (!handle) { /* 老浏览器没有 showSaveFilePicker：直接下载 */ }
     try {
       const data = await window.SJLocal.exportBackup();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a');
-      const d = new Date();
-      const p = (n) => String(n).padStart(2, '0');
-      a.href = URL.createObjectURL(blob);
-      a.download = `拾笺备份-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.json`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      if (!handle) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        return;
+      }
+      await NE.writeHandle(handle, blob);
+      toast('已导出：' + name);
     } catch (err) {
       toast('导出失败：' + err.message);
     }
@@ -5404,6 +5427,19 @@
     localStorage.setItem('sj_theme', t);
   }
   $('#themeBtn').addEventListener('click', () => applyTheme(state.theme === 'light' ? 'dark' : 'light'));
+
+  /* 快捷键提示按平台显示。
+     Windows / Linux 键盘上没有 ⌘ 这颗键，界面上写着 ⌘K 等于让用户去按一个
+     不存在的键（用户 2026-11-22 问「⌘ 是否有效」）。功能本身没问题：下面
+     keydown 里判断的都是 e.metaKey || e.ctrlKey，Windows 上用 Ctrl 全通。 */
+  const IS_MAC = /Mac|iPhone|iPad|iPod/i.test(
+    (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent || ''
+  );
+  function applyPlatformKeyLabels() {
+    const kbd = document.getElementById('searchKbd');
+    if (kbd) kbd.textContent = IS_MAC ? '⌘K' : 'Ctrl K';
+  }
+  applyPlatformKeyLabels();
 
   /* 快捷键 */
   document.addEventListener('keydown', (e) => {
@@ -7607,6 +7643,20 @@
      返回 'ok' / 'share' / 'cancel' / ''，调用方据此给如实反馈。 */
   window.SJSaveBlobFile = async (blob, name) => {
     if (!blob || !blob.size) return '';
+    /* 电脑浏览器优先弹系统「另存为」：导出备份、批量导出这类动作要让用户
+       自己挑位置，不能一点击就悄悄落进下载目录。WebAPK 的内核没有这套
+       API（pickSaveHandle 内部有判断），自动往下走原三级通道，手机不变。 */
+    const NE = window.NoteExport;
+    if (NE && NE.pickSaveHandle && NE.writeHandle) {
+      try {
+        const handle = await NE.pickSaveHandle(name, {});
+        if (handle === 'canceled') return 'cancel';
+        if (handle) {
+          await NE.writeHandle(handle, blob);
+          return 'ok';
+        }
+      } catch (_) { /* 弹框失败就继续走原通道，不能让导出卡死 */ }
+    }
     let obj = '';
     try { obj = URL.createObjectURL(blob); } catch (_) {}
     const revoke = () => { if (obj) setTimeout(() => { try { URL.revokeObjectURL(obj); } catch (_) {} }, 60000); };
