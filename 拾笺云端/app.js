@@ -1949,8 +1949,10 @@
     btn(I.hr, '分隔线', () => exec('insertHorizontalRule'));
     sep();
     /* 正文行距：直接给像素值（原来只有标准/适中/紧凑三档，不够用）。
-       和字号一样是个下拉，选完立刻生效，值记在本机。 */
-    const LH_PX = [16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 44, 48];
+       和字号一样是个下拉，选完立刻生效，值记在本机。
+       档位下界由 lhSteps() 按当前设备正文基准字号算（见 clampLh 上方说明），
+       写死 16 起会让低四档在手机上完全无效。 */
+    const LH_PX = lhSteps();
     tbLhSel = sel('正文行距（像素）', LH_PX.map((v) => [String(v), String(v)]), (v) => {
       const px = parseFloat(v);
       if (!isFinite(px)) return;
@@ -2843,7 +2845,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-22-159';
+  const APP_BUILD = '2026-11-22-160';
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -5208,8 +5210,32 @@
     });
   });
 
-  /* 富文本正文行距（显示偏好，存本机）。值是像素，直接写进 line-height。 */
+  /* 富文本正文行距（显示偏好，存本机）。值是像素，直接写进 line-height。
+     ------------------------------------------------------------
+     档位下界必须大于「正文基准字号 × 1.1」，否则 CSS 里那条 1.1em 的
+     防重叠兜底会把设置值吃掉：手机正文 19px 时 1.2em=22.8px，选 16/18/20/22
+     四档渲染出来一模一样，看着像「选了没反应」（2026-11-22 复查发现）。
+     所以下界按基准字号的 1.2 倍向上取偶数：手机 19→24、桌面 17→22。
+     CSS 里的兜底同步降到 1.1em，只负责「正文里被放大到 32px 的段落不叠字」。 */
+  function lhBasePx() { return NARROW() ? 19 : 17; }
+  function lhBounds() {
+    return { min: Math.ceil(lhBasePx() * 1.2 / 2) * 2, max: 48 };
+  }
+  function clampLh(v) {
+    const b = lhBounds();
+    const n = Math.round(Number(v) || 0);
+    return Math.min(b.max, Math.max(b.min, n));
+  }
+  function lhSteps() {
+    const b = lhBounds();
+    const out = [];
+    for (let v = b.min; v <= b.max; v += 2) out.push(v);
+    return out;
+  }
   function applyRichLh() {
+    /* 老数据（倍数换算出来的 16/18/20，或桌面存的 22 拿到手机上用）一律夹回档内，
+       不然下拉框显示一个渲染不出来的值，等于骗人。 */
+    state.richLh = clampLh(state.richLh);
     document.documentElement.style.setProperty('--sj-rich-lh', state.richLh + 'px');
   }
 
@@ -7134,6 +7160,8 @@
       const a = b.dataset.act;
       if (a === 'nh-back') { hideMoreMenu(); closeEditor(); return; }
       if (a === 'nh-done') { setNoteMode('read'); return; }
+      /* 阅读态那颗「编辑」：唯一入口。点正文不再进编辑（见下方 BODY_BOX）。 */
+      if (a === 'nh-edit') { setNoteMode('edit'); return; }
       /* 撤销 / 重做：正文只有富文本一个编辑面，统一走 execCommand。
          用静默聚焦，撤销一下不该把输入法顶出来。 */
       const target = $('#richPane');
@@ -7163,9 +7191,8 @@
       }
       if (a === 'img') { const el = $('#imgBtn'); if (el) el.click(); return; }
       if (a === 'attach') { const el = $('#attachBtn'); if (el) el.click(); return; }
-      /* 移动分类：原来藏在底栏「⋯」里，而那个菜单只剩这一项了（用户 2026-11-22），
-         干脆提成底栏按钮，和收藏并排 —— 少点一层，也不需要那个菜单了。 */
-      if (a === 'move-cat') { const n = currentNote(); if (n) openCategoryPicker(n); return; }
+      /* 「移动到分类」不放底栏：编辑态标题下方那颗分类胶囊本来就能点，
+         两个入口同一件事，纯属重复（用户 2026-11-22 反馈）。底栏只留四颗。 */
       /* 收藏：复用详情底栏那颗按钮的既有逻辑，不另写一份 */
       const proxy = DETAIL && DETAIL.querySelector(`[data-act="${a}"]`);
       if (proxy) { proxy.click(); setTimeout(syncNoteMode, 0); }
@@ -7214,28 +7241,15 @@
         typingFocus({ x: e.clientX, y: e.clientY });
         return;
       }
-      /* 阅读态点图片：同样进编辑，并把同一张图选中，省得再点一次 */
-      let idx = -1;
-      if (img) {
-        const pane = img.closest('#richPane');
-        if (pane) idx = Array.prototype.indexOf.call(pane.querySelectorAll('img'), img);
-      }
-      setNoteMode('edit', { x: e.clientX, y: e.clientY });
-      if (idx >= 0) setTimeout(() => {
-        const again = BODY_BOX.querySelectorAll('#richPane img')[idx];
-        if (again) selectImg(again);
-      }, 0);
+      /* 阅读态：点正文什么都不做（用户 2026-11-22 定 —— 阅读就只是阅读）。
+         以前这里会 setNoteMode('edit') 并把光标落到点击处，代价是：
+         手指轻触就进可写状态、退出时还会 saveNow() 落一次盘；
+         而且这条路径没拦 a[href]，点正文里的链接会一边跳转一边切形态。
+         现在进编辑只走顶栏那颗「编辑」，链接、图片都回到原生行为。 */
+      return;
     });
-    /* 阅读态点标题 → 进编辑态并聚焦标题 */
-    const TI = $('#titleInput');
-    if (TI) {
-      TI.addEventListener('click', () => {
-        if (!NARROW() || !currentNote()) return;
-        if (document.body.classList.contains('sj-note-edit')) return;
-        setNoteMode('edit');
-        setTimeout(() => TI.focus(), 0);
-      });
-    }
+    /* 标题同理：阅读态点标题不再进编辑（同 BODY_BOX 的理由）。
+       标题框在阅读态是 readOnly 的，点它只会聚焦、不出光标，无害。 */
 
     /* ---- 右上角四点菜单：顶栏收起后的设置/工具入口 ----
        全部 click 现有按钮，不新建数据链路；开关时清自动弹回标记无关，
@@ -7264,7 +7278,7 @@
     const I_HIST = '<svg viewBox="0 0 24 24" class="ico"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3 4v5h5"/><path d="M12 8v4.5l3 1.8"/></svg>';
     const I_DEL = '<svg viewBox="0 0 24 24" class="ico"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>';
     /* 「移动到分类」和「同步到云端」不放这儿（用户 2026-11-22 要求）：
-       分类在标题下方那颗胶囊上改（带 ▾，阅读态也点得动），入口已经够近；
+       分类改成进编辑态点标题下方那颗胶囊（阅读态只读，胶囊 pointer-events:none）；
        同步是库级动作，只在首页那套全局菜单里出现。 */
     function noteMoreRows(note) {
       return [

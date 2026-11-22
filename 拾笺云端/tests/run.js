@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-159 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-160 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-22-159';
+const BUILD = '2026-11-22-160';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
 
@@ -482,10 +482,22 @@ ok('手机端不再有 Markdown / 富文本切换，标题与返回箭头同一�
   /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \.title-input \{[\s\S]{0,200}font-size: 20px; font-weight: 700[\s\S]{0,120}opacity: 0/.test(styleSrc) &&
   /body\.sj-note-open:not\(\.sj-note-edit\) \.editor-head \{ display: none; \}/.test(styleSrc) &&
   /\.sj-rh-title \{[\s\S]{0,160}font-size: 27px/.test(styleSrc) &&
-  /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane \{[\s\S]{0,180}font-size: 19px; line-height: max\(var\(--sj-rich-lh, 28px\), 1\.2em\)/.test(styleSrc) &&
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane \{[\s\S]{0,180}font-size: 19px; line-height: max\(var\(--sj-rich-lh, 28px\), 1\.1em\)/.test(styleSrc) &&
   /* 详情底栏整条下线，动作搬进右上角四点菜单 */
   !/body\.sj-note-open \.sj-detail-bar:not\(\.hidden\) \{ display: flex; \}/.test(styleSrc) &&
   styleSrc.indexOf('.sj-meta-cat {') >= 0);
+
+/* 阅读态只读：进编辑只走顶栏那颗「编辑」（用户 2026-11-22 定：阅读就只是阅读）。
+   原来「点正文进编辑」没拦 a[href]，点正文里的链接会一边跳转一边切形态；
+   而且轻触就进可写状态、退出时还会 saveNow() 白落一次盘。 */
+ok('阅读态进编辑只有顶栏一颗按钮，点正文不再跳进编辑',
+  /data-act="nh-edit">编辑</.test(indexSrc)
+  && /if \(a === 'nh-edit'\) \{ setNoteMode\('edit'\); return; \}/.test(appSrc)
+  && !/setNoteMode\('edit', \{ x: e\.clientX, y: e\.clientY \}\)/.test(appSrc)
+  && !/阅读态点图片：同样进编辑/.test(appSrc)
+  && /\.sj-nh-edit \{[\s\S]{0,500}body\.sj-note-open:not\(\.sj-note-edit\) \.sj-nh-edit \{ display: flex; \}/.test(styleSrc)
+  /* 阅读态顶栏右侧要同时让开「编辑」和四点按钮，别叠在一起 */
+  && /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \{ padding-right: 110px; \}/.test(styleSrc));
 
 ok('标题下面只留一份分类且可点：分类胶囊可点换类、右边不再重复一颗',
   indexSrc.indexOf('id="sjMetaDate"') >= 0 &&
@@ -737,21 +749,23 @@ ok('底栏那排按钮点了有反应：菜单不被同一次点击关掉，锚�
      锚点在就每次按它的实时位置重算（输入法收起后底栏挪了，菜单得跟） */
   /function placeCtx\(x, y, opts\) \{[\s\S]{0,1100}ctxAnchor && ctxAnchor\.isConnected[\s\S]{0,420}o\.above \? ay - ch : ay/.test(appSrc) &&
   /else if \(act === 'more'\) openNoteMore\(b, note\);/.test(appSrc) &&
-  /* 编辑工具条的收藏 + 移动分类都走既有逻辑 */
-  /if \(a === 'move-cat'\) \{ const n = currentNote\(\); if \(n\) openCategoryPicker\(n\); return; \}[\s\S]{0,300}const proxy = DETAIL/.test(appSrc) &&
+  /* 编辑工具条的收藏走既有逻辑；移动分类不再放底栏 —— 标题下方那颗胶囊
+     本来就可点，两个入口同一件事（用户 2026-11-22 反馈重复） */
+  /const proxy = DETAIL/.test(appSrc) &&
+  !/a === 'move-cat'/.test(appSrc) &&
   /* 首次打开没装 PWA 时的提示条压着工具条（89 > 61），详情页里让它躲开 */
   /body\.sj-note-open \.pwa-tip \{/.test(styleSrc));
 
-/* 编辑态底栏的「⋯」只剩「移动到分类」一项，那就别留菜单了：直接一颗按钮替掉它。 */
-ok('编辑态底栏把「移动到分类」提成按钮，替掉原来的 ⋯',
+/* 编辑态底栏只留四颗常用动作。「移动到分类」曾经提到底栏替掉 ⋯，
+   但标题下方那颗分类胶囊本来就点得动，两个入口同一件事 —— 2026-11-22 撤掉。 */
+ok('编辑态底栏只留四颗，不再重复「移动到分类」',
   (function () {
     const a = indexSrc.indexOf('id="sjEditBar"');
-    const b = a >= 0 ? indexSrc.indexOf('</div>', indexSrc.indexOf('data-act="move-cat"')) : -1;
+    const b = a >= 0 ? indexSrc.indexOf('<div class="sj-img-bar', a) : -1;
     const bar = a >= 0 && b > a ? indexSrc.slice(a, b) : '';
-    return /data-act="move-cat"/.test(bar)
-      && !/data-act="more"/.test(bar)
-      && /data-act="star"/.test(bar)
-      && /aria-label="移动到分类"/.test(bar);
+    const acts = (bar.match(/data-act="[^"]+"/g) || []).map((s) => s.slice(10, -1));
+    return acts.join(',') === 'fmt,img,attach,star'
+      && !/data-act="more"/.test(bar);
   })());
 
 ok('输入法收起后菜单跟着底栏回到底部，不再悬在半空',
@@ -1012,17 +1026,22 @@ ok('字体/字号/行距各自带标签 T / Z / 行',
   && /\.tb-pick-tag \{[\s\S]{0,300}font-size: 11\.5px/.test(styleSrc));
 ok('深色主题下下拉箭头换一套颜色（不至于黑底看不见）',
   /html\[data-theme="dark"\] \.tb-select \{\s*background-image: url\("data:image\/svg\+xml/.test(styleSrc));
-/* 行距原来三档点击循环，改成像素下拉（和字号同一套控件）。 */
-ok('行距是像素下拉（16–48），不再是三档循环',
-  /const LH_PX = \[16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 44, 48\]/.test(appSrc)
+/* 行距原来三档点击循环，改成像素下拉（和字号同一套控件）。
+   档位下界不能写死 16：手机正文 19px 时 16–22 四档会被 line-height 的
+   1.1em 兜底整体吃掉，选了没反应 —— 2026-11-22 复查后改由 lhSteps() 生成。 */
+ok('行距是像素下拉，档位按当前设备正文基准字号生成',
+  /const LH_PX = lhSteps\(\)/.test(appSrc)
+  && /function lhSteps\(\) \{[\s\S]{0,260}v \+= 2/.test(appSrc)
+  && /function lhBounds\(\) \{[\s\S]{0,120}Math\.ceil\(lhBasePx\(\) \* 1\.2 \/ 2\) \* 2/.test(appSrc)
+  && /state\.richLh = clampLh\(state\.richLh\);/.test(appSrc)
   && /state\.richLh = px;/.test(appSrc)
   && !/LH_STEPS/.test(appSrc) && !/LH_LABELS/.test(appSrc)
   && /setProperty\('--sj-rich-lh', state\.richLh \+ 'px'\)/.test(appSrc)
   && /if \(v < 3\) return Math\.min\(64, Math\.max\(14, Math\.round\(v \* 16 \/ 2\) \* 2\)\)/.test(appSrc)
-  && /line-height: max\(var\(--sj-rich-lh, 28px\), 1\.2em\)/.test(styleSrc));
+  && /line-height: max\(var\(--sj-rich-lh, 28px\), 1\.1em\)/.test(styleSrc));
 /* 阅读态原来固定 1.78 不吃这个设置，用户要求跟着走。手机端编辑态也统一。 */
 ok('阅读态正文也吃同一套像素行距',
-  /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane \{[\s\S]{0,220}line-height: max\(var\(--sj-rich-lh, 28px\), 1\.2em\)/.test(styleSrc)
+  /body\.sj-note-open:not\(\.sj-note-edit\) \.rich-pane \{[\s\S]{0,220}line-height: max\(var\(--sj-rich-lh, 28px\), 1\.1em\)/.test(styleSrc)
   && !/line-height: 1\.78/.test(styleSrc) && !/line-height: 1\.86/.test(styleSrc));
 ok('行距下拉回显当前值（不在预设档就临时补一档）',
   /function syncLhPicker\(\)[\s\S]{0,700}data-temp/.test(appSrc)

@@ -1870,89 +1870,17 @@
 
   /* ---- 双形态的事件绑定 ---- */
 
-  /* 点正文 → 进编辑态。富文本点哪就从哪开始写（把光标放到点的位置）。 */
-  function enterEditAt(clientX, clientY) {
-    if (noteMode === 'edit') return;
-    setNoteMode(true, { focus: false });
-    const target = $('#richPane');
-    if (!target) return;
-    target.focus();
-    if (clientX != null) {
-      try {
-        const sel = window.getSelection();
-        if (sel && sel.rangeCount) {
-          /* 用 caretPosition 找到点击处的文字节点 */
-          if (document.caretRangeFromPoint) {
-            const r = document.caretRangeFromPoint(clientX, clientY);
-            if (r) { sel.removeAllRanges(); sel.addRange(r); }
-          } else if (document.caretPositionFromPoint) {
-            const p = document.caretPositionFromPoint(clientX, clientY);
-            if (p) {
-              const r = document.createRange();
-              r.setStart(p.offsetNode, p.offset);
-              r.collapse(true);
-              sel.removeAllRanges(); sel.addRange(r);
-            }
-          }
-        }
-      } catch (_) {}
-    }
+  /* 进编辑态只走顶栏那颗铅笔（用户 2026-11-22 定：阅读就只是阅读）。
+     原来这里是「点正文 → 进编辑」，配了位移 4px / 有选区 / 点链接三道守卫；
+     改成显式入口后整条拆掉 —— 阅读态点正文只剩原生行为：拖选、复制、
+     点链接都不会把页面拉进可写状态，也不会退出时白落一次盘。 */
+  const READ_EDIT_BTN = $('#readEditBtn');
+  if (READ_EDIT_BTN) {
+    READ_EDIT_BTN.addEventListener('click', () => {
+      if (!currentNote()) return;
+      setNoteMode(true);
+    });
   }
-
-  /* 记下按下的位置：用来把「单击进编辑」和「拖选文字」分开。
-     阅读态拖选文字时，鼠标抬起后浏览器还会补一个 click，若照常进编辑态
-     并 focus 正文，focus 会把刚选好的选区塌掉 —— 表现就是「正文文字选不中」。 */
-  let downPoint = null;
-  document.addEventListener('mousedown', (e) => {
-    downPoint = e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
-  }, true);
-
-  /* 这段选区是不是「用户真的选了一段话」 —— 非塌陷且不是纯空白 */
-  function hasRealSelection() {
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount || sel.isCollapsed) return false;
-    return !!String(sel).trim();
-  }
-
-  /* 进编辑态要等一小会儿：双击选词 / 三击选段也会先来一次 click，
-     立刻进编辑态就会把它吃掉（focus 塌陷选区），结果「双击选不中字」。
-     等到这个窗口过去还没有选区，才认为用户是想开始写。 */
-  let enterTimer = null;
-  function cancelEnterEdit() {
-    if (enterTimer) { clearTimeout(enterTimer); enterTimer = null; }
-  }
-  /* 双击 / 三击：明确是选字，撤销排队中的「进编辑态」 */
-  document.addEventListener('dblclick', cancelEnterEdit, true);
-  document.addEventListener('mouseup', (e) => {
-    if (e.detail >= 3) cancelEnterEdit();
-  }, true);
-  /* 换了笔记 / 切成阅读态以外的形态时，排队中的动作作废 —— 定时器回调自己
-     会检查 noteMode 和选区，这里不需要额外挂钩，留着这个注释说明意图。 */
-
-  document.addEventListener('click', (e) => {
-    /* 阅读态点正文 → 进编辑态 */
-    const dp = downPoint;
-    downPoint = null;
-    cancelEnterEdit();
-    if (noteMode !== 'read') return;
-    const body = $('#editorBody');
-    if (!body || !body.contains(e.target)) return;
-    /* 点在图片链接上时先让链接生效，不进编辑态 */
-    const a = e.target.closest && e.target.closest('a[href]');
-    if (a) return;
-    /* 拖着选了一段（位移超过 4px）→ 这是在选字，别进编辑态 */
-    if (dp && (Math.abs(e.clientX - dp.x) > 4 || Math.abs(e.clientY - dp.y) > 4)) return;
-    /* 已经有非空选区 → 同上，别把选区塌掉 */
-    if (hasRealSelection()) return;
-    const x = e.clientX;
-    const y = e.clientY;
-    enterTimer = setTimeout(() => {
-      enterTimer = null;
-      /* 窗口期里选区出来了（双击选词）就不再进编辑态 */
-      if (noteMode !== 'read' || hasRealSelection()) return;
-      enterEditAt(x, y);
-    }, 180);
-  });
 
   /* 阅读态滚动：正文大标题滚过顶栏后，顶栏小标题淡入接管 */
   $('#editorBody').addEventListener('scroll', () => {
@@ -2191,8 +2119,9 @@
     btn(I.hr, '分隔线', () => exec('insertHorizontalRule'));
     sep();
     /* 正文行距：直接给像素值（原来只有标准/适中/紧凑三档，不够用）。
-       和字号一样是个下拉，选完立刻生效，值记在本机。 */
-    const LH_PX = [16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 44, 48];
+       和字号一样是个下拉，选完立刻生效，值记在本机。
+       档位下界见 lhSteps()：写死 16 起会让低几档被 1.1em 兜底吃掉。 */
+    const LH_PX = lhSteps();
     tbLhSel = sel('正文行距（像素）', LH_PX.map((v) => [String(v), String(v)]), (v) => {
       const px = parseFloat(v);
       if (!isFinite(px)) return;
@@ -4454,8 +4383,24 @@
     });
   });
 
-  /* 富文本正文行距（显示偏好，存本机）。值是像素，直接写进 line-height。 */
+  /* 富文本正文行距（显示偏好，存本机）。值是像素，直接写进 line-height。
+     ------------------------------------------------------------
+     档位下界必须大于「正文基准字号 × 1.1」，否则 CSS 里那条 1.1em 的
+     防重叠兜底会把设置值吃掉（原来 1.2em 时，16/18/20 三档在 17px 正文下
+     全被 20.4px 盖掉，选了没反应）。桌面正文 17px（窄屏 16px）→ 下界取 22。 */
+  function lhSteps() {
+    const out = [];
+    for (let v = 22; v <= 48; v += 2) out.push(v);
+    return out;
+  }
+  function clampLh(v) {
+    const n = Math.round(Number(v) || 0);
+    return Math.min(48, Math.max(22, n));
+  }
   function applyRichLh() {
+    /* 手机端存下来的 16/18/20 拿到电脑上用，一律夹回档内，
+       不然下拉框显示一个渲染不出来的值，等于骗人。 */
+    state.richLh = clampLh(state.richLh);
     document.documentElement.style.setProperty('--sj-rich-lh', state.richLh + 'px');
   }
 

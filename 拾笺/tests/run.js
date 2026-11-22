@@ -52,18 +52,17 @@ ok('编辑态把富文本设为可编辑', /setAttribute\('contenteditable', 'tr
 ok('标题框在阅读态只读、编辑态可写', /ti\.readOnly = true/.test(js) && /ti\.readOnly = false/.test(js));
 ok('打开笔记时会同步形态', /syncNoteMode\(note\)/.test(js));
 ok('新建草稿直接进编辑态', /setNoteMode\(true, \{ focus: false \}\)/.test(js));
-ok('点正文进编辑态（要等一小会儿，让双击选词先成立）',
-  /function enterEditAt\(/.test(js) && /enterTimer = setTimeout\(\(\) => \{[\s\S]{0,200}enterEditAt\(x, y\);/.test(js));
-ok('双击 / 三击选词会撤销排队中的「进编辑态」',
-  /addEventListener\('dblclick', cancelEnterEdit, true\)/.test(js) && /e\.detail >= 3\) cancelEnterEdit\(\)/.test(js));
+/* 进编辑态只走顶栏那颗铅笔（2026-11-22：阅读就只是阅读）。
+   原来「点正文 → 进编辑」配了位移 4px / 有选区 / 点链接三道守卫，
+   改成显式入口后整条拆掉：阅读态点正文只剩原生行为（拖选、复制、点链接）。 */
+ok('阅读态顶栏有「编辑」按钮，点了进编辑态',
+  /id="readEditBtn"/.test(html) && /READ_EDIT_BTN[\s\S]{0,220}setNoteMode\(true\)/.test(js)
+  && /body\.sj-note-read #readEditBtn \{ display: grid;/.test(css));
+ok('点正文不再进编辑态（enterEditAt / downPoint / enterTimer 全拆）',
+  !/function enterEditAt\(/.test(js) && !/downPoint/.test(js)
+  && !/enterTimer/.test(js) && !/hasRealSelection\(\)/.test(js)
+  && !/cancelEnterEdit/.test(js));
 ok('完成按钮回阅读态', /sjDoneBtn[\s\S]{0,200}setNoteMode\(false\)/.test(js));
-
-/* 阅读态拖选文字不能被「点正文进编辑态」那个 click 塌掉 */
-ok('点正文进编辑态会区分「单击」与「拖选」',
-  /hasRealSelection\(\)/.test(js) && /Math\.abs\(e\.clientX - dp\.x\) > 4/.test(js));
-ok('按下位置在捕获阶段记录下来（拖选位移要靠它判断）',
-  /addEventListener\('mousedown',[\s\S]{0,160}downPoint = e\.button === 0/.test(js));
-ok('已有非空选区时不进编辑态', /if \(hasRealSelection\(\)\) return;/.test(js));
 
 /* 编辑区第二行只有分类名是热区，日期不可点 */
 ok('分类名是独立按钮（带 data-meta-cat）', /metaInfoHTML\(/.test(js) && /data-meta-cat="1"/.test(js));
@@ -163,17 +162,22 @@ ok('点开下拉不描黑框（键盘聚焦改用底色提示）',
 
 /* 行距原来是「标准/适中/紧凑」三档点击循环，实际不够用（用户反馈），
    改成和字号一样的像素下拉。老值存的是倍数，载入时按 16px 正文字号换算。 */
-ok('行距是像素下拉（16–48），不再是三档循环',
-  /const LH_PX = \[16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 44, 48\]/.test(js)
+ok('行距是像素下拉，档位按正文基准字号生成',
+  /const LH_PX = lhSteps\(\);/.test(js)
+  && /function lhSteps\(\) \{[\s\S]{0,200}v \+= 2/.test(js)
+  && /function clampLh\(v\)/.test(js)
+  && /state\.richLh = clampLh\(state\.richLh\);/.test(js)
   && /state\.richLh = px;/.test(js)
   && !/LH_STEPS/.test(js) && !/LH_LABELS/.test(js));
 ok('行距写进 CSS 变量时带 px，老倍数自动换算成像素',
   /setProperty\('--sj-rich-lh', state\.richLh \+ 'px'\)/.test(js)
   && /if \(v < 3\) return Math\.min\(64, Math\.max\(14, Math\.round\(v \* 16 \/ 2\) \* 2\)\)/.test(js)
-  && /line-height: max\(var\(--sj-rich-lh, 28px\), 1\.2em\)/.test(css));
-/* 阅读态原来固定 1.85 不吃这个设置，用户要求跟着走。1.2em 兜底防重叠。 */
+  && /line-height: max\(var\(--sj-rich-lh, 28px\), 1\.1em\)/.test(css));
+/* 阅读态原来固定 1.85 不吃这个设置，用户要求跟着走。
+   1.1em 只防「正文里被放大到 28–32px 的段落」叠字；原来 1.2em 会把
+   16–20 三档在 17px 正文下整体吃掉，看着像选了没反应。 */
 ok('阅读态正文也吃同一套像素行距',
-  /body\.sj-note-read \.rich-pane \{[\s\S]{0,200}line-height: max\(var\(--sj-rich-lh, 28px\), 1\.2em\)/.test(css)
+  /body\.sj-note-read \.rich-pane \{[\s\S]{0,200}line-height: max\(var\(--sj-rich-lh, 28px\), 1\.1em\)/.test(css)
   && !/body\.sj-note-read \.rich-pane \{[\s\S]{0,160}line-height: 1\.85/.test(css));
 ok('行距下拉回显当前值（不在预设档就临时补一档）',
   /function syncLhPicker\(\)[\s\S]{0,700}data-temp/.test(js)
