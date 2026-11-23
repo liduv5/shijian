@@ -957,10 +957,11 @@ mark { background: rgba(255, 193, 7, .42); color: inherit; border-radius: 2px; p
   padding-right: 2px;
   user-select: none;
 }
-.tb-pick:hover { background-color: var(--surface-2); }
+/* 悬停/按下高亮画在 select 自己身上：块的宽度 = 下拉框宽度，两者统一
+   （原来画在 .tb-pick 上，把左侧 T 字母和内边距都包进去，比框宽一截）。 */
+.tb-pick:hover .tb-select,
+.tb-pick:focus-within .tb-select { background-color: var(--surface-2); color: var(--text); }
 .tb-pick .tb-select { margin: 0; padding-left: 4px; }
-.tb-pick .tb-select:hover,
-.tb-pick .tb-select:focus-visible { background-color: transparent; }
 
 .tb-select {
   height: 27px;

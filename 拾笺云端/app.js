@@ -1895,8 +1895,6 @@
       s.className = 'tb-sep';
       bar.appendChild(s);
     };
-    /* 字体/字号两颗下拉的同宽登记：sel() 的 change 里要用 */
-    let pickPair = null;
     // 富文本字体/字号下拉：原生 select，选后即复位到占位文字
     // 左侧挂一个小标签（T 字体 / Z 字号 / 行=行距）：后两个都只显示数字，没标分不出
     const sel = (title, opts, onChange, cls, tag) => {
@@ -1909,13 +1907,7 @@
       s.className = 'tb-select' + (cls ? ' ' + cls : '');
       s.title = title;
       s.innerHTML = opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
-      s.addEventListener('change', () => {
-        const v = s.value; s.value = '';
-        /* 字体/字号两颗得一起量，否则单颗重量会把同宽拆掉 */
-        if (pickPair && (s === pickPair[0] || s === pickPair[1])) fitSelPair(pickPair[0], pickPair[1]);
-        else fitSel(s);
-        if (v) onChange(v);
-      });
+      s.addEventListener('change', () => { const v = s.value; s.value = ''; fitSel(s); if (v) onChange(v); });
       wrap.appendChild(tg);
       wrap.appendChild(s);
       bar.appendChild(wrap);
@@ -1929,7 +1921,7 @@
     btn(I.italic, '斜体', () => exec('italic'));
     btn(I.strike, '删除线', () => exec('strikeThrough'));
     sep();
-    const fSel = sel('字体', [
+    sel('字体', [
       ['', '默认'],
       ['SimSun', '宋体'],
       ['SimHei', '黑体'],
@@ -1939,7 +1931,7 @@
       ['Georgia', 'Georgia'],
       ['Courier New', '等宽'],
     ], (v) => execFont('fontName', v), '', 'T');
-    const sSel = sel('字号', [
+    sel('字号', [
       ['', '默认'],
       ['12', '12'],
       ['14', '14'],
@@ -1950,9 +1942,6 @@
       ['28', '28'],
       ['32', '32'],
     ], (v) => execFontSize(v), 'is-size', 'Z');
-    /* 两颗下拉同宽：按下时高亮底一样宽 */
-    pickPair = [fSel, sSel];
-    fitSelPair(fSel, sSel);
     sep();
     btn('<span class="tb-text">H1</span>', '一级标题', () => exec('formatBlock', '<h1>'));
     btn('<span class="tb-text">H2</span>', '二级标题', () => exec('formatBlock', '<h2>'));
@@ -5319,28 +5308,17 @@
     selMeter.style.fontSize = cs.fontSize;
     selMeter.style.fontWeight = cs.fontWeight;
     selMeter.style.letterSpacing = cs.letterSpacing;
-    /* 量最宽的选项，不量当前值：原生下拉列表点开是按最长那条撑的
-       （「微软雅黑」「Georgia」），收起框只按当前值量就会比列表窄一截，
-       点开突然变宽很突兀。按最宽量完，框和展开列表就一样宽。 */
-    let w = 0;
-    for (let i = 0; i < s.options.length; i++) {
-      selMeter.textContent = s.options[i].textContent;
-      w = Math.max(w, Math.ceil(selMeter.getBoundingClientRect().width));
-    }
-    return w;
+    /* 宽度跟内容走：没选字体/选了「默认」就按「默认」两个字量，
+       选了微软雅黑就按「微软雅黑」量。按最宽选项量会让文字和箭头
+       之间空一大截（2026-11-23 用户反馈）。 */
+    const opt = s.options[s.selectedIndex >= 0 ? s.selectedIndex : 0];
+    selMeter.textContent = opt ? opt.textContent : '';
+    return Math.ceil(selMeter.getBoundingClientRect().width);
   }
   function fitSel(s) {
     if (!s || !document.body.contains(s)) return s;
     s.style.width = Math.max(0, measureSel(s) + 8 + 18) + 'px';
     return s;
-  }
-  /* 字体和字号两颗下拉统一宽度：取两者最宽的那个。分开各量各的，
-     按下时高亮底（.tb-pick）一个宽一个窄，排在一条工具条上很别扭。 */
-  function fitSelPair(a, b) {
-    if (!a || !b) return;
-    const w = Math.max(measureSel(a), measureSel(b)) + 8 + 18;
-    a.style.width = w + 'px';
-    b.style.width = w + 'px';
   }
 
   /* 行距下拉回显：值不在预设档里（老数据换算出来的奇数）就临时补一档 */

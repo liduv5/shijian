@@ -142,12 +142,11 @@ ok('字体只认正文里写过的 font-family（不拿兜底字体栈误报）'
 ok('只有光标时选字体/字号先整段选中（否则浏览器只记一笔 typing style）',
   /function blockAwareRange\(/.test(js)
   && /const \{ collapsed, block \} = blockAwareRange\(\);/.test(js));
-ok('字体/字号两颗下拉同宽（按下高亮一样宽）',
-  /function fitSelPair\(a, b\)/.test(js)
-  && /fitSelPair\(tbFontSel, tbSizeSel\)/.test(js));
-ok('下拉宽度按最宽选项量，收起框和点开的列表一样宽',
+ok('下拉宽度跟内容走（默认按「默认」量、选微软雅黑按「微软雅黑」量）',
   !/\.tb-select \{[\s\S]{0,400}field-sizing/.test(css)
-  && /量最宽的选项/.test(js)
+  && /宽度跟内容走/.test(js)
+  && /s\.options\[s\.selectedIndex >= 0 \? s\.selectedIndex : 0\]/.test(js)
+  && !/fitSelPair/.test(js)
   && !/\.tb-select \{[\s\S]{0,400}min-width: 58px/.test(css));
 ok('下拉吞掉原生箭头留白，改自绘小箭头（箭头紧贴文字）',
   (function () {
@@ -169,7 +168,10 @@ ok('字体/字号/行距各自带标签 T / Z / 行',
   /execFont\('fontName', v\), '', 'T'\)/.test(js)
   && /'is-size', 'Z'\)/.test(js) && /'is-lh', '行'\)/.test(js)
   && /\.tb-pick-tag \{[\s\S]{0,300}font-size: 11\.5px/.test(css)
-  && /\.tb-pick:hover \{ background-color: var\(--surface-2\); \}/.test(css));
+  /* 悬停高亮画在 select 上：块宽 = 框宽，不再把 T 字母和内边距包进去 */
+  && /\.tb-pick:hover \.tb-select,/.test(css)
+  && /\.tb-pick:focus-within \.tb-select \{ background-color: var\(--surface-2\); color: var\(--text\); \}/.test(css)
+  && !/\.tb-pick:hover \{ background-color/.test(css));
 ok('点开下拉不描黑框（键盘聚焦改用底色提示）',
   /\.tb-select:focus \{ outline: none; \}/.test(css)
   && /\.tb-select:focus-visible \{ outline: none;/.test(css)

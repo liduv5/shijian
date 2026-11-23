@@ -2146,9 +2146,7 @@
         const v = s.value;
         if (v) onChange(v);
         else syncFontPickers();
-        /* 字体/字号两颗得一起量，否则单颗重量会把同宽拆掉 */
-        if (s === tbFontSel || s === tbSizeSel) fitSelPair(tbFontSel, tbSizeSel);
-        else fitSel(s);
+        fitSel(s);
       });
       wrap.appendChild(tg);
       wrap.appendChild(s);
@@ -2184,8 +2182,6 @@
       ['28', '28'],
       ['32', '32'],
     ], (v) => execFontSize(v), 'is-size', 'Z');
-    /* 两颗下拉同宽：按下时高亮底一样宽 */
-    fitSelPair(tbFontSel, tbSizeSel);
     /* 文字颜色：和手机端同一套 6 色 + 默认。按钮下面那道小横线是
        上一次用的颜色，点开才出色板（色板挂在 body 上，滚出工具条也看得见）。 */
     const colorBtn = btn(
@@ -2286,28 +2282,17 @@
     selMeter.style.fontSize = cs.fontSize;
     selMeter.style.fontWeight = cs.fontWeight;
     selMeter.style.letterSpacing = cs.letterSpacing;
-    /* 量最宽的选项，不量当前值：原生下拉列表点开是按最长那条撑的
-       （「微软雅黑」「Georgia」），收起框只按当前值量就会比列表窄一截，
-       点开突然变宽很突兀。按最宽量完，框和展开列表就一样宽。 */
-    let w = 0;
-    for (let i = 0; i < s.options.length; i++) {
-      selMeter.textContent = s.options[i].textContent;
-      w = Math.max(w, Math.ceil(selMeter.getBoundingClientRect().width));
-    }
-    return w;
+    /* 宽度跟内容走：没选字体/选了「默认」就按「默认」两个字量，
+       选了微软雅黑就按「微软雅黑」量。按最宽选项量会让文字和箭头
+       之间空一大截（2026-11-23 用户反馈）。 */
+    const opt = s.options[s.selectedIndex >= 0 ? s.selectedIndex : 0];
+    selMeter.textContent = opt ? opt.textContent : '';
+    return Math.ceil(selMeter.getBoundingClientRect().width);
   }
   function fitSel(s) {
     if (!s || !document.body.contains(s)) return s;
     s.style.width = Math.max(0, measureSel(s) + 8 + 18) + 'px';
     return s;
-  }
-  /* 字体和字号两颗下拉统一宽度：取两者最宽的那个。分开各量各的，
-     按下时高亮底（.tb-pick）一个宽一个窄，排在一条工具条上很别扭。 */
-  function fitSelPair(a, b) {
-    if (!a || !b) return;
-    const w = Math.max(measureSel(a), measureSel(b)) + 8 + 18;
-    a.style.width = w + 'px';
-    b.style.width = w + 'px';
   }
 
   /* 光标一动就刷字体 / 字号 / 颜色那一排。原来只挂 rAF 合帧，但 rAF 并不
@@ -2405,14 +2390,14 @@
     if (!el) {
       tbFontSel.value = '';
       tbSizeSel.value = '';
-      fitSelPair(tbFontSel, tbSizeSel);
+      fitSel(tbFontSel); fitSel(tbSizeSel);
       return;
     }
     const cs = getComputedStyle(el);
     tbFontSel.value = matchFontOption(inlineFontFamily(el));
     tbSizeSel.value = matchSizeOption(parseFloat(cs.fontSize));
     /* 显示的内容变了，宽度跟着重量（「默认」与「微软雅黑」差一截） */
-    fitSelPair(tbFontSel, tbSizeSel);
+    fitSel(tbFontSel); fitSel(tbSizeSel);
   }
 
   /* ---- 文字颜色 ---- */

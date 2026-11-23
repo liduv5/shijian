@@ -1008,10 +1008,6 @@ ok('正文载入体检：抹掉内联 caret-color、清掉列表里的野段落'
 /* 原生 select 的宽度按「最长的选项」算，显示「默认」「16」这种短内容时右侧空一大截。
    现在宽度由 fitSel() 量当前显示文字写死（field-sizing 按最长选项算、且 iOS Safari
    不认，2026-11-22 换成自己量），CSS 里只留自绘箭头与内边距。 */
-ok('字体/字号两颗下拉同宽（按下高亮一样宽）',
-  /function fitSelPair\(a, b\)/.test(appSrc)
-  && /pickPair = \[fSel, sSel\]/.test(appSrc)
-  && /fitSelPair\(pickPair\[0\], pickPair\[1\]\)/.test(appSrc));
 ok('字体/字号下拉的宽度自己量，箭头紧贴文字',
   (function () {
     // 行首要锚住：`.tb-pick .tb-select { ... }` 里也含 `.tb-select {`
@@ -1024,7 +1020,13 @@ ok('字体/字号下拉的宽度自己量，箭头紧贴文字',
       && /padding: 0 18px 0 8px/.test(block)
       && /function fitSel\(s\)/.test(appSrc)
       && /function measureSel\(s\)/.test(appSrc)
-      && /white-space:pre/.test(appSrc);
+      && /宽度跟内容走/.test(appSrc)
+      && /s\.options\[s\.selectedIndex >= 0 \? s\.selectedIndex : 0\]/.test(appSrc)
+      && /white-space:pre/.test(appSrc)
+      /* 悬停高亮画在 select 上：块宽 = 框宽 */
+      && /\.tb-pick:hover \.tb-select,/.test(styleSrc)
+      && /\.tb-pick:focus-within \.tb-select \{ background-color: var\(--surface-2\); color: var\(--text\); \}/.test(styleSrc)
+      && !/\.tb-pick:hover \{ background-color/.test(styleSrc);
   })());
 ok('下拉有保底宽度、点开不描黑框',
   /\.tb-select \{[\s\S]{0,300}min-width: 52px/.test(styleSrc)
