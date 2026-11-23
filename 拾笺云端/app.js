@@ -5293,11 +5293,10 @@
   /* ---- 工具条三颗下拉的宽度自己量 ----
      原生 select 的宽度按「最长选项」算（Chromium 的 field-sizing:content 也一样），
      而这三颗选完就复位到占位文字，于是「默认」右边空一大片。
-     iOS Safari 至今不认 field-sizing，所以不指望它：量当前显示的文字，
+     iOS Safari 至今不认 field-sizing，所以不指望它：量选项里最宽的那条，
      加左内边距 8 与右侧箭头 18，宽度直接写死。CSS 里仍留 min-width 兜底。 */
   let selMeter = null;
   function measureSel(s) {
-    const opt = s.options[s.selectedIndex >= 0 ? s.selectedIndex : 0];
     if (!selMeter) {
       selMeter = document.createElement('span');
       selMeter.setAttribute('aria-hidden', 'true');
@@ -5309,8 +5308,15 @@
     selMeter.style.fontSize = cs.fontSize;
     selMeter.style.fontWeight = cs.fontWeight;
     selMeter.style.letterSpacing = cs.letterSpacing;
-    selMeter.textContent = opt ? opt.textContent : '';
-    return Math.ceil(selMeter.getBoundingClientRect().width);
+    /* 量最宽的选项，不量当前值：原生下拉列表点开是按最长那条撑的
+       （「微软雅黑」「Georgia」），收起框只按当前值量就会比列表窄一截，
+       点开突然变宽很突兀。按最宽量完，框和展开列表就一样宽。 */
+    let w = 0;
+    for (let i = 0; i < s.options.length; i++) {
+      selMeter.textContent = s.options[i].textContent;
+      w = Math.max(w, Math.ceil(selMeter.getBoundingClientRect().width));
+    }
+    return w;
   }
   function fitSel(s) {
     if (!s || !document.body.contains(s)) return s;

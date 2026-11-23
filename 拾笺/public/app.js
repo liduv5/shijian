@@ -2266,12 +2266,11 @@
   }
 
   /* ---- 下拉宽度自己量 ----
-     原生 select 的宽度按「最长选项」算（field-sizing:content 也一样，且 iOS Safari
-     不认它），显示「默认」这种短内容时右侧空一大片。桌面这三颗还会显示当前值，
-     宽度得跟着变，所以每次回显都重量一次。 */
+     原生 select 点开的列表按「最长选项」撑，收起框若只按当前值量就会比
+     列表窄一截。让收起框也按最宽选项量（见 measureSel），框和列表一样宽；
+     每次回显仍重量一次，选项集变化（如行距重排）后能跟上。 */
   let selMeter = null;
   function measureSel(s) {
-    const opt = s.options[s.selectedIndex >= 0 ? s.selectedIndex : 0];
     if (!selMeter) {
       selMeter = document.createElement('span');
       selMeter.setAttribute('aria-hidden', 'true');
@@ -2283,8 +2282,15 @@
     selMeter.style.fontSize = cs.fontSize;
     selMeter.style.fontWeight = cs.fontWeight;
     selMeter.style.letterSpacing = cs.letterSpacing;
-    selMeter.textContent = opt ? opt.textContent : '';
-    return Math.ceil(selMeter.getBoundingClientRect().width);
+    /* 量最宽的选项，不量当前值：原生下拉列表点开是按最长那条撑的
+       （「微软雅黑」「Georgia」），收起框只按当前值量就会比列表窄一截，
+       点开突然变宽很突兀。按最宽量完，框和展开列表就一样宽。 */
+    let w = 0;
+    for (let i = 0; i < s.options.length; i++) {
+      selMeter.textContent = s.options[i].textContent;
+      w = Math.max(w, Math.ceil(selMeter.getBoundingClientRect().width));
+    }
+    return w;
   }
   function fitSel(s) {
     if (!s || !document.body.contains(s)) return s;

@@ -142,8 +142,9 @@ ok('字体只认正文里写过的 font-family（不拿兜底字体栈误报）'
 ok('只有光标时选字体/字号先整段选中（否则浏览器只记一笔 typing style）',
   /function blockAwareRange\(/.test(js)
   && /const \{ collapsed, block \} = blockAwareRange\(\);/.test(js));
-ok('下拉宽度跟着当前值走，不再按最长选项撑出空白',
-  /\.tb-select \{[\s\S]{0,400}field-sizing: content/.test(css)
+ok('下拉宽度按最宽选项量，收起框和点开的列表一样宽',
+  !/\.tb-select \{[\s\S]{0,400}field-sizing/.test(css)
+  && /量最宽的选项/.test(js)
   && !/\.tb-select \{[\s\S]{0,400}min-width: 58px/.test(css));
 ok('下拉吞掉原生箭头留白，改自绘小箭头（箭头紧贴文字）',
   (function () {
