@@ -1,29 +1,20 @@
-' Shijian Notes - silent auto-start server at Windows logon.
-' A shortcut to this file lives in shell:startup. Starts node server.js
-' WITHOUT --open (no browser window pops up at login).
-' 2026-11-23 created: after reboot the taskbar app showed
-' "localhost refused connection" until the user clicked manually.
-' NOTE: this file is pure ASCII on purpose. WSH reads non-BOM files as
-' ANSI, so UTF-8 Chinese comments here would trigger error 800A0409.
+' Shijian Notes - click-to-run launcher.
+' One click: silently start the local server (if not already running),
+' wait until the port answers, then open the app in the default browser.
+' This is the file the taskbar/desktop shortcut points to.
+' NOTE: pure ASCII on purpose - WSH reads non-BOM files as ANSI, so
+' UTF-8 Chinese comments would trigger error 800A0409.
 
 Option Explicit
 On Error Resume Next
 
-Dim WshShell, FSO, baseDir, nodePath, scriptPath, runLine, logPath, f
+Dim WshShell, FSO, baseDir, nodePath, scriptPath, runLine, logPath, f, i, ok
 
 Set WshShell = CreateObject("WScript.Shell")
 Set FSO = CreateObject("Scripting.FileSystemObject")
 
-' Resolve the project folder two ways:
-'   1. the folder this script sits in (project copy);
-'   2. if server.js is not next to the script, this is the Startup-folder
-'      copy - fall back to the known install path (Chr codes spell it in
-'      Unicode so this file can stay pure ASCII).
 baseDir = FSO.GetParentFolderName(WScript.ScriptFullName)
-If Not FSO.FileExists(FSO.BuildPath(baseDir, "server.js")) Then
-    baseDir = "D:\Program Files\shijian\" & Chr(25342) & Chr(31546)
-End If
-logPath = FSO.BuildPath(baseDir, "autostart-failed.log")
+logPath = FSO.BuildPath(baseDir, "launcher-failed.log")
 
 If FSO.FileExists(logPath) Then FSO.DeleteFile logPath, True
 
@@ -32,6 +23,7 @@ WshShell.CurrentDirectory = baseDir
 nodePath = FindNode()
 If nodePath = "" Then
     Call writeLog("Node.js not found.")
+    MsgBox "Can not find Node.js. Install Node 18+ or put node.exe in runtime\win.", vbExclamation, "Shijian"
     WScript.Quit 1
 End If
 
@@ -41,19 +33,64 @@ If Not FSO.FileExists(scriptPath) Then
     WScript.Quit 1
 End If
 
-' No --open: at logon we only bring the service up, no browser window.
-' If the service is already running, server.js exits quietly
-' (ALREADY_RUNNING) - safe to run twice.
+' No --open here: we open the browser ourselves AFTER the port answers.
+' Starting the server hidden; if it is already running the process exits
+' quietly by itself (ALREADY_RUNNING).
 runLine = """" & nodePath & """ """ & scriptPath & """"
 Err.Clear
 WshShell.Run runLine, 0, False
 
-If Err.Number <> 0 Then
-    Call writeLog("WshShell.Run failed: " & Err.Description & " | cmd=" & runLine)
-    WScript.Quit 1
+' Wait until the server answers (max ~20s), then open the page.
+' Polling via a tiny HTTP GET on 127.0.0.1:5173.
+ok = False
+For i = 1 To 100
+    If PortAnswers() Then
+        ok = True
+        Exit For
+    End If
+    WScript.Sleep 200
+Next
+
+If ok Then
+    OpenApp()
+Else
+    Call writeLog("Server did not answer on 5173 within 20s.")
+    MsgBox "The local server did not start in 20 seconds. See launcher-failed.log in the app folder.", vbExclamation, "Shijian"
 End If
 
 WScript.Quit 0
+
+' Prefer an Edge app window (looks like a standalone app, no browser
+' chrome) over a plain browser tab; fall back to the default browser.
+Sub OpenApp()
+    Dim edge
+    On Error Resume Next
+    edge = WshShell.ExpandEnvironmentStrings("%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe")
+    If Not FSO.FileExists(edge) Then _
+        edge = WshShell.ExpandEnvironmentStrings("%ProgramFiles%\Microsoft\Edge\Application\msedge.exe")
+    If FSO.FileExists(edge) Then
+        Err.Clear
+        WshShell.Run """" & edge & """ --app=""http://localhost:5173/""", 1, False
+        If Err.Number = 0 Then Exit Sub
+        Err.Clear
+    End If
+    WshShell.Run "cmd /c start """" ""http://localhost:5173/""", 0, False
+End Sub
+
+Function PortAnswers()
+    Dim http
+    On Error Resume Next
+    Set http = CreateObject("MSXML2.XMLHTTP")
+    http.open "GET", "http://127.0.0.1:5173/", False
+    http.send
+    If Err.Number = 0 Then
+        PortAnswers = True
+    Else
+        Err.Clear
+        PortAnswers = False
+    End If
+    Set http = Nothing
+End Function
 
 Function FindNode()
     Dim p, d, parts, i, latest, candidate
