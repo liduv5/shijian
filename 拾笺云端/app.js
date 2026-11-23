@@ -1895,6 +1895,8 @@
       s.className = 'tb-sep';
       bar.appendChild(s);
     };
+    /* 字体/字号两颗下拉的同宽登记：sel() 的 change 里要用 */
+    let pickPair = null;
     // 富文本字体/字号下拉：原生 select，选后即复位到占位文字
     // 左侧挂一个小标签（T 字体 / Z 字号 / 行=行距）：后两个都只显示数字，没标分不出
     const sel = (title, opts, onChange, cls, tag) => {
@@ -1907,7 +1909,13 @@
       s.className = 'tb-select' + (cls ? ' ' + cls : '');
       s.title = title;
       s.innerHTML = opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
-      s.addEventListener('change', () => { const v = s.value; s.value = ''; fitSel(s); if (v) onChange(v); });
+      s.addEventListener('change', () => {
+        const v = s.value; s.value = '';
+        /* 字体/字号两颗得一起量，否则单颗重量会把同宽拆掉 */
+        if (pickPair && (s === pickPair[0] || s === pickPair[1])) fitSelPair(pickPair[0], pickPair[1]);
+        else fitSel(s);
+        if (v) onChange(v);
+      });
       wrap.appendChild(tg);
       wrap.appendChild(s);
       bar.appendChild(wrap);
@@ -1921,7 +1929,7 @@
     btn(I.italic, '斜体', () => exec('italic'));
     btn(I.strike, '删除线', () => exec('strikeThrough'));
     sep();
-    sel('字体', [
+    const fSel = sel('字体', [
       ['', '默认'],
       ['SimSun', '宋体'],
       ['SimHei', '黑体'],
@@ -1931,7 +1939,7 @@
       ['Georgia', 'Georgia'],
       ['Courier New', '等宽'],
     ], (v) => execFont('fontName', v), '', 'T');
-    sel('字号', [
+    const sSel = sel('字号', [
       ['', '默认'],
       ['12', '12'],
       ['14', '14'],
@@ -1942,6 +1950,9 @@
       ['28', '28'],
       ['32', '32'],
     ], (v) => execFontSize(v), 'is-size', 'Z');
+    /* 两颗下拉同宽：按下时高亮底一样宽 */
+    pickPair = [fSel, sSel];
+    fitSelPair(fSel, sSel);
     sep();
     btn('<span class="tb-text">H1</span>', '一级标题', () => exec('formatBlock', '<h1>'));
     btn('<span class="tb-text">H2</span>', '二级标题', () => exec('formatBlock', '<h2>'));
@@ -5322,6 +5333,14 @@
     if (!s || !document.body.contains(s)) return s;
     s.style.width = Math.max(0, measureSel(s) + 8 + 18) + 'px';
     return s;
+  }
+  /* 字体和字号两颗下拉统一宽度：取两者最宽的那个。分开各量各的，
+     按下时高亮底（.tb-pick）一个宽一个窄，排在一条工具条上很别扭。 */
+  function fitSelPair(a, b) {
+    if (!a || !b) return;
+    const w = Math.max(measureSel(a), measureSel(b)) + 8 + 18;
+    a.style.width = w + 'px';
+    b.style.width = w + 'px';
   }
 
   /* 行距下拉回显：值不在预设档里（老数据换算出来的奇数）就临时补一档 */

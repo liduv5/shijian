@@ -2146,7 +2146,9 @@
         const v = s.value;
         if (v) onChange(v);
         else syncFontPickers();
-        fitSel(s);
+        /* 字体/字号两颗得一起量，否则单颗重量会把同宽拆掉 */
+        if (s === tbFontSel || s === tbSizeSel) fitSelPair(tbFontSel, tbSizeSel);
+        else fitSel(s);
       });
       wrap.appendChild(tg);
       wrap.appendChild(s);
@@ -2182,6 +2184,8 @@
       ['28', '28'],
       ['32', '32'],
     ], (v) => execFontSize(v), 'is-size', 'Z');
+    /* 两颗下拉同宽：按下时高亮底一样宽 */
+    fitSelPair(tbFontSel, tbSizeSel);
     /* 文字颜色：和手机端同一套 6 色 + 默认。按钮下面那道小横线是
        上一次用的颜色，点开才出色板（色板挂在 body 上，滚出工具条也看得见）。 */
     const colorBtn = btn(
@@ -2297,6 +2301,14 @@
     s.style.width = Math.max(0, measureSel(s) + 8 + 18) + 'px';
     return s;
   }
+  /* 字体和字号两颗下拉统一宽度：取两者最宽的那个。分开各量各的，
+     按下时高亮底（.tb-pick）一个宽一个窄，排在一条工具条上很别扭。 */
+  function fitSelPair(a, b) {
+    if (!a || !b) return;
+    const w = Math.max(measureSel(a), measureSel(b)) + 8 + 18;
+    a.style.width = w + 'px';
+    b.style.width = w + 'px';
+  }
 
   /* 光标一动就刷字体 / 字号 / 颜色那一排。原来只挂 rAF 合帧，但 rAF 并不
      保证会有：窗口被遮挡、最小化、或后台标签页里浏览器一帧都不给
@@ -2393,14 +2405,14 @@
     if (!el) {
       tbFontSel.value = '';
       tbSizeSel.value = '';
-      fitSel(tbFontSel); fitSel(tbSizeSel);
+      fitSelPair(tbFontSel, tbSizeSel);
       return;
     }
     const cs = getComputedStyle(el);
     tbFontSel.value = matchFontOption(inlineFontFamily(el));
     tbSizeSel.value = matchSizeOption(parseFloat(cs.fontSize));
     /* 显示的内容变了，宽度跟着重量（「默认」与「微软雅黑」差一截） */
-    fitSel(tbFontSel); fitSel(tbSizeSel);
+    fitSelPair(tbFontSel, tbSizeSel);
   }
 
   /* ---- 文字颜色 ---- */
