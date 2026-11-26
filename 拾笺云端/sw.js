@@ -11,7 +11,7 @@
            所有 js/css 全部 403 —— 表现为「界面在、进度条卡住、按钮点不动」。
            所以每个同源请求都由 SW 主动补上访问码，不依赖 cookie。
    ============================================================ */
-const VERSION = 'sj-2026-11-22-164';
+const VERSION = 'sj-2026-11-27-178';
 const CACHE = 'shijian-' + VERSION;
 
 const SC_KEY = 'sharecode';
@@ -51,6 +51,12 @@ const RAW_SHELL = [
      老设备推上来的 md 行要靠它转。不预缓存的话，离线打开时
      window.SJMDConv 会是 undefined，md 笔记会原样显示成一堆符号。 */
   '/mdconv.js',
+  /* 共享内核（与桌面端逐字相同）：turndown 配置 + md→rich 转换。
+     不预缓存的话，离线时 window.SJMDConv 会是 null，md 笔记原样显示成符号。 */
+  '/richtext-core.js',
+  '/mdconv-core.js',
+  /* 分类去重内核：离线打开时也要能判断重名 / 清理重复分类。 */
+  '/cat-core.js',
   '/attstore.js',
   '/mobilesync.js',
   '/export.js',

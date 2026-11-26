@@ -9,6 +9,9 @@ const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
 const { mdToRich, toRichHtml } = require('./lib/mdconv.js');
+/* 分类身份 / 去重判定与云端共用同一个内核（public/cat-core.js，逐字相同）。
+   桌面端在服务端收口：所有增删改都过这一层，前端绕不过去。 */
+const SJCats = require('./public/cat-core.js');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -88,45 +91,49 @@ function seed() {
   const cRead = { id: uid(), name: '读书笔记', parentId: null, expanded: true, order: 1, createdAt: now() };
   const cWork = { id: uid(), name: '工作记录', parentId: null, expanded: false, order: 2, createdAt: now() };
 
-  const welcome = `这是一个跑在你电脑本地的笔记库，所有数据都保存在 \`data/\` 目录里，不经过任何服务器。
+  const welcome = `这是一个跑在你自己电脑上的笔记库。数据都在 \`data/\` 目录里，不经过别人的服务器——只有你点「同步到云端」，内容才会传到自己的云端空间。
 
-## 三个区域
+## 界面就两块
 
-- **左侧目录树**：支持无限层级，点箭头收起 / 展开
-- **中间笔记列表**：显示当前类别下的笔记
-- **右侧编辑器**：所见即所得，格式在底部工具条里调
+- **左边导航**：上面是搜索和「最近笔记」，下面是目录树。笔记直接挂在分类底下，点分类前的箭头收起或展开
+- **右边正文**：读完点右上角的铅笔进编辑，编辑完点 ✓ 回到阅读
 
-## 试试这些
+两件值得先知道的事：
 
-1. 点目录旁的 \`+\` 新建子类别，拖不了也没关系，右键有菜单
-2. 把一份 PDF 或图片直接拖进编辑器，会自动成为附件
-3. 代码块支持高亮：
+- 鼠标移到左上角「拾笺」两个字上，会出现**收起侧栏**的按钮；收起后左缘留一条「展开导航」，点它就回来。键盘上按 Ctrl / Cmd 加反斜杠键也能开关
+- 侧栏收起后，正文那一列会自动放宽一档，不会孤零零挤在窗口中间
 
-\`\`\`js
-function fib(n) {
-  let [a, b] = [0, 1];
-  while (n-- > 0) [a, b] = [b, a + b];
-  return a;
-}
-console.log(fib(10)); // 55
-\`\`\`
+## 写字用得上的
 
-> 引用块、表格、任务列表都支持。
+工具条在标题下方，从左到右大致是：
 
-| 格式 | 快捷键 |
+| 想做的事 | 怎么点 |
 | --- | --- |
-| 加粗 | Ctrl / Cmd + B |
-| 斜体 | Ctrl / Cmd + I |
-| 保存 | 自动保存，无需操作 |
+| 加粗 / 斜体 / 下划线 / 删除线 | B I U S，或 \`Ctrl+B\` \`Ctrl+I\` |
+| 换标题级别 | 「正文 ▾」下拉里选 H1~H5，选「正文」回到普通段落 |
+| 换字色 / 加底色 | 并排两个 A：左边改**文字颜色**，右边是**文字背景色**（半透明，深色主题下也不刺眼） |
+| 行内代码 | 选中文字点 \`</>\`，或 \`Ctrl+E\` |
+| 代码块 / 表格 / 分隔线 | 工具条靠右的三个图标 |
+| 撤销 / 重做 | \`Ctrl+Z\` / \`Ctrl+Shift+Z\`，编辑态顶栏也有 |
 
-最后，按 \`Ctrl / Cmd + K\` 可以快速搜索全部笔记。
+字号和行距属于**本机显示偏好**，改的是你看着舒不舒服，不会改动笔记本身。
 
-## 还可以这样用
+## 内容都放得住
 
-- **标签**：标题下方点 \`+\` 添加，左侧会汇总所有标签，点一下就是筛选
-- **历史版本**：点右上角时钟图标，可以看到过去的版本并一键恢复
-- **导出**：点下载图标，可导出 Word、PDF 或 Markdown
-- **粘贴图片**：直接 \`Ctrl / Cmd + V\` 截图，会自动上传并插入正文
+- **附件**：PDF、图片直接拖进正文，或点回形针；截图粘贴也会自动存
+- **历史版本**：右上角的时钟图标，能看到过去的版本并一键恢复
+- **标签**：标题下方点 \`+\` 添加，左侧标签区点一下就筛出同一标签的笔记
+- **回收站**：删除先进回收站，30 天内都能恢复
+- **导出**：下载图标，Word / PDF / Markdown 任选
+- **快速搜索**：\`Ctrl / Cmd + K\` 搜全部笔记
+
+## 手机端
+
+点图标栏的「同步到云端」，登录之后再在手机上打开拾笺云端，就能看到同一份笔记。不点同步，桌面上的内容不会自己跑出去。
+
+---
+
+看完就可以删掉。哪天想再翻一遍：\`Ctrl / Cmd + K\` 搜「欢迎」。
 `;
   const codeNote = `## Flex 常用组合
 
@@ -190,6 +197,29 @@ const debounce = (fn, wait = 300) => {
   return { categories: [cStudy, cFront, cAlgo, cRead, cWork], notes };
 }
 
+/* 数据自愈：每次启动 / 导入 / 云端落库都跑一遍，用户不需要任何「修复」按钮。
+   两层：
+     1. 分类去重（同父同名留一条，笔记与子分类改指向）
+     2. 体检（悬空父级提升为根、环断开、悬空分类归未分类、order 归零重排、标签归一）
+   返回总变更条数，0 表示本来就干净。 */
+function healCategories() {
+  let changed = 0;
+  const r = SJCats.dedupeCats(db.categories, db.notes);
+  if (r.remap.size) {
+    db.categories = r.list;
+    SJCats.remapAll(db.categories, db.notes, r.remap);
+    changed += r.remap.size;
+  }
+  const st = SJCats.healIntegrity(db.categories, db.notes);
+  changed += st.orphanCats + st.cycleCats + st.orphanNotes + st.orderFixed + st.tagFixed;
+  if (st.orphanCats || st.cycleCats || st.orphanNotes || st.orderFixed || st.tagFixed) {
+    console.log('  数据体检：'
+      + `悬空分类 ${st.orphanCats}，环 ${st.cycleCats}，悬空笔记 ${st.orphanNotes}，`
+      + `order 重排 ${st.orderFixed}，标签归一 ${st.tagFixed} 篇`);
+  }
+  return changed;
+}
+
 function loadDB() {
   try {
     const raw = fs.readFileSync(DB_PATH, 'utf8');
@@ -203,8 +233,9 @@ function loadDB() {
       if (!Array.isArray(n.attachments)) n.attachments = [];
       if (n.deletedAt && !Number.isFinite(Number(n.deletedAt))) delete n.deletedAt;
     });
-    purgeExpiredTrash();
-    pruneBackups();
+    /* 库里的重复分类在进程启动时顺手理掉，界面上从此不会出现两份同名。 */
+    if (healCategories()) persistNow();
+    runMaintenance();
   } catch (e) {
     /* 解析失败有两种情况，必须分开处理：
        - 文件根本不存在：首次启动，直接用样例数据，没什么可救的
@@ -231,7 +262,6 @@ function loadDB() {
 
 /* 回收站：软删除的笔记 30 天后自动真删，避免 db.json 无限变大。 */
 const TRASH_TTL = 30 * 24 * 3600 * 1000;
-const BACKUP_KEEP = 30;
 function purgeExpiredTrash() {
   const cut = Date.now() - TRASH_TTL;
   const doomed = db.notes.filter((n) => n.deletedAt && Number(n.deletedAt) < cut);
@@ -241,15 +271,85 @@ function purgeExpiredTrash() {
   persistNow();
   console.log(`  回收站：已自动清理 ${doomed.length} 篇超过 30 天的笔记`);
 }
-/* 每次导入都会留一份 backup-*.json，长期不清理会积出几百个，只保留最近 30 份。 */
+/* 数据目录里的历史文件会一直长：导入留的 backup-*、每日自动备份 auto-*、
+   换库留下的 db.json.bak-*。按类别各留最近几份，其余删掉。
+   注意 db.corrupt-* 不在清理范围 —— 那是数据损坏时的救援证据，得留给用户。 */
+const BACKUP_KEEP = 30;
+const AUTO_KEEP = 7;
+const BAK_KEEP = 5;
 function pruneBackups() {
   try {
-    const list = fs.readdirSync(DATA_DIR)
-      .filter((f) => /^backup-\d{8}-\d{6}-\d{3}\.json$/.test(f))
-      .map((f) => ({ f, t: fs.statSync(path.join(DATA_DIR, f)).mtimeMs }))
-      .sort((a, b) => b.t - a.t);
-    for (const x of list.slice(BACKUP_KEEP)) fs.unlink(path.join(DATA_DIR, x.f), () => {});
+    const files = fs.readdirSync(DATA_DIR);
+    const buckets = [
+      { re: /^backup-\d{8}-\d{6}-\d{3}\.json$/, keep: BACKUP_KEEP },
+      { re: /^auto-\d{8}\.json$/, keep: AUTO_KEEP },
+      { re: /^db\.json\.bak-[\w-]+$/, keep: BAK_KEEP },
+    ];
+    for (const b of buckets) {
+      const list = files.filter((f) => b.re.test(f))
+        .map((f) => ({ f, t: fs.statSync(path.join(DATA_DIR, f)).mtimeMs }))
+        .sort((a, b2) => b2.t - a.t);
+      for (const x of list.slice(b.keep)) fs.unlink(path.join(DATA_DIR, x.f), () => {});
+    }
   } catch (_) { /* 清理失败不影响主流程 */ }
+}
+
+/* 每日自动备份：一天最多一份，超过 7 天由 pruneBackups 清掉。
+   以前只有「导入前自动备份」——日常误删、编辑写坏、程序出错都没有
+   任何时间点可回，只能靠用户自己记得导出。备份的是整库快照，
+   文件名带日期，找回时按日期挑即可。 */
+function autoBackup() {
+  if (!db || !Array.isArray(db.notes) || !Array.isArray(db.categories)) return;
+  const d = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const day = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}`;
+  const file = path.join(DATA_DIR, `auto-${day}.json`);
+  if (fs.existsSync(file)) return;
+  try {
+    fs.writeFileSync(file, JSON.stringify(db, null, 2));
+  } catch (_) { /* 磁盘满等情况不阻断服务 */ }
+}
+
+/* 附件孤儿清扫：data/files 里的文件如果没有任何笔记引用（回收站里的也算），
+   且落盘超过 24 小时，就是上传中断 / 导入失败留下的垃圾。
+   留 24 小时是为了放过「刚上传、笔记还没保存」这个窗口。 */
+function cleanOrphanFiles() {
+  let names;
+  try { names = fs.readdirSync(FILES_DIR); } catch (_) { return 0; }
+  if (!names.length) return 0;
+  const used = new Set();
+  for (const n of db.notes) {
+    for (const a of (n.attachments || [])) if (a && a.disk) used.add(a.disk);
+  }
+  const cut = Date.now() - 24 * 3600 * 1000;
+  let removed = 0;
+  for (const name of names) {
+    if (used.has(name)) continue;
+    const p = path.join(FILES_DIR, name);
+    try {
+      const st = fs.statSync(p);
+      if (!st.isFile() || st.mtimeMs > cut) continue;
+      fs.unlinkSync(p);
+      removed++;
+    } catch (_) {}
+  }
+  if (removed) console.log(`  附件清扫：已删除 ${removed} 个无引用的孤立文件`);
+  return removed;
+}
+
+/* 常驻进程不会天天重启，过期清理不能只挂在启动上（一台开机自启的机器
+   可能连续跑几周）。6 小时一轮，顺手做当日备份。
+   有未落盘的改动时跳过这一轮 —— 否则清理用的 persistNow 会和防抖写盘
+   抢同一份文件，备份也可能只拍到半新半旧的状态。 */
+const MAINT_MS = 6 * 3600 * 1000;
+function runMaintenance() {
+  if (saving || saveTimer) return;
+  try { purgeExpiredTrash(); } catch (_) {}
+  try { cleanOrphanFiles(); } catch (_) {}
+  /* 先备份再裁剪：反过来的话，当天那份刚被裁掉、紧接着又被重建，
+     看起来像是「保留了 N+1 份」，多跑几轮还会来回抖动。 */
+  try { autoBackup(); } catch (_) {}
+  try { pruneBackups(); } catch (_) {}
 }
 
 function persistNow() {
@@ -516,15 +616,23 @@ async function handleApi(req, res, pathname, query) {
 
     if (req.method === 'POST' && !id) {
       const body = await readBody(req);
-      const name = String(body.name || '').trim() || '未命名类别';
-      if (body.parentId && !findCategory(body.parentId)) return sendError(res, 400, '父类别不存在');
-      const siblings = db.categories.filter((c) => c.parentId === (body.parentId || null));
+      const parentId = body.parentId || null;
+      if (parentId && !findCategory(parentId)) return sendError(res, 400, '父类别不存在');
+      /* 没填名字时自动取一个没被占用的默认名；用户自己填的名字重名就直接拒绝，
+         不偷偷改名 —— 否则用户会以为「创建成功」却找不到自己那条。 */
+      const raw = SJCats.cleanName(body.name);
+      const name = raw || SJCats.uniqueName(db.categories, '未命名类别', parentId);
+      const dup = SJCats.siblingOf(db.categories, name, parentId);
+      if (dup) return sendError(res, 409, `同一级下已有同名类别「${dup.name}」，换个名字吧`);
+      const siblings = db.categories.filter((c) => c.parentId === parentId);
       const cat = {
         id: uid(),
         name,
-        parentId: body.parentId || null,
+        parentId,
         expanded: true,
-        order: siblings.length,
+        /* 用「同级最大 order + 1」而不是「同级数量」：删掉一个再建，
+           数量会撞上已有 order，拖动排序的结果就取决于数组顺序。 */
+        order: siblings.length ? Math.max(...siblings.map((c) => Number(c.order) || 0)) + 1 : 0,
         createdAt: now(),
       };
       db.categories.push(cat);
@@ -540,20 +648,29 @@ async function handleApi(req, res, pathname, query) {
       const cat = findCategory(id);
       if (!cat) return sendError(res, 404, '类别不存在');
       const body = await readBody(req);
-      if (typeof body.name === 'string' && body.name.trim()) cat.name = body.name.trim();
-      if (typeof body.expanded === 'boolean') cat.expanded = body.expanded;
-      if (typeof body.order === 'number') cat.order = body.order;
-      /* 分类颜色：0-7 调色板索引，null 表示跟随按序默认色。 */
-      if (body.color === null) delete cat.color;
-      else if (Number.isInteger(body.color) && body.color >= 0 && body.color <= 7) cat.color = body.color;
+      /* 先算出目标父级，再拿「目标位置 + 最终名字」查重：
+         改名和移动同时发生时，只看当前父级会漏判。 */
+      let targetParent = cat.parentId || null;
       if (body.parentId !== undefined) {
         if (body.parentId && !findCategory(body.parentId)) return sendError(res, 400, '目标类别不存在');
         if (body.parentId === id) return sendError(res, 400, '不能移动到自身');
         if (body.parentId && collectDescendants(id).includes(body.parentId)) {
           return sendError(res, 400, '不能移动到自己的子类别下');
         }
-        cat.parentId = body.parentId || null;
+        targetParent = body.parentId || null;
       }
+      const nextName = (typeof body.name === 'string' && SJCats.cleanName(body.name))
+        ? SJCats.cleanName(body.name)
+        : cat.name;
+      const dup = SJCats.siblingOf(db.categories, nextName, targetParent, cat.id);
+      if (dup) return sendError(res, 409, `目标位置已有同名类别「${dup.name}」，换个名字吧`);
+      cat.name = nextName;
+      cat.parentId = targetParent;
+      if (typeof body.expanded === 'boolean') cat.expanded = body.expanded;
+      if (typeof body.order === 'number') cat.order = body.order;
+      /* 分类颜色：0-7 调色板索引，null 表示跟随按序默认色。 */
+      if (body.color === null) delete cat.color;
+      else if (Number.isInteger(body.color) && body.color >= 0 && body.color <= 7) cat.color = body.color;
       scheduleSave();
       return sendJSON(res, 200, cat);
     }
@@ -949,8 +1066,10 @@ async function importAll(req, res, query) {
     }
   }
 
+  /* 导入的备份里可能自带同父同名（旧版本留下的），落库后统一理一次。 */
+  const catFixed = healCategories();
   persistNow();
-  sendJSON(res, 200, { catAdded, noteAdded, updated, skipped, lostFiles, backup: backupName });
+  sendJSON(res, 200, { catAdded, noteAdded, updated, skipped, lostFiles, catFixed, backup: backupName });
 }
 
 /* 从云端拉回附件文件本体（本地版专用，配合 sync.js 的 doPull）。
@@ -1352,6 +1471,9 @@ function start(port = PORT, host = BIND_HOST, tries = 12) {
           console.log('');
         }
         console.log('  关闭这个窗口即可退出\n');
+        /* 常驻进程的日常维护：回收站过期清理、备份裁剪、当日自动备份。
+           unref 让定时器不拖住进程退出（停止脚本仍能立即关闭）。 */
+        setInterval(runMaintenance, MAINT_MS).unref();
         resolve(server);
       });
       server.listen(p, host);

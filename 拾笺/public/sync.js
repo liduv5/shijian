@@ -173,10 +173,13 @@
     panel.innerHTML =
       '<div class="sync-head"><strong>同步到云端</strong>' +
         '<button class="icon-btn sm" id="syncClose" title="关闭">✕</button></div>' +
-      '<div class="sync-sub">本地优先：不点不同步，数据始终留在你电脑上</div>' +
+      '<div class="sync-sub">本地优先：打开时自动接收云端更新，上传仍由你决定</div>' +
       (loggedIn
         ? '<div class="sync-info">已登录：<b>' + escapeHtml(email) + '</b><br>上次同步：' + last + '</div>' +
           '<p class="auth-msg" id="syncMsg"></p>' +
+          (autoNote ? '<p class="sync-auto-note">' + escapeHtml(autoNote) + '</p>' : '') +
+          '<label class="sync-auto"><input type="checkbox" id="syncAuto"'
+            + (autoOn() ? ' checked' : '') + '> 打开时自动拉取云端的改动</label>' +
           '<button class="auth-btn" id="syncPush">上传本地笔记到云端</button>' +
           '<button class="auth-btn ghost" id="syncPull">从云端拉取到本地</button>' +
           (gcN ? '<button class="auth-btn ghost" id="syncGc">清理云端无用附件（' + gcN + '）</button>' : '') +
@@ -223,6 +226,7 @@
       const out = $('#syncLogout'); if (out) out.onclick = () => doLogout();
       const gc = $('#syncGc'); if (gc) gc.onclick = () => doGc();
       const setPwd = $('#syncSetPwd'); if (setPwd) setPwd.onclick = () => openSetPwd();
+      const autoBox = $('#syncAuto'); if (autoBox) autoBox.onchange = () => setAutoOn(autoBox.checked);
     } else {
       const codeBtn = $('#syncCodeBtn'); if (codeBtn) codeBtn.onclick = () => sendCode($('#syncEmail').value.trim(), codeBtn);
       const form = $('#syncLoginForm'); if (form) form.onsubmit = (e) => { e.preventDefault(); doLogin(); };
@@ -614,12 +618,17 @@
         if (r.error) throw new Error(friendly(r.error));
         pushed += notes.slice(i, i + B).length;
       }
+      /* 附件清理顺手做完：队列里是本地彻底删掉笔记时记下的云端路径，
+         以前得让用户手动点「清理云端无用附件」。失败不影响本轮上传。 */
+      let gcDone = 0;
+      try { gcDone = await gcQueued(true); } catch (_) {}
       localStorage.setItem('sj_last_sync', String(Date.now()));
+      const gcNote = gcDone ? `，顺手清掉 ${gcDone} 个云端附件` : '';
       if (attFail) {
         try { console.warn('[同步] 附件上传失败明细：', attErrs); } catch (_) {}
-        syncMsg(`已上传 ${cats.length} 个类别 + ${pushed} 篇笔记；${attFail} 个附件没传上去：${attErrs.slice(0, 2).join('；')}`);
+        syncMsg(`已上传 ${cats.length} 个类别 + ${pushed} 篇笔记${gcNote}；${attFail} 个附件没传上去：${attErrs.slice(0, 2).join('；')}`);
       } else {
-        syncMsg(`已上传 ${cats.length} 个类别 + ${pushed} 篇笔记${attOk ? `、${attOk} 个附件` : ''}`, 'ok');
+        syncMsg(`已上传 ${cats.length} 个类别 + ${pushed} 篇笔记${attOk ? `、${attOk} 个附件` : ''}${gcNote}`, 'ok');
       }
       toast(attFail ? `笔记已上传，${attFail} 个附件失败（原因见面板）` : '已上传到云端，手机端登录同一账号即可查看');
       // 结果留在面板里 2 秒（附件失败多给一点时间），然后自动收起
@@ -669,26 +678,36 @@
     });
     return r.ok || r.status === 404;
   }
-  async function doGc() {
-    if (!session || !session.user) return;
-    cancelAutoClose(); lastMsg = ''; lastKind = '';
+  /* 真正干活那层：清掉本地记下的「已删除附件」队列。
+     silent=true 时不出提示，给上传收尾自动调用用。 */
+  async function gcQueued(silent) {
     const queue = window.SJAttGC ? window.SJAttGC.list() : {};
     const paths = Object.keys(queue);
-    if (!paths.length) { syncMsg('没有需要清理的云端附件', 'ok'); scheduleClose(2000); return; }
-    const btn = $('#syncGc'); if (btn) { btn.disabled = true; btn.textContent = '清理中…'; }
-    try {
-      const token = await accessToken();
-      if (!token) throw new Error('登录状态已失效，请退出后重新登录');
-      let ok = 0; const failed = [];
-      for (const p of paths) {
-        try { if (await gcDelete(p, token)) ok++; else failed.push(p); }
-        catch (_) { failed.push(p); }
-      }
-      if (window.SJAttGC) window.SJAttGC.drop(paths.filter((p) => failed.indexOf(p) < 0));
+    if (!paths.length) return 0;
+    const token = await accessToken();
+    if (!token) return 0;
+    let ok = 0; const failed = [];
+    for (const p of paths) {
+      try { if (await gcDelete(p, token)) ok++; else failed.push(p); }
+      catch (_) { failed.push(p); }
+    }
+    if (window.SJAttGC) window.SJAttGC.drop(paths.filter((p) => failed.indexOf(p) < 0));
+    if (!silent) {
       syncMsg(`已清理 ${ok} 个云端附件${failed.length ? '，' + failed.length + ' 个失败，可稍后重试' : ''}`,
         failed.length ? '' : 'ok');
       toast(failed.length ? '部分附件清理失败' : '云端附件已清理');
       scheduleClose(failed.length ? 3500 : 2000);
+    }
+    return ok;
+  }
+  async function doGc() {
+    if (!session || !session.user) return;
+    cancelAutoClose(); lastMsg = ''; lastKind = '';
+    const queue = window.SJAttGC ? window.SJAttGC.list() : {};
+    if (!Object.keys(queue).length) { syncMsg('没有需要清理的云端附件', 'ok'); scheduleClose(2000); return; }
+    const btn = $('#syncGc'); if (btn) { btn.disabled = true; btn.textContent = '清理中…'; }
+    try {
+      if (!(await gcQueued(false))) throw new Error('登录状态已失效，请退出后重新登录');
     } catch (e) {
       syncMsg('清理失败：' + e.message);
       toast('清理失败：' + e.message);
@@ -696,10 +715,12 @@
     } finally { renderPanel(); }
   }
 
-  async function doPull() {
+  async function doPull(opts) {
+    const auto = !!(opts && opts.auto);
     if (!session || !session.user) return;
-    cancelAutoClose(); lastMsg = ''; lastKind = '';
-    const btn = $('#syncPull'); btn.disabled = true; btn.textContent = '拉取中…';
+    if (!auto) { cancelAutoClose(); lastMsg = ''; lastKind = ''; }
+    const btn = $('#syncPull');
+    if (!auto && btn) { btn.disabled = true; btn.textContent = '拉取中…'; }
     try {
       const owner = session.user.id;
       const catsRes = await cloud.database.from('sj_categories').select('*').eq('owner_id', owner);
@@ -712,6 +733,11 @@
       /* 同步冲突预检：同一篇在「上次同步后两端都改过且内容不同」则不再静默覆盖，
          交给 window.SJConflict 让用户选择保留哪一侧。 */
       const conflicts = computeConflicts(notes);
+      /* 自动流程不弹窗、也不替用户挑：整轮停下，等手动同步。
+         静默地按某一侧覆盖，正是「笔记莫名变旧」的来历。 */
+      if (conflicts.length && auto) {
+        throw new Error(`有 ${conflicts.length} 篇两端都改过，已暂停自动拉取`);
+      }
       if (conflicts.length && window.SJConflict) {
         await new Promise((resolve) => {
           window.SJConflict.show(conflicts, (res) => {
@@ -759,18 +785,65 @@
         }
       }
       else if (j.lostFiles) msg += `；云端 ${j.lostFiles} 个附件无下载路径，已跳过`;
-      syncMsg(msg, att.fail ? '' : 'ok');
-      toast(att.fail ? `笔记已拉取，${att.fail} 个附件未取回` : '笔记与附件已拉取');
-      scheduleClose(att.fail ? 5000 : 3000);
+      if (auto) {
+        autoNote = `自动拉取完成：新增 ${j.noteAdded} 篇、更新 ${j.updated || 0} 篇`;
+      } else {
+        syncMsg(msg, att.fail ? '' : 'ok');
+        toast(att.fail ? `笔记已拉取，${att.fail} 个附件未取回` : '笔记与附件已拉取');
+        scheduleClose(att.fail ? 5000 : 3000);
+      }
     } catch (e) {
-      syncMsg('拉取失败：' + e.message);
-      toast('拉取失败：' + e.message);
-      scheduleClose(3500);
+      if (auto) {
+        autoNote = '自动拉取未完成：' + e.message;
+        console.warn('[同步] 自动拉取跳过：', e.message);
+      } else {
+        syncMsg('拉取失败：' + e.message);
+        toast('拉取失败：' + e.message);
+        scheduleClose(3500);
+      }
     } finally {
-      const b = $('#syncPull'); if (b) { b.disabled = false; b.textContent = '从云端拉取到本地'; }
-      renderPanel();
+      if (!auto) {
+        const b = $('#syncPull'); if (b) { b.disabled = false; b.textContent = '从云端拉取到本地'; }
+        renderPanel();
+      } else if ($('#syncPanel')) renderPanel();
     }
   }
+
+  /* ---------------------------------------------------------- 自动拉取
+     桌面是主力编辑端，所以只做「自动收」不做「自动传」：手机上改的内容
+     在打开电脑时自动落地，电脑上的改动仍由用户显式上传（避免把半成品推上去）。
+     保守条件：已登录、开关打开、页面可见、不在编辑中、距上次拉取够久。
+     有冲突就整轮放弃，交给手动同步。 */
+  const AUTO_PULL_GAP = 10 * 60 * 1000;
+  let autoRunning = false;
+  let autoNote = '';
+
+  function autoOn() {
+    try { return localStorage.getItem('sj_auto_pull_v1') !== '0'; } catch (_) { return true; }
+  }
+  function setAutoOn(on) {
+    try { localStorage.setItem('sj_auto_pull_v1', on ? '1' : '0'); } catch (_) {}
+    if (on) setTimeout(runAutoPull, 1500);
+    renderPanel();
+  }
+  function editingNow() {
+    try {
+      if (document.body && document.body.classList.contains('sj-note-edit')) return true;
+      const el = document.activeElement;
+      return !!(el && el.isContentEditable);
+    } catch (_) { return true; }
+  }
+  async function runAutoPull() {
+    if (autoRunning || !autoOn() || !session || !session.user) return;
+    if (Date.now() - lastSyncAt() < AUTO_PULL_GAP) return;
+    if (document.hidden || editingNow()) return;
+    autoRunning = true;
+    try { await doPull({ auto: true }); } catch (_) {}
+    finally { autoRunning = false; }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) runAutoPull();
+  });
 
   /* ---------------------------------------------------------- 初始化 */
   async function init() {
@@ -778,8 +851,11 @@
     if (btn) btn.addEventListener('click', openPanel);
     try { session = normSession(await cloud.auth.getSession()); } catch (e) { session = null; }
     cloud.auth.onAuthStateChange((e) => {
-      if (e === 'SIGNED_OUT') { session = null; localStorage.removeItem(LS_KEY); renderPanel(); }
+      if (e === 'SIGNED_OUT') { session = null; localStorage.removeItem(LS_KEY); renderPanel(); return; }
+      if (session && session.user) setTimeout(runAutoPull, 3000);
     });
+    /* 给首屏渲染留时间，别一上来就整库重导入 */
+    if (session && session.user) setTimeout(runAutoPull, 8000);
   }
   init();
 })();

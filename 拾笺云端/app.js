@@ -71,6 +71,36 @@
     dirty: false,
   };
 
+  /* 纸张底色：手机端独有外观偏好，按「笔记 id」分别记住（2026-11-23 改为单篇设置）。
+     存本机 localStorage，不写进笔记对象 —— 桌面端没有纸张 UI，同步表 sj_notes
+     也没有 paper 列，写进笔记既同步不过去、又会改动备份格式，得不偿失。
+     老版本那颗全局纸张 sj_paper_v1 留作「没单独设过」的笔记的默认值，兼容旧习惯。 */
+  const PAPER_MAP_KEY = 'sj_paper_by_note_v1';
+  const PAPER_DEFAULT_KEY = 'sj_paper_v1';
+  function paperMap() {
+    try { const m = JSON.parse(localStorage.getItem(PAPER_MAP_KEY) || '{}'); return m && typeof m === 'object' ? m : {}; }
+    catch (_) { return {}; }
+  }
+  function paperFallback() {
+    try { const v = String(localStorage.getItem(PAPER_DEFAULT_KEY) || '0'); return /^[0-4]$/.test(v) ? v : '0'; }
+    catch (_) { return '0'; }
+  }
+  function paperOf(note) {
+    if (!note || !note.id) return paperFallback();
+    const v = paperMap()[note.id];
+    return v != null && /^[0-4]$/.test(String(v)) ? String(v) : paperFallback();
+  }
+  function setPaperOf(note, idx) {
+    if (!note || !note.id) return;
+    const m = paperMap();
+    m[note.id] = String(idx);
+    try { localStorage.setItem(PAPER_MAP_KEY, JSON.stringify(m)); } catch (_) {}
+  }
+  function applyPaperTo(note, idx) {
+    setPaperOf(note, idx);
+    document.body.dataset.paper = String(idx);
+  }
+
   const byOrder = (a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name, 'zh');
   const catMap = () => new Map(state.categories.map((c) => [c.id, c]));
   const noteById = (id) => state.notes.find((n) => n.id === id) || null;
@@ -199,24 +229,13 @@
   /* ---------------------------------------------------------- Markdown */
   marked.setOptions({ gfm: true, breaks: false, headerIds: false, mangle: false });
 
-  const td = new TurndownService({
-    headingStyle: 'atx',
-    hr: '---',
-    bulletListMarker: '-',
-    codeBlockStyle: 'fenced',
-    emDelimiter: '*',
-  });
-  if (window.turndownPluginGfm) td.use(turndownPluginGfm.gfm);
-  /* 富文本里调过宽度的图片，转 Markdown 时保留为 <img>，否则宽度会丢 */
-  td.addRule('imgWithWidth', {
-    filter: (node) => node.nodeName === 'IMG' && /(^|;)\s*width\s*:/i.test(node.getAttribute('style') || ''),
-    replacement: (content, node) => {
-      const src = node.getAttribute('src') || '';
-      const alt = node.getAttribute('alt') || '';
-      const w = ((/width\s*:\s*([^;]+)/i.exec(node.getAttribute('style') || '') || [])[1] || '').trim();
-      return `<img src="${src}" alt="${alt}" style="width:${w}">`;
-    },
-  });
+  /* Turndown 的配置（标题 atx / 列表用 - / 围栏代码 / * 作斜体）和
+     「保留图片宽度」那条规则都在 richtext-core.js 里，与桌面端同一份。
+     这里只做装配：缺插件时内核会退回基础转换，不会让整页挂掉。 */
+  const td = window.SJRTCore.createTurndown(
+    window.TurndownService,
+    window.turndownPluginGfm
+  );
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -277,6 +296,7 @@
       <button type="button" data-w="75">75%</button>
       <button type="button" data-w="100">100%</button>
       <button type="button" data-w="reset" class="is-ghost">原始</button>
+      <button type="button" data-w="crop" class="is-ghost" title="裁剪图片">裁剪</button>
       <input type="range" min="10" max="100" step="5" value="100" aria-label="图片宽度">
       <span class="img-sizer-pct">100%</span>
       <button type="button" data-w="close" class="is-ghost is-close" aria-label="关闭">×</button>`;
@@ -290,6 +310,7 @@
       if (!btn) return;
       const v = btn.dataset.w;
       if (v === 'close') return closeImgSizer();
+      if (v === 'crop') return openImgCrop();
       if (v === 'reset') { applyImgWidth(null); range.value = 100; pctText.textContent = '100%'; return; }
       const n = parseInt(v, 10);
       range.value = n; pctText.textContent = n + '%';
@@ -354,6 +375,236 @@
     if (imgSizer) imgSizer.classList.add('hidden');
     $$('img.sj-img-picked').forEach((x) => x.classList.remove('sj-img-picked'));
     imgEl = null; imgIdx = -1; imgMode = '';
+  }
+
+  /* ---------------------------------------------------------- 图片裁剪
+     从宽度条的「裁剪」进入：拖选区 → canvas 重绘 → 新 data URL 替换 <img src>，
+     再按当前模式落盘。选区坐标按「显示矩形」存，导出时乘 natural/display 换回原始像素；
+     跨域图 fetch 不到就明确提示，绝不把污染画布导出成坏图。 */
+  let cropUI = null, cropSt = null;
+  const CROP_RATIOS = [
+    { key: 'free', label: '自由', r: 0 },
+    { key: 'origin', label: '原图', r: 0 },
+    { key: '1', label: '1:1', r: 1 },
+    { key: '43', label: '4:3', r: 4 / 3 },
+    { key: '169', label: '16:9', r: 16 / 9 },
+  ];
+
+  function cropEnsureUI() {
+    if (cropUI) return cropUI;
+    const el = document.createElement('div');
+    el.className = 'crop-ui hidden';
+    el.innerHTML = `
+      <div class="crop-mask"></div>
+      <div class="crop-dialog">
+        <div class="crop-head"><span>裁剪图片</span><button type="button" class="crop-x" data-act="cancel" aria-label="关闭">×</button></div>
+        <div class="crop-stage"><img class="crop-img" alt=""><div class="crop-sel">
+          <i class="crop-third crop-third-v" style="left:33.333%"></i><i class="crop-third crop-third-h" style="top:33.333%"></i>
+          <i class="crop-third crop-third-v" style="left:66.666%"></i><i class="crop-third crop-third-h" style="top:66.666%"></i>
+          <i class="crop-h" data-h="nw"></i><i class="crop-h" data-h="n"></i><i class="crop-h" data-h="ne"></i>
+          <i class="crop-h" data-h="e"></i><i class="crop-h" data-h="se"></i><i class="crop-h" data-h="s"></i>
+          <i class="crop-h" data-h="sw"></i><i class="crop-h" data-h="w"></i>
+        </div></div>
+        <div class="crop-bar">
+          <div class="crop-ratios">${CROP_RATIOS.map((x) => `<button type="button" data-ratio="${x.key}"${x.key === 'free' ? ' class="on"' : ''}>${x.label}</button>`).join('')}</div>
+          <span class="crop-size"></span>
+        </div>
+        <div class="crop-foot">
+          <button type="button" data-act="reset">重置</button>
+          <button type="button" data-act="cancel">取消</button>
+          <button type="button" class="primary" data-act="done">完成</button>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+    cropUI = el;
+
+    /* 裁剪层内的点击不冒泡到 document —— 否则会触发「点空白关宽度条」，
+       把 imgEl/imgMode 清空，完成时就没法按原模式落盘。 */
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const r = e.target.closest('[data-ratio]');
+      if (r) { cropApplyRatio(r.dataset.ratio); return; }
+      const a = e.target.closest('[data-act]');
+      if (!a) return;
+      if (a.dataset.act === 'cancel') cropClose();
+      else if (a.dataset.act === 'reset') cropReset();
+      else if (a.dataset.act === 'done') cropDone();
+    });
+    el.querySelector('.crop-mask').addEventListener('click', cropClose);
+    const sel = el.querySelector('.crop-sel');
+    sel.addEventListener('pointerdown', (e) => {
+      if (!cropSt) return;
+      const h = e.target.closest('.crop-h');
+      cropSt.drag = { dir: h ? h.dataset.h : 'move', sx: e.clientX, sy: e.clientY, orig: { ...cropSt.sel } };
+      try { sel.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    sel.addEventListener('pointermove', (e) => {
+      if (!cropSt || !cropSt.drag) return;
+      cropDrag(e);
+      e.preventDefault();
+    });
+    sel.addEventListener('pointerup', () => { if (cropSt) cropSt.drag = null; });
+    sel.addEventListener('pointercancel', () => { if (cropSt) cropSt.drag = null; });
+    document.addEventListener('keydown', (e) => {
+      if (cropUI && !cropUI.classList.contains('hidden') && e.key === 'Escape') { e.stopPropagation(); cropClose(); }
+    }, true);
+    return el;
+  }
+
+  async function cropFetchDataUrl(src) {
+    if (/^(data|blob):/i.test(src)) return src;
+    try {
+      const r = await fetch(src, { credentials: 'include' });
+      if (!r.ok) return '';
+      const b = await r.blob();
+      return await new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(fr.result);
+        fr.onerror = rej;
+        fr.readAsDataURL(b);
+      });
+    } catch (_) { return ''; }
+  }
+
+  function cropClose() {
+    if (cropUI) cropUI.classList.add('hidden');
+    document.body.classList.remove('crop-open');
+    cropSt = null;
+  }
+
+  function cropPaint() {
+    if (!cropSt) return;
+    const s = cropSt, el = cropUI.querySelector('.crop-sel');
+    el.style.left = s.sel.x + 'px'; el.style.top = s.sel.y + 'px';
+    el.style.width = s.sel.w + 'px'; el.style.height = s.sel.h + 'px';
+    const f = s.nat.w / s.disp.w;
+    cropUI.querySelector('.crop-size').textContent =
+      Math.max(1, Math.round(s.sel.w * f)) + ' × ' + Math.max(1, Math.round(s.sel.h * f)) + ' px';
+  }
+
+  function cropClamp() {
+    if (!cropSt) return;
+    const d = cropSt.disp, s = cropSt.sel;
+    s.w = Math.max(24, Math.min(d.w, s.w));
+    s.h = Math.max(24, Math.min(d.h, s.h));
+    s.x = Math.max(0, Math.min(d.w - s.w, s.x));
+    s.y = Math.max(0, Math.min(d.h - s.h, s.y));
+  }
+
+  function cropRatioOf(key) {
+    if (key === 'free') return 0;
+    if (key === 'origin') return cropSt.nat.w / cropSt.nat.h || 0;
+    const hit = CROP_RATIOS.find((x) => x.key === key);
+    return hit ? hit.r : 0;
+  }
+
+  function cropApplyRatio(key) {
+    if (!cropSt) return;
+    cropSt.ratioKey = key;
+    cropSt.ratio = cropRatioOf(key);
+    cropUI.querySelectorAll('[data-ratio]').forEach((b) => b.classList.toggle('on', b.dataset.ratio === key));
+    if (cropSt.ratio) {
+      const c = { x: cropSt.sel.x + cropSt.sel.w / 2, y: cropSt.sel.y + cropSt.sel.h / 2 };
+      let w = cropSt.sel.w, h = w / cropSt.ratio;
+      if (h > cropSt.disp.h) { h = cropSt.disp.h; w = h * cropSt.ratio; }
+      if (w > cropSt.disp.w) { w = cropSt.disp.w; h = w / cropSt.ratio; }
+      cropSt.sel = { x: c.x - w / 2, y: c.y - h / 2, w, h };
+      cropClamp();
+    }
+    cropPaint();
+  }
+
+  function cropReset() {
+    if (!cropSt) return;
+    const d = cropSt.disp;
+    cropSt.sel = { x: d.w * 0.1, y: d.h * 0.1, w: d.w * 0.8, h: d.h * 0.8 };
+    cropSt.ratio = 0; cropSt.ratioKey = 'free';
+    cropUI.querySelectorAll('[data-ratio]').forEach((b) => b.classList.toggle('on', b.dataset.ratio === 'free'));
+    cropPaint();
+  }
+
+  function cropDrag(e) {
+    const t = cropSt.drag, o = t.orig, dir = t.dir;
+    const dx = e.clientX - t.sx, dy = e.clientY - t.sy;
+    let { x, y, w, h } = o;
+    const min = 24;
+    if (dir === 'move') {
+      x = o.x + dx; y = o.y + dy;
+    } else {
+      if (dir.includes('w')) { x = o.x + dx; w = o.w - dx; }
+      if (dir.includes('e')) { w = o.w + dx; }
+      if (dir.includes('n')) { y = o.y + dy; h = o.h - dy; }
+      if (dir.includes('s')) { h = o.h + dy; }
+      if (w < min) { if (dir.includes('w')) x = o.x + o.w - min; w = min; }
+      if (h < min) { if (dir.includes('n')) y = o.y + o.h - min; h = min; }
+      if (cropSt.ratio) {
+        if (dir.length === 2) {
+          h = w / cropSt.ratio;
+          if (dir.includes('n')) y = o.y + o.h - h;
+        } else if (dir === 'e' || dir === 'w') {
+          const cy = o.y + o.h / 2; h = w / cropSt.ratio; y = cy - h / 2;
+        } else {
+          const cx = o.x + o.w / 2; w = h * cropSt.ratio; x = cx - w / 2;
+        }
+      }
+    }
+    cropSt.sel = { x, y, w, h };
+    cropClamp(); cropPaint();
+  }
+
+  function cropDone() {
+    if (!cropSt) return;
+    try {
+      const s = cropSt, f = s.nat.w / s.disp.w;
+      const sx = s.sel.x * f, sy = s.sel.y * f, sw = s.sel.w * f, sh = s.sel.h * f;
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(sw)); cv.height = Math.max(1, Math.round(sh));
+      const ctx = cv.getContext('2d');
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(s.img, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+      const keepPng = /^data:image\/(png|webp)/i.test(s.src);
+      const out = cv.toDataURL(keepPng ? 'image/png' : 'image/jpeg', 0.92);
+      const target = s.target;
+      target.src = out;
+      if (s.mode === 'rich') onRichInput();
+      cropClose();
+      closeImgSizer();
+      toast('图片已裁剪');
+    } catch (err) {
+      cropClose();
+      toast('裁剪失败：' + (err && err.message ? err.message : '这张图不允许裁剪'));
+    }
+  }
+
+  async function openImgCrop() {
+    if (!imgEl) return;
+    const src = imgEl.currentSrc || imgEl.src || imgEl.getAttribute('src') || '';
+    if (!src) { toast('这张图还没有可用的地址'); return; }
+    const ui = cropEnsureUI();
+    cropClose();
+    ui.classList.remove('hidden');
+    document.body.classList.add('crop-open');
+    const img = ui.querySelector('.crop-img');
+    const usable = await cropFetchDataUrl(src);
+    if (!usable && !/^(data|blob):/i.test(src)) {
+      cropClose();
+      toast('这张图来自外部站点，无法裁剪（可先下载到本地再插入）');
+      return;
+    }
+    const finalSrc = usable || src;
+    await new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; img.src = finalSrc; });
+    if (!img.naturalWidth) { cropClose(); toast('图片加载失败，无法裁剪'); return; }
+    const dw = img.clientWidth || img.naturalWidth, dh = img.clientHeight || img.naturalHeight;
+    cropSt = {
+      target: imgEl, mode: imgMode, src: finalSrc, img,
+      nat: { w: img.naturalWidth, h: img.naturalHeight },
+      disp: { w: dw, h: dh }, sel: { x: dw * 0.1, y: dh * 0.1, w: dw * 0.8, h: dh * 0.8 },
+      ratio: 0, ratioKey: 'free', drag: null,
+    };
+    ui.querySelectorAll('[data-ratio]').forEach((b) => b.classList.toggle('on', b.dataset.ratio === 'free'));
+    cropPaint();
   }
 
   function bindImgResize(container, mode) {
@@ -1241,17 +1492,21 @@
     const value = input.value.trim().replace(/^#/, '');
     if (note && value) {
       const tags = note.tags || [];
-      if (!tags.includes(value)) {
-        if (tags.length >= 10) {
-          toast('每条笔记最多 10 个标签');
-        } else {
-          note.tags = [...tags, value];
-          note.updatedAt = Date.now();
-          markDirty();
-          renderNoteTags();
-          renderTags();
-          renderList();
-        }
+      /* 标签没有独立表，同名判定只能靠名字：忽略大小写与空白后相同就算
+         同一个标签，复用已有写法。规则与分类共用 cat-core.js 的 normTag。 */
+      const norm = (t) => (window.SJCats ? window.SJCats.normTag(t) : String(t).trim().toLowerCase());
+      const dup = tags.find((t) => norm(t) === norm(value));
+      if (dup) {
+        toast(`已经有标签「${dup}」`);
+      } else if (tags.length >= 10) {
+        toast('每条笔记最多 10 个标签');
+      } else {
+        note.tags = [...tags, value];
+        note.updatedAt = Date.now();
+        markDirty();
+        renderNoteTags();
+        renderTags();
+        renderList();
       }
     }
     closeTagInput();
@@ -1303,9 +1558,20 @@
     return state.notes.filter((n) => (n.tags || []).includes(tag));
   }
 
-  /* 只发 tags 字段，绝不覆盖正文（避免刚编辑但未保存的内容被旧值冲掉） */
+  /* 只发 tags 字段，绝不覆盖正文（避免刚编辑但未保存的内容被旧值冲掉）。
+     顺便按内核规整一遍：忽略大小写与空白去重、去空、最多 10 个。 */
   async function patchNoteTags(note, tags) {
-    const next = [...new Set(tags.map((t) => String(t).trim()).filter(Boolean))].slice(0, 10);
+    const seen = new Set();
+    const clean = [];
+    for (const raw of tags) {
+      const t = String(raw).trim();
+      if (!t) continue;
+      const k = window.SJCats ? window.SJCats.normTag(t) : t.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      clean.push(t);
+    }
+    const next = clean.slice(0, 10);
     note.tags = next;
     note.updatedAt = Date.now();
     try {
@@ -1738,12 +2004,17 @@
 
     /* 换笔记：附件面板回到「整块摊开」（阅读态默认显示，折叠状态不带到下一篇） */
     setAttachState(note.attachments && note.attachments.length ? 'open' : 'hidden');
+    /* 换笔记：纸张底色恢复这一篇自己的（单篇设置）；没单独设过就用旧全局值兜底 */
+    document.body.dataset.paper = paperOf(note);
 
     if (focusTitle) {
       $('#titleInput').focus();
       $('#titleInput').select();
     }
     try { localStorage.removeItem('sj_opening_note'); } catch (_) {}
+    /* 进笔记态 = 多一层可返回：立刻压一条历史记录，别等轮询那 300ms，
+       否则刚点开就侧滑会被当成退出应用。 */
+    if (window.SJBackSync) window.SJBackSync();
   }
 
   /* 正文只有富文本一个编辑面：Markdown 笔记读时渲染成 HTML，
@@ -1861,11 +2132,100 @@
   function onRichInput() {
     const note = currentNote();
     if (!note) return;
-    note.content = $('#richPane').innerHTML;
+    const html = $('#richPane').innerHTML;
+    note.content = html;
     note.format = 'rich';
     note.updatedAt = Date.now();
     wordCount();
     markDirty();
+    richHistRecord(html);
+  }
+
+  /* ---------------------------------------------------------- 正文撤销栈
+     contenteditable 的原生 undo 只管键盘输入：裁剪 / 宽度 / 格式按钮 / 插图
+     这些都是程序化写 DOM，不进原生栈，手机上原生 undo 还常常整个失效。
+     这里自建 HTML 快照栈，onRichInput 是所有正文变更的唯一汇聚点，统一记录。
+     · 连续打字按 500ms 合并成一步，避免撤销一个字一个字地退；
+     · 离散操作（裁剪等）紧跟打字时，先结算打字再记新步，互不吞并。 */
+  let richHist = [], richHistIdx = -1, richHistTyping = false, richHistActive = false, richHistTimer = null;
+  const RICH_HIST_MAX = 80;
+
+  function richHistReset(html) {
+    richHist = [html == null ? '' : html];
+    richHistIdx = 0;
+    richHistTyping = false;
+    richHistActive = false;
+    clearTimeout(richHistTimer);
+    richHistTimer = null;
+    richHistSyncBtns();
+  }
+
+  function richHistCommit(html) {
+    /* 丢掉 redo 分支，压入新状态 */
+    richHist = richHist.slice(0, richHistIdx + 1);
+    richHist.push(html);
+    if (richHist.length > RICH_HIST_MAX) richHist.shift();
+    richHistIdx = richHist.length - 1;
+    richHistSyncBtns();
+  }
+
+  function richHistRecord(html) {
+    if (!richHist.length) return;
+    if (html === richHist[richHistIdx]) return;
+    const fromTyping = richHistTyping;
+    richHistTyping = false;   // 本次已消费；每次 input 事件会重新置位
+    if (fromTyping && richHistActive) {
+      /* 同一打字段的后续字节：只把栈顶更新成最新内容，不新增历史项。
+         撤销一次退回整段输入之前，而不是退一个字。 */
+      richHist[richHistIdx] = html;
+      clearTimeout(richHistTimer);
+      richHistTimer = setTimeout(() => { richHistActive = false; }, 500);
+      return;
+    }
+    clearTimeout(richHistTimer);
+    if (fromTyping) {
+      /* 打字段第一条：压入新栈，并开启 500ms 合并窗口 */
+      richHistCommit(html);
+      richHistActive = true;
+      richHistTimer = setTimeout(() => { richHistActive = false; }, 500);
+    } else {
+      /* 离散操作（裁剪/格式/宽度/插图）：关掉可能未结束的打字段，独立记一步 */
+      richHistActive = false;
+      richHistCommit(html);
+    }
+  }
+
+  function richHistSyncBtns() {
+    const canU = richHistIdx > 0;
+    const canR = richHistIdx >= 0 && richHistIdx < richHist.length - 1;
+    document.querySelectorAll('[data-act="nh-undo"]').forEach((b) => { b.disabled = !canU; });
+    document.querySelectorAll('[data-act="nh-redo"]').forEach((b) => { b.disabled = !canR; });
+    document.querySelectorAll('#sjUndoBtn').forEach((b) => { b.disabled = !canU; });
+    document.querySelectorAll('#sjRedoBtn').forEach((b) => { b.disabled = !canR; });
+  }
+
+  function richHistRestore(idx) {
+    const pane = $('#richPane');
+    if (!pane || idx < 0 || idx >= richHist.length) return false;
+    richHistIdx = idx;
+    richHistTyping = false;
+    richHistActive = false;
+    clearTimeout(richHistTimer);
+    richHistTimer = null;
+    const html = richHist[idx];
+    pane.innerHTML = html;
+    decorate(pane);
+    const note = currentNote();
+    if (note) { note.content = html; note.format = 'rich'; note.updatedAt = Date.now(); }
+    wordCount();
+    markDirty();
+    richHistSyncBtns();
+    return true;
+  }
+
+  function richUndo() { return richHistIdx > 0 ? richHistRestore(richHistIdx - 1) : false; }
+  function richRedo() {
+    return richHistIdx >= 0 && richHistIdx < richHist.length - 1 ? richHistRestore(richHistIdx + 1) : false;
   }
 
   /* 富文本里的图片保持原生，无需额外处理。 */
@@ -2256,6 +2616,11 @@
     if (NARROW() && /^(bold|italic|underline)$/.test(cmd)) ensureBlockSel();
     try { document.execCommand('styleWithCSS', false, false); } catch (_) {}
     document.execCommand(cmd, false, value);
+    /* 换块（标题/正文）后立刻摘掉块内的内联 font-size：字号下拉和粘贴来的
+       内容落的是 <span style="font-size:18px">，它比 h1~h4 的 em 更硬 ——
+       块已经是 H1 了，里面那截字还卡在原字号，换级别看着毫无变化。
+       引用块不清：那是语义容器，不是字号容器。 */
+    if (cmd === 'formatBlock' && /^<(h[1-6]|p)>$/i.test(String(value))) dropBlockFontSize();
     onRichInput();
     revealSelection(); refreshCaret();
   }
@@ -2309,13 +2674,46 @@
     revealSelection(); refreshCaret();
   }
 
-  const BLOCK_TAGS = /^(P|DIV|LI|BLOCKQUOTE|PRE|H1|H2|H3|H4)$/;
+  const BLOCK_TAGS = /^(P|DIV|LI|BLOCKQUOTE|PRE|H1|H2|H3|H4|H5|H6)$/;
 
   function closestBlock(node) {
     const pane = $('#richPane');
     let el = node && node.nodeType === 1 ? node : node && node.parentElement;
     while (el && el !== pane && !BLOCK_TAGS.test(el.tagName)) el = el.parentElement;
     return el && el !== pane ? el : null;
+  }
+
+  /* 换块后摘掉块内的内联字号，让 h1~h4 的 em 重新说话。
+     折叠光标清整块；有选区就按 intersectsNode 找交集的块，别漏中间那几段。 */
+  function dropBlockFontSize() {
+    const pane = $('#richPane');
+    const sel = window.getSelection();
+    if (!pane || !sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    const blocks = new Set();
+    if (range.collapsed) {
+      const blk = closestBlock(range.startContainer);
+      if (blk) blocks.add(blk);
+    } else {
+      pane.querySelectorAll('[style*="font-size"]').forEach((el) => {
+        let hit = false;
+        try { hit = range.intersectsNode(el); } catch (_) { hit = false; }
+        if (!hit) return;
+        const blk = closestBlock(el);
+        if (blk) blocks.add(blk);
+      });
+      [range.startContainer, range.endContainer].forEach((n) => {
+        const blk = closestBlock(n);
+        if (blk) blocks.add(blk);
+      });
+    }
+    blocks.forEach((blk) => {
+      [blk, ...blk.querySelectorAll('[style]')].forEach((el) => {
+        if (!el.style || !el.style.getPropertyValue('font-size')) return;
+        el.style.removeProperty('font-size');
+        if (!(el.getAttribute('style') || '').replace(/[;\s]/g, '')) el.removeAttribute('style');
+      });
+    });
   }
 
   function richCodeBlock() {
@@ -2857,7 +3255,10 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-22-164';
+  const APP_BUILD = '2026-11-27-178';
+  /* 暴露给 index.html 的内联版本守卫：HTML 每次都是新的、脚本可能还是缓存里的旧版，
+     内联脚本拿这个值一比就知道要不要弹「发现新版本」，不用等用户去点某个功能。 */
+  window.__SJ_APP_BUILD__ = APP_BUILD;
 
   /* 把二进制是否已备好标到按钮上，供点击时同步交付；
      真正的交付动作在 deliverNow()。 */
@@ -3920,7 +4321,7 @@
     m.querySelector('[data-act="ok"]').focus();
   }
 
-  function openPrompt({ title, message = '', value = '', placeholder = '', confirmText = '确定', onConfirm }) {
+  function openPrompt({ title, message = '', value = '', placeholder = '', confirmText = '确定', validate, onConfirm }) {
     const m = openModal(`
       <h3>${escapeHtml(title)}</h3>
       ${message ? `<p>${message}</p>` : ''}
@@ -3933,6 +4334,11 @@
     const submit = async () => {
       const v = input.value.trim();
       if (!v) { input.focus(); return; }
+      /* 重名时保留弹窗与已输入的名字，改一下就能重试。 */
+      if (typeof validate === 'function') {
+        const bad = validate(v);
+        if (bad) { toast(bad.message || String(bad)); input.focus(); input.select(); return; }
+      }
       closeModal();
       try { await onConfirm(v); } catch (e) { toast(e.message); }
     };
@@ -3945,7 +4351,15 @@
   }
 
   /* 类别操作 */
+  /* 同一级下不允许重名：本地先判一次给即时反馈，API 里还有同一道校验兜底。 */
+  function dupCatError(name, parentId, excludeId) {
+    const hit = window.SJCats ? window.SJCats.siblingOf(state.categories, name, parentId || null, excludeId) : null;
+    return hit ? new Error(`同一级下已有同名类别「${hit.name}」，换个名字吧`) : null;
+  }
+
   function createCategory(parentId, name) {
+    const dup = dupCatError(name, parentId, null);
+    if (dup) return Promise.reject(dup);
     return api('/api/categories', { method: 'POST', body: { name, parentId: parentId || null } })
       .then((cat) => {
         state.categories.push(cat);
@@ -3967,6 +4381,7 @@
       message: '类别可以无限层级嵌套，之后随时可改名或移动。',
       placeholder: '例如：业务学习 / 党纪法规',
       confirmText: '创建',
+      validate: (v) => dupCatError(v, parentId, null),
       onConfirm: (v) => createCategory(parentId, v),
     });
   }
@@ -3976,7 +4391,10 @@
       title: '重命名类别',
       value: cat.name,
       confirmText: '保存',
+      validate: (v) => dupCatError(v, cat.parentId, cat.id),
       onConfirm: async (v) => {
+        const dup = dupCatError(v, cat.parentId, cat.id);
+        if (dup) throw dup;
         const updated = await api(`/api/categories/${cat.id}`, { method: 'PATCH', body: { name: v } });
         Object.assign(cat, updated);
         renderTree();
@@ -4039,6 +4457,11 @@
         if (ids.has(state.selCat)) state.selCat = 'all';
         renderTree();
         renderList();
+        /* 云端那份也要删。只删本机的话，下次「从云端拉取」会原样并回来，
+           表现就是删了又出现（用户反馈的「每次同步都有重复分类」）。 */
+        if (window.SJSync && window.SJSync.catDeleted) {
+          window.SJSync.catDeleted(Array.from(ids), cat.parentId || null).catch(() => {});
+        }
         toast('类别已删除');
         window.dispatchEvent(new Event('sj-categories-changed'));
       } catch (e) { toast(e.message); }
@@ -4129,6 +4552,8 @@
     if (window.SJSyncCollapse) window.SJSyncCollapse();
     document.body.classList.remove('sj-head-solid');
     renderList();
+    /* 回到列表 = 少一层，把多压的那条记录吃掉，免得返回键要按两次才退出 */
+    if (window.SJBackSync) window.SJBackSync();
   }
 
   function deleteNote(note) {
@@ -4354,6 +4779,9 @@
      「点别处关菜单」的 document 监听，会把刚弹出的菜单立刻关掉——表现就是点了没反应。
      这里立一个只活到本任务结束的守卫，把这一次冒泡挡掉；下次点击是新任务，守卫已清。 */
   let ctxJustOpened = false;
+  /* 当前菜单属于哪篇笔记：卡片的 ⋯ 要能再点一次收回，必须先认出「就是这篇开的」。
+     ctxNoteId 只在 noteMenu 里写、hideCtx 里清，别的菜单（分类/更多）不碰它。 */
+  let ctxNoteId = null;
   /* 菜单是 fixed 定位，位置只在弹出那一刻算一次。可手机上的「更多」常常是在输入法
      开着的时候点的：这一点正文失焦、输入法开始收起，底栏和按钮整个往下挪，
      菜单却钉在原来的位置不动——悬在半空中，离按钮几百像素。
@@ -4453,6 +4881,7 @@
   function hideCtx() {
     ctx.classList.add('hidden');
     ctxJustOpened = false;
+    ctxNoteId = null;
     ctxAnchor = null;
     ctxPoint = null;
     ctxOpts = null;
@@ -4494,6 +4923,7 @@
   }
 
   function noteMenu(x, y, note) {
+    ctxNoteId = note.id;
     showCtx(x, y, [
       { label: '打开', icon: I.doc, onClick: () => { openNote(note.id); closeDrawer(); } },
       { label: note.starred ? '取消收藏' : '加入收藏', icon: I.star, onClick: () => starNote(note) },
@@ -4688,6 +5118,13 @@
     if (more) {
       e.preventDefault();
       e.stopPropagation();
+      /* 再点同一篇的 ⋯ = 收起（原来无条件 showCtx，所以永远关不掉）；
+         点另一篇 / 别处开的菜单 = 照常切换到这篇。capture 阶段已排除 data-more，
+         这里的菜单才是「点之前」的真实状态。 */
+      if (!ctx.classList.contains('hidden') && ctxNoteId === note.id) {
+        hideCtx();
+        return;
+      }
       const r = more.getBoundingClientRect();
       return noteMenu(r.right - 152, r.bottom + 6, note);
     }
@@ -4764,10 +5201,97 @@
     document.body.classList.remove('m-tree', 'm-list');
     document.body.classList.add(kind === 'tree' ? 'm-tree' : 'm-list');
     drawerOpenedAt = Date.now();
+    if (window.SJBackSync) window.SJBackSync();
   }
   function closeDrawer() {
     document.body.classList.remove('m-tree', 'm-list');
+    if (window.SJBackSync) window.SJBackSync();
   }
+
+  /* ---------------------------------------------------------- 返回手势（手机端）
+     Android 侧滑、iOS 边缘滑、浏览器返回键，本质上都是 history.back()。
+     SPA 不接 popstate 就会被当「离开应用」——在笔记里一滑直接退出，而不是
+     退回列表。这里把「可返回的界面层级」接进历史栈：每多一层压一条记录，
+     返回时逐层退（大图 → 样式面板 → 菜单/弹窗 → 抽屉 → 笔记详情）。
+     只接管窄屏：宽屏有 Escape 和可见的返回按钮，返回键应保持浏览器原义。 */
+  let backN = 0;        /* 已压入、仍归我们管的记录条数 */
+  let backSilent = 0;   /* 我们自己 history.go() 引发的 popstate，要吞掉 */
+  function backTop() {
+    /* 顺序对齐 Escape 键：大图 → Aa → 右键菜单 → 弹窗。
+       样式面板与四点菜单是窄屏专有，分别看 body 标记与 window 桥。 */
+    const lb = document.getElementById('sjLightbox');
+    if (lb && !lb.classList.contains('hidden')) return lightboxClose;
+    const aa = document.getElementById('sjAaSheet');
+    if (aa && !aa.classList.contains('hidden')) return aaClose;
+    const cx = document.getElementById('ctxMenu');
+    if (cx && !cx.classList.contains('hidden')) return hideCtx;
+    const mr = document.getElementById('modalRoot');
+    if (mr && !mr.classList.contains('hidden')) return closeModal;
+    if (document.body.classList.contains('sj-style-open') && window.SJCloseStyleSheet) {
+      return () => { window.SJCloseStyleSheet(); };
+    }
+    const mm = document.getElementById('sjMoreMenu');
+    if (mm && !mm.classList.contains('hidden') && window.SJHideMoreMenu) {
+      return () => { window.SJHideMoreMenu(); };
+    }
+    return null;
+  }
+  function backLayers() {
+    if (!NARROW()) return 0;
+    let n = 0;
+    if (backTop()) n++;
+    if (document.body.classList.contains('m-tree') || document.body.classList.contains('m-list')) n++;
+    if (document.body.classList.contains('sj-note-open')) n++;
+    return n;
+  }
+  /* 让历史条数始终等于当前层数。层是被按钮/遮罩/手势各关各的，没有统一出口，
+     所以这里既能被显式调用，也由 300ms 轮询兜底 —— 否则记录越积越多，
+     用户要连按好几次才退得出去。 */
+  function backSync() {
+    if (!NARROW()) {
+      if (backN > 0) {
+        const d = backN;
+        backN = 0;
+        backSilent += d;
+        try { history.go(-d); } catch (_) {}
+      }
+      return;
+    }
+    const need = backLayers();
+    if (need > backN) {
+      try {
+        for (let i = backN; i < need; i++) { history.pushState({ sjBack: i + 1 }, ''); backN++; }
+      } catch (_) {}
+    } else if (need < backN) {
+      const d = backN - need;
+      backN = need;
+      backSilent += d;
+      try { history.go(-d); } catch (_) {}
+    }
+  }
+  function backExit() {
+    const top = backTop();
+    if (top) { top(); return true; }
+    if (document.body.classList.contains('m-tree') || document.body.classList.contains('m-list')) {
+      closeDrawer();
+      return true;
+    }
+    if (document.body.classList.contains('sj-note-open')) {
+      closeEditor();
+      return true;
+    }
+    return false;
+  }
+  window.SJBackSync = backSync;
+  window.addEventListener('popstate', () => {
+    if (backSilent > 0) { backSilent--; return; }
+    if (backN <= 0) return;      /* 不是我们压的记录：交给浏览器的正常后退 */
+    backN--;
+    backExit();
+    /* 退完一层若还有层，把记录补回来，下一次滑动还能继续逐层退 */
+    setTimeout(backSync, 0);
+  });
+  setInterval(backSync, 300);
   /* 部分安卓浏览器（含华为自带浏览器）会把一次轻触派发成两次 click。
      原来按钮是 toggle 写法，第二次 click 会把刚打开的抽屉立刻收回去，
      用户看到的就是「列表闪一下又回到笔记」。同一个按钮 500ms 内的
@@ -4950,7 +5474,7 @@
     }
   });
 
-  $('#richPane').addEventListener('input', onRichInput);
+  $('#richPane').addEventListener('input', () => { richHistTyping = true; onRichInput(); });
 
   $('#starBtn').addEventListener('click', () => {
     const note = currentNote();
@@ -5960,136 +6484,9 @@
     const sheetCollapsed = new Set();
     let catDrag = null, catDragJustMoved = false;
 
-    /* ---- 合并同名分类：按「同一父级 + 同名」分组，保留内容最多的一份 ----
-       成因：手机端与桌面端各自建类、ID 不同，同步按 ID 去重，同名项被同时保留。
-       合并前用 SJLocal.getState() 拍整库快照存 localStorage，提供一键撤销。
-       落库用 SJLocal.setState() 一次性替换，避免逐个 PATCH 中途失败留半截数据。 */
-    const MERGE_UNDO_KEY = 'sj_merge_undo_v1';
-
-    function dupGroups(cats) {
-      const map = new Map();
-      (cats || []).forEach((c) => {
-        const key = JSON.stringify([c.parentId || null, String(c.name || '').trim().toLocaleLowerCase()]);
-        if (!map.has(key)) map.set(key, []);
-        map.get(key).push(c);
-      });
-      return Array.from(map.values()).filter((g) => g.length > 1);
-    }
-    function mergeScore(cat, cats, notes) {
-      const ids = new Set([cat.id]);
-      let changed = true;
-      while (changed) {
-        changed = false;
-        for (const c of cats) {
-          if (c.parentId && ids.has(c.parentId) && !ids.has(c.id)) { ids.add(c.id); changed = true; }
-        }
-      }
-      const noteN = notes.filter((n) => ids.has(n.categoryId)).length;
-      return noteN * 1000 + ids.size;
-    }
-    /* 计算一次合并的结果：返回新的 categories/notes 与统计。不直接落库。 */
-    function buildMergeResult(snap) {
-      const cats = (snap.categories || []).map((c) => ({ ...c }));
-      const notes = (snap.notes || []).map((n) => ({ ...n }));
-      const groups = dupGroups(cats);
-      const stats = [];
-      let mergedGroups = 0;
-      let movedNotes = 0;
-      /* 迭代：合并后可能让原本不同父级的同名项变成同级（子分类上移），再扫一轮。 */
-      for (let pass = 0; pass < 20; pass += 1) {
-        const gs = dupGroups(cats);
-        if (!gs.length) break;
-        for (const g of gs) {
-          const keep = g.slice().sort((a, b) =>
-            mergeScore(b, cats, notes) - mergeScore(a, cats, notes)
-            || (a.createdAt || 0) - (b.createdAt || 0))[0];
-          const dropIds = new Set(g.filter((c) => c.id !== keep.id).map((c) => c.id));
-          if (!dropIds.size) continue;
-          /* 被并分类的直属笔记迁到保留项；被并分类的子分类改挂到保留项。 */
-          for (const n of notes) {
-            if (dropIds.has(n.categoryId)) { n.categoryId = keep.id; n.updatedAt = Date.now(); movedNotes += 1; }
-          }
-          for (const c of cats) {
-            if (dropIds.has(c.parentId)) c.parentId = keep.id;
-          }
-          const removed = cats.filter((c) => dropIds.has(c.id));
-          for (let i = cats.length - 1; i >= 0; i -= 1) if (dropIds.has(cats[i].id)) cats.splice(i, 1);
-          stats.push({ name: keep.name, keepId: keep.id, kept: 1, removed: removed.length });
-          mergedGroups += 1;
-        }
-      }
-      return { categories: cats, notes, versions: snap.versions || {}, stats, mergedGroups, movedNotes };
-    }
-    function previewMergeDups() {
-      if (!window.SJLocal || !window.SJLocal.getState) { toast('本地存储未就绪'); return; }
-      const snap = window.SJLocal.getState();
-      const groups = dupGroups(snap.categories);
-      if (!groups.length) { toast('没有发现同名分类'); return; }
-      const rows = groups.map((g) => {
-        const keep = g.slice().sort((a, b) =>
-          mergeScore(b, snap.categories, snap.notes) - mergeScore(a, snap.categories, snap.notes)
-          || (a.createdAt || 0) - (b.createdAt || 0))[0];
-        const drop = g.filter((c) => c.id !== keep.id);
-        const noteN = snap.notes.filter((n) => drop.some((d) => d.id === n.categoryId)).length;
-        const childN = snap.categories.filter((c) => drop.some((d) => d.id === c.parentId)).length;
-        return `<div class="sj-merge-row"><b>${escapeHtml(keep.name)}</b>`
-          + `<span>合并 ${drop.length} 个同名 · 迁移 ${noteN} 篇笔记${childN ? '、' + childN + ' 个子分类' : ''}</span></div>`;
-      }).join('');
-      const m = openModal(`
-        <h3>合并同名分类</h3>
-        <p>发现 <b>${groups.length}</b> 组同名分类。每组会保留内容最多的一份，其余分类下的笔记与子分类自动迁入，不会删除笔记。</p>
-        <div class="sj-merge-list">${rows}</div>
-        <p class="sj-merge-tip">合并前会自动备份，随时可一键撤销。合并后请到「设置 → 同步」上传一次，云端才会同步更新。</p>
-        <div class="modal-actions">
-          <button class="btn ghost" data-act="cancel">取消</button>
-          <button class="btn primary" id="sjMergeDupsGo">确认合并</button>
-        </div>`);
-      m.querySelector('[data-act="cancel"]').onclick = closeModal;
-      m.querySelector('#sjMergeDupsGo').onclick = async () => {
-        closeModal();
-        await executeMergeDups();
-      };
-    }
-    async function executeMergeDups() {
-      try {
-        if (window.SJSaveNow) window.SJSaveNow();
-        const snap = window.SJLocal.getState();
-        /* 合并前整库备份；写不下就中止，绝不无备份地动数据。 */
-        try {
-          localStorage.setItem(MERGE_UNDO_KEY, JSON.stringify({ at: Date.now(), snap }));
-        } catch (e) {
-          toast('备份失败，已取消合并：' + e.message);
-          return;
-        }
-        const result = buildMergeResult(snap);
-        if (!result.mergedGroups) { localStorage.removeItem(MERGE_UNDO_KEY); toast('没有可合并的分类'); return; }
-        window.SJLocal.setState({ categories: result.categories, notes: result.notes, versions: result.versions });
-        await (window.SJBoot ? window.SJBoot() : boot());
-        renderCatSheet();
-        if (MGR && !MGR.classList.contains('hidden')) renderCatManager();
-        window.dispatchEvent(new Event('sj-categories-changed'));
-        toast(`已合并 ${result.mergedGroups} 组，迁移 ${result.movedNotes} 篇笔记（可在页面底部撤销）`);
-      } catch (e) {
-        toast('合并失败：' + e.message);
-      }
-    }
-    async function undoMergeDups() {
-      try {
-        const raw = localStorage.getItem(MERGE_UNDO_KEY);
-        if (!raw) { toast('没有可撤销的合并'); return; }
-        const backup = JSON.parse(raw);
-        if (!backup || !backup.snap) { toast('备份数据无效'); return; }
-        window.SJLocal.setState(backup.snap);
-        await (window.SJBoot ? window.SJBoot() : boot());
-        localStorage.removeItem(MERGE_UNDO_KEY);
-        renderCatSheet();
-        if (MGR && !MGR.classList.contains('hidden')) renderCatManager();
-        window.dispatchEvent(new Event('sj-categories-changed'));
-        toast('已撤销合并，恢复合并前的分类');
-      } catch (e) {
-        toast('撤销失败：' + e.message);
-      }
-    }
+    /* 重复分类已改为全自动：启动 / 导入 / 同步落地都会走 SJCats 去重内核，
+       这里不再提供任何手动去重入口 —— 按钮的存在本身就说明数据会脏，
+       根治办法是在数据进出两端时就拦住。 */
 
     function mgrChildren(parent) {
       return state.categories
@@ -6135,16 +6532,6 @@
       }
       html += '<div class="sj-mgr-card sj-mgr-new-card">'
         + '<button type="button" class="sj-mgr-new" data-act="mgr-add-root">新建文件夹</button></div>';
-      /* 合并同名分类：重复分类的修复入口，仅在本地存储可用时显示。 */
-      if (window.SJLocal && window.SJLocal.setState) {
-        const dupN = dupGroups(state.categories).length;
-        const canUndo = !!localStorage.getItem(MERGE_UNDO_KEY);
-        html += '<div class="sj-mgr-card sj-mgr-fix-card">'
-          + '<button type="button" class="sj-mgr-fix" data-act="mgr-merge-dups">'
-          + '合并同名分类' + (dupN ? `<em>${dupN} 组</em>` : '') + '</button>'
-          + (canUndo ? '<button type="button" class="sj-mgr-fix undo" data-act="mgr-undo-merge">撤销上次合并</button>' : '')
-          + '</div>';
-      }
       MGR_BODY.innerHTML = html;
     }
     function closeCatManager(backToSheet) {
@@ -6287,10 +6674,6 @@
           askCreateCategory(null);
         } else if (a === 'mgr-add-sub') {
           askCreateCategory(act.dataset.parent || null);
-        } else if (a === 'mgr-merge-dups') {
-          previewMergeDups();
-        } else if (a === 'mgr-undo-merge') {
-          undoMergeDups();
         }
       });
       MGR_BODY.addEventListener('pointerdown', (e) => {
@@ -6596,7 +6979,6 @@
        selectionchange 维护），点完面板还能接着在原来的位置调格式。 */
     const STYLE_SHEET = $('#sjStyleSheet');
     const SS_SIZE = $('#sjStyleSize');
-    const PAPER_KEY = 'sj_paper_v1';
 
     function styleSheetOpen() {
       return !!(STYLE_SHEET && !STYLE_SHEET.classList.contains('hidden')
@@ -6646,6 +7028,8 @@
       /* 附件面板回到打开面板之前的样子（摊开 / 窄条 / 隐藏原样还回去） */
       restoreAttachAfterSheet();
     }
+    /* 返回手势要能在面板开着时先收面板（外层拿不到这个闭包，用 window 桥） */
+    window.SJCloseStyleSheet = closeStyleSheet;
     /* 面板升降有 180ms 的高度过渡，期间布局一直在变，光标得多跟几帧 */
     function cmSettle() {
       [0, 60, 130, 220, 340].forEach((t) => setTimeout(cmPaint, t));
@@ -6866,6 +7250,7 @@
       const b = EDIT_BAR && EDIT_BAR.querySelector('[data-act="fmt"]');
       if (b) b.classList.add('on');
       syncStyleStates();
+      syncPaperSwatches(document.body.dataset.paper || paperOf(currentNote()));
       requestAnimationFrame(() => { syncSheetHeight(); refreshCaret(); });
       /* 把正在调的那一行带进视野：以前等 180ms 动画走完就一把 scrollTop 过去，
          正文会在面板停稳的瞬间跳一大截（用户 2026-11-21 反馈「首次点 A 闪屏」）。
@@ -7109,23 +7494,20 @@
       const color = c === 'default' ? getComputedStyle(pane).color : c;
       cssCmd('foreColor', color);
     }
-    function applyPaper(idx) {
-      const v = String(idx);
-      document.body.dataset.paper = v;
-      try { localStorage.setItem(PAPER_KEY, v); } catch (_) {}
+    /* 纸张改为单篇设置：写到当前笔记名下的本机映射，并立刻作用到正文。
+       openNote 切篇时也会按各自的 paperOf() 恢复，互不影响。 */
+    function syncPaperSwatches(v) {
       if (STYLE_SHEET) STYLE_SHEET.querySelectorAll('[data-paper]').forEach((el) => {
         el.classList.toggle('on', el.dataset.paper === v);
       });
     }
-    /* 纸张是外观偏好（和行距一样记在本机），打开应用时恢复上次选的那张 */
-    (function initPaper() {
-      let v = '0';
-      try { v = localStorage.getItem(PAPER_KEY) || '0'; } catch (_) {}
-      document.body.dataset.paper = v;
-      if (STYLE_SHEET) STYLE_SHEET.querySelectorAll('[data-paper]').forEach((el) => {
-        el.classList.toggle('on', el.dataset.paper === v);
-      });
-    })();
+    function applyPaper(idx) {
+      const v = String(idx);
+      applyPaperTo(currentNote(), v);
+      syncPaperSwatches(v);
+    }
+    /* 面板初次构建：色点高亮跟随当前这篇笔记的纸张（openNote 已设 body.dataset.paper） */
+    syncPaperSwatches(document.body.dataset.paper || paperFallback());
 
     if (SS_SIZE) {
       const paintSize = () => {
@@ -7231,6 +7613,8 @@
       if (pane && note) {
         pane.innerHTML = noteHtml(note);
         decorate(pane);
+        /* 每次进编辑态重建撤销栈：正文刚从存储载入，这是本次编辑的干净起点 */
+        richHistReset(pane.innerHTML);
       }
       applyFormat();
       renderToolbar();
@@ -7347,12 +7731,14 @@
       if (a === 'nh-edit') { setNoteMode('edit'); return; }
       /* 「Aa」：只调字号行距，不改正文，阅读态也能开 */
       if (a === 'nh-aa') { aaToggle(); return; }
-      /* 撤销 / 重做：正文只有富文本一个编辑面，统一走 execCommand。
+      /* 撤销 / 重做：走自建 HTML 快照栈，覆盖裁剪/宽度/格式等程序化改动
+         （原生浏览器 undo 只认键盘输入，手机上也常失效）。
          用静默聚焦，撤销一下不该把输入法顶出来。 */
       const target = $('#richPane');
       if (!target) return;
       focusQuiet(target);
-      try { document.execCommand(a === 'nh-undo' ? 'undo' : 'redo'); } catch (_) {}
+      if (a === 'nh-undo') richUndo();
+      else if (a === 'nh-redo') richRedo();
     });
     if (EDIT_BAR) EDIT_BAR.addEventListener('click', (e) => {
       const b = e.target.closest('[data-act]');
@@ -7448,7 +7834,8 @@
     }
     window.SJHideMoreMenu = hideMoreMenu;
     const MORE_ROWS = [
-      { act: 'tree', label: '目录分类', icon: '<svg viewBox="0 0 24 24" class="ico"><path d="M4 6h16M4 12h16M4 18h16"/></svg>' },
+      /* 目录分类不再放这里（用户 2026-11-23 要求）：分类切换在首页大标题「全部笔记 ▾」，
+         菜单里再放一项重复入口反而多余。树抽屉仍由标题那颗三角打开，功能没删。 */
       { act: 'batch', label: '批量整理', icon: '<svg viewBox="0 0 24 24" class="ico"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.4 12.4l2.6 2.6 4.6-5.2"/></svg>' },
       { act: 'sort', label: '排序方式', icon: '<svg viewBox="0 0 24 24" class="ico"><path d="M4 7h10M4 12h7M4 17h4M17 6v12M14 15l3 3 3-3"/></svg>', hint: '点开选' },
       { act: 'sync', label: '同步到云端', icon: '<svg viewBox="0 0 24 24" class="ico"><path d="M20 12a8 8 0 0 0-13.7-5.7"/><path d="M4 12a8 8 0 0 0 13.7 5.7"/></svg>' },
@@ -7498,8 +7885,7 @@
       if (act === 'n-delete') { const el = $('#deleteNoteBtn'); if (el) el.click(); return; }
       if (act === 'n-md') { showMarkdownSource(); return; }
       if (act === 'n-history') { const el = $('#historyBtn'); if (el) el.click(); return; }
-      if (act === 'tree') { hideCatSheet(); openDrawer('tree'); }
-      else if (act === 'batch') {
+      if (act === 'batch') {
         hideCatSheet();
         const b = $('#sjBatchBtn'); if (b) b.click();
       } else if (act === 'sort') {
@@ -7528,6 +7914,10 @@
     }
     if (MORE) MORE.addEventListener('click', (e) => {
       e.stopPropagation();
+      /* 2026-11-23：先收掉可能还开着的子菜单（导入/导出、分享/导出那层 ctx）。
+         这颗按钮 stopPropagation 了，document 上「点别处关 ctx」那层收不到，
+         不在这里主动关的话，连点两次菜单按钮主菜单会和子菜单叠在一起互相遮挡。 */
+      if (typeof hideCtx === 'function') hideCtx();
       if (MENU && MENU.classList.contains('hidden')) { renderMoreMenu(); MENU.classList.remove('hidden'); MORE.classList.add('on'); }
       else hideMoreMenu();
     });
@@ -7536,9 +7926,15 @@
       if (row) doMore(row.dataset.act);
     });
     document.addEventListener('pointerdown', (e) => {
-      if (!MENU || MENU.classList.contains('hidden')) return;
-      if (e.target.closest('#sjMoreMenu') || e.target.closest('#sjMoreBtn')) return;
-      hideMoreMenu();
+      /* 菜单按钮自己 stopPropagation，所以「点别处收起」放在 capture 阶段做。
+         两层菜单都要收：主菜单 #sjMoreMenu、子菜单 #ctxMenu（导入/导出、分享/导出
+         弹出的那层）。以前只收主菜单，子菜单点空白关不掉，再点按钮就叠在一起。 */
+      if (e.target.closest('#sjMoreMenu') || e.target.closest('#sjMoreBtn') || e.target.closest('#ctxMenu')) return;
+      if (MENU && !MENU.classList.contains('hidden')) hideMoreMenu();
+      /* 笔记卡片的 ⋯ 交给它自己的 click 做 toggle：这里如果先把菜单关了，
+         click 里就永远读不到「菜单正开着」，结果是再点也只会重新打开、收不回。 */
+      if (e.target.closest('[data-more]')) return;
+      if (typeof hideCtx === 'function') hideCtx();
     }, true);
 
     /* ---- 大标题随内容上滚收起（首页 + 阅读态） ----

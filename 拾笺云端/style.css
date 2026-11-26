@@ -1045,7 +1045,9 @@ html[data-theme="dark"] .tb-select {
 .markdown-body h1,
 .markdown-body h2,
 .markdown-body h3,
-.markdown-body h4 {
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
   font-weight: 650;
   line-height: 1.25; /* 标题行高收紧（正文仍 1.5+），建立清晰视觉层级 */
   margin: 1.6em 0 .6em;
@@ -1059,6 +1061,10 @@ html[data-theme="dark"] .tb-select {
 }
 .markdown-body h3 { font-size: 1.12em; }
 .markdown-body h4 { font-size: 1em; color: var(--text-2); }
+/* H5 / H6：工具栏只到 H3，但导入的 Markdown 会有 —— 不写就掉回浏览器默认的
+   0.83em，上下留白反而比 H1 还大。 */
+.markdown-body h5 { font-size: .92em; color: var(--text-3); }
+.markdown-body h6 { font-size: .9em; color: var(--text-3); font-weight: 500; }
 
 .markdown-body p { margin: 0 0 1em; }
 
@@ -1881,7 +1887,9 @@ html[data-theme="dark"] .sj-tip {
   .print-area .markdown-body h1,
   .print-area .markdown-body h2,
   .print-area .markdown-body h3,
-  .print-area .markdown-body h4 {
+  .print-area .markdown-body h4,
+  .print-area .markdown-body h5,
+  .print-area .markdown-body h6 {
     font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
     color: #111;
     page-break-after: avoid;
@@ -2252,6 +2260,30 @@ html[data-theme="dark"] .sj-tip {
 .sync-sub { font-size: 12.5px; color: var(--text-3); margin-bottom: 12px; line-height: 1.6; }
 .sync-info { font-size: 13px; color: var(--text-2); margin-bottom: 12px; line-height: 1.7; }
 .sync-info b { color: var(--text); }
+/* 自动同步：开关与最近一次结果。结果只在这里显示，不弹 toast。 */
+.sync-auto {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--text-2); line-height: 1.5;
+  margin: 0 0 12px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.sync-auto input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.sync-auto-note {
+  font-size: 12px; color: var(--text-3); line-height: 1.6;
+  margin: -4px 0 12px; padding: 6px 10px;
+  background: var(--surface-2, rgba(0, 0, 0, 0.03)); border-radius: 8px;
+}
+/* 恢复同步前快照：多份可选 */
+.sj-snap-list { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 12px; }
+.sj-snap-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+  cursor: pointer;
+}
+.sj-snap-row input { margin: 3px 0 0; accent-color: var(--accent); }
+.sj-snap-row span { display: flex; flex-direction: column; gap: 2px; }
+.sj-snap-row b { font-size: 14px; color: var(--text); font-weight: 600; }
+.sj-snap-row em { font-style: normal; font-size: 12px; color: var(--text-3); }
 
 .auth-label { display: block; font-size: 12.5px; color: var(--text-3); margin: 10px 0 5px; }
 .auth-row { display: flex; gap: 8px; }
@@ -2344,6 +2376,151 @@ img.sj-img-picked {
   .img-sizer-label { display: none; }
   .img-sizer input[type="range"] { width: 76px; }
   .img-sizer button { padding: 4px 8px; }
+}
+/* ============================================================ 图片裁剪 */
+body.crop-open { overflow: hidden; }
+.crop-ui {
+  position: fixed; inset: 0; z-index: 9100;
+  display: grid; place-items: center;
+  padding: 16px;
+}
+.crop-ui.hidden { display: none; }
+.crop-mask { position: absolute; inset: 0; background: rgba(18, 18, 17, .62); }
+.crop-dialog {
+  position: relative;
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: var(--surface, #fffefc);
+  border: 1px solid var(--border, #e2dfd6);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg, 0 24px 60px -18px rgba(34, 32, 28, .28));
+  font-size: 13px;
+  color: var(--text, #22201c);
+}
+.crop-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  font-size: 14px; font-weight: 600;
+  border-bottom: 1px solid var(--border, #e2dfd6);
+}
+.crop-head .crop-x {
+  border: 0; background: transparent; cursor: pointer;
+  font-size: 20px; line-height: 1; padding: 0 4px;
+  color: var(--text-3, #9c968a);
+}
+.crop-head .crop-x:hover { color: var(--text, #22201c); }
+.crop-stage {
+  display: table;
+  position: relative;
+  margin: 14px auto;
+  overflow: hidden;
+  line-height: 0;
+  background: #000;
+  max-width: 100%;
+  touch-action: none;
+}
+.crop-img {
+  display: block;
+  max-width: min(680px, calc(100vw - 64px));
+  max-height: min(58vh, 520px);
+  width: auto; height: auto;
+  user-select: none; -webkit-user-select: none;
+  pointer-events: none;
+}
+.crop-sel {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, .95);
+  box-shadow: 0 0 0 9999px rgba(18, 18, 17, .58);
+  cursor: move;
+  touch-action: none;
+}
+.crop-third {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(255, 255, 255, .38);
+}
+.crop-third-v { top: 0; bottom: 0; width: 1px; }
+.crop-third-h { left: 0; right: 0; height: 1px; }
+.crop-h {
+  position: absolute;
+  width: 12px; height: 12px;
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid var(--accent, #2f6f5e);
+  border-radius: 2px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+}
+.crop-h[data-h="nw"] { left: 0; top: 0; transform: translate(-50%, -50%); cursor: nwse-resize; }
+.crop-h[data-h="n"]  { left: 50%; top: 0; transform: translate(-50%, -50%); cursor: ns-resize; }
+.crop-h[data-h="ne"] { right: 0; top: 0; transform: translate(50%, -50%); cursor: nesw-resize; }
+.crop-h[data-h="e"]  { right: 0; top: 50%; transform: translate(50%, -50%); cursor: ew-resize; }
+.crop-h[data-h="se"] { right: 0; bottom: 0; transform: translate(50%, 50%); cursor: nwse-resize; }
+.crop-h[data-h="s"]  { left: 50%; bottom: 0; transform: translate(-50%, 50%); cursor: ns-resize; }
+.crop-h[data-h="sw"] { left: 0; bottom: 0; transform: translate(-50%, 50%); cursor: nesw-resize; }
+.crop-h[data-h="w"]  { left: 0; top: 50%; transform: translate(-50%, -50%); cursor: ew-resize; }
+.crop-bar {
+  display: flex; align-items: center; gap: 5px;
+  padding: 10px 16px 4px;
+  flex-wrap: wrap;
+}
+.crop-ratios { display: flex; gap: 5px; flex-wrap: wrap; }
+.crop-bar button {
+  border: 1px solid var(--border, #e2dfd6);
+  background: var(--surface, #fffefc);
+  color: var(--text, #22201c);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font: inherit; font-size: 12px;
+  cursor: pointer;
+  transition: background .15s var(--ease), border-color .15s var(--ease);
+}
+.crop-bar button:hover {
+  background: var(--accent-soft, rgba(47, 111, 94, .10));
+  border-color: var(--accent-line, rgba(47, 111, 94, .28));
+}
+.crop-bar button.on {
+  background: var(--accent, #2f6f5e);
+  border-color: var(--accent, #2f6f5e);
+  color: #fff;
+}
+.crop-size {
+  margin-left: auto;
+  color: var(--text-3, #9c968a);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+.crop-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 8px 16px 14px;
+}
+.crop-foot button {
+  border: 1px solid var(--border, #e2dfd6);
+  background: var(--surface, #fffefc);
+  color: var(--text, #22201c);
+  border-radius: 8px;
+  padding: 6px 16px;
+  font: inherit; font-size: 13px;
+  cursor: pointer;
+}
+.crop-foot button:hover { background: var(--accent-soft, rgba(47, 111, 94, .10)); }
+.crop-foot button.primary {
+  background: var(--accent, #2f6f5e);
+  border-color: var(--accent, #2f6f5e);
+  color: #fff;
+}
+.crop-foot button.primary:hover { filter: brightness(1.06); }
+
+@media (max-width: 520px) {
+  .crop-ui { padding: 10px; }
+  .crop-dialog { width: calc(100vw - 20px); max-height: calc(100vh - 20px); border-radius: 12px; }
+  .crop-head { padding: 10px 12px; }
+  .crop-img { max-width: calc(100vw - 44px); max-height: 52vh; }
+  .crop-stage { margin: 10px auto; }
+  .crop-bar { padding: 8px 12px 2px; }
+  .crop-foot { padding: 6px 12px 12px; }
+  .crop-h { width: 16px; height: 16px; }
 }
 /* ============================================================ 标签管理 */
 .tag-head-right { display: flex; align-items: center; gap: 3px; }
@@ -2755,6 +2932,15 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
 .note-card-title { padding-right: 20px; }
 .note-card.pressed { background: var(--surface-3); }
 
+/* 手机端点卡片右上角的 ⋯：安卓内核会把默认 tap 高亮（主题淡绿）画到整张卡片上，
+   看着就是「卡片闪一下淡绿」。⋯ 只是开个菜单，卡片不该变色，就地收掉。
+   另外触屏没有真 hover：手指点完 :hover 会留在卡片上，底色淡入淡出也像闪，
+   一并收回默认 surface。当前打开那篇（.active）和勾选态（.selected）是常驻标识，保留。 */
+.note-card, .note-more { -webkit-tap-highlight-color: transparent; }
+@media (hover: none) {
+  .note-card:hover:not(.active):not(.selected) { background: var(--surface); }
+}
+
 @media (max-width: 980px) {
   .note-more { opacity: .82; width: 30px; height: 30px; top: 3px; right: 3px; }
   .note-more svg { width: 16px; height: 16px; }
@@ -2874,7 +3060,13 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
 
 /* 链接即口令提示 */
 .pwd-tip { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9000; display: flex; align-items: center; gap: 12px;
-  padding: 10px 16px; background: #2f6f5e; color: #fff; font-size: 13px; box-shadow: 0 -4px 16px rgba(0,0,0,.12); }
+  /* 以前这里硬编码旧墨绿 #2f6f5e：窄屏本是华为蓝、宽屏早已石墨灰，只剩这条
+     还停在上一代配色。跟随强调色后两端口径一致。 */
+  padding: 10px 16px; background: var(--accent); color: #fff; font-size: 13px; box-shadow: 0 -4px 16px rgba(0,0,0,.12); }
+/* 深色主题的强调色偏浅，白字会糊，换深色字 */
+html[data-theme="dark"] .pwd-tip,
+html[data-theme="dark"] .pwd-tip span,
+html[data-theme="dark"] .pwd-tip button { color: #1c1a17; }
 .pwd-tip span { flex: 1; line-height: 1.5; }
 .pwd-tip button { flex: none; border: 0; background: rgba(255,255,255,.18); color: #fff; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
 .pwd-tip button:hover { background: rgba(255,255,255,.3); }
@@ -3485,37 +3677,6 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
   }
   .sj-mgr-new-card { padding: 4px 16px; }
   .sj-mgr-new-card .sj-mgr-new { margin-left: 0; }
-  /* 合并同名分类工具卡：修复双端各自建类造成的重复，华为风低调入口。 */
-  .sj-mgr-fix-card {
-    padding: 6px 16px;
-    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  }
-  .sj-mgr-fix {
-    display: inline-flex; align-items: center; gap: 8px;
-    min-height: 46px; padding: 0;
-    border: 0; background: transparent; color: var(--accent);
-    font-family: var(--mgr-font); font-size: 15px; font-weight: 500;
-    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
-  }
-  .sj-mgr-fix em {
-    font-style: normal; font-size: 12px; font-weight: 500;
-    padding: 1px 8px; border-radius: 10px;
-    background: var(--accent-soft); color: var(--accent);
-  }
-  .sj-mgr-fix.undo { color: var(--text-3); font-size: 14px; }
-  /* 合并预览弹窗里的重复组列表 */
-  .sj-merge-list {
-    margin: 4px 0 12px; max-height: 40vh; overflow-y: auto;
-    border: 1px solid var(--border); border-radius: 12px;
-  }
-  .sj-merge-row {
-    display: flex; flex-direction: column; gap: 2px;
-    padding: 10px 14px; border-bottom: 1px solid var(--border);
-  }
-  .sj-merge-row:last-child { border-bottom: 0; }
-  .sj-merge-row b { font-size: 15px; color: var(--text); }
-  .sj-merge-row span { font-size: 12px; color: var(--text-3); }
-  .sj-merge-tip { font-size: 12px; line-height: 1.6; color: var(--text-3); margin: 0 0 14px; }
   body.sj-cat-mgr-open .pwd-tip { display: none; }
 
   /* ---- 编辑笔记本底部弹窗：点子分类双横杠弹出 ---- */
@@ -3705,6 +3866,9 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
     touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
   .sj-nh-btn:active { background: var(--surface-2); }
+  /* 没有可撤销/重做步骤时置灰禁用，不再给出可点的视觉暗示 */
+  .sj-nh-btn:disabled { opacity: .32; color: var(--text-3, var(--text)); cursor: default; }
+  .sj-nh-btn:disabled:hover, .sj-nh-btn:disabled:active { background: transparent; }
   .sj-nh-btn .ico { width: 23px; height: 23px; stroke-width: 2; }
   .sj-nh-acts { display: none; align-items: center; flex: none; }
   .sj-nh-done { color: var(--accent); }
@@ -3915,6 +4079,8 @@ body.sj-tip-open:not(.sj-note-open) .sj-fab {
   }
   .sj-edit-bar button:active { background: var(--surface-2); }
   .sj-edit-bar button .ico { width: 23px; height: 23px; }
+  /* 格式按钮换成「A≡」文本样式图标（照华为备忘录），笔画加粗才和另外三颗一样沉 */
+  .sj-edit-bar button .ico-format-text { stroke-width: 2.2; }
   .sj-edit-bar button.on { color: var(--accent); }
 
   /* ---- 样式面板：编辑态点 A 按钮弹出，仿华为备忘录「样式」 ----

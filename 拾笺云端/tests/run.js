@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-22-164 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-178 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,9 +14,15 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-22-164';
+const BUILD = '2026-11-27-178';
 const SC = 'X4WPKTHLIN';
-const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js'];
+const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
+  /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
+     真源在 拾笺/public，由 拾笺/scripts/sync-shared.js 推过来。 */
+  'mdconv-core.js', 'richtext-core.js',
+  /* 2026-11-26：分类身份 / 去重判定也收成两端一份，
+     否则「算不算重复」各算一套，去重本身会变成新的重复源。 */
+  'cat-core.js'];
 
 let pass = 0, fail = 0;
 function ok(name, cond) {
@@ -242,7 +248,7 @@ ok('手机端顶栏收起、--m-bar-total 归零（顶端无菜单）',
 ok('右上角四点菜单按钮与面板存在、面板在 body 直属',
   indexSrc.indexOf('id="sjMoreBtn"') > indexSrc.indexOf('</main>') &&
   indexSrc.indexOf('id="sjMoreMenu"') > indexSrc.indexOf('</main>') &&
-  appSrc.indexOf("act === 'tree'") >= 0 && appSrc.indexOf("act === 'batch'") >= 0 &&
+  appSrc.indexOf("act === 'batch'") >= 0 &&
   appSrc.indexOf("act === 'sync'") >= 0 && appSrc.indexOf("act === 'theme'") >= 0);
 ok('详情页底栏有返回出口（顶栏收起后唯一返回）',
   indexSrc.indexOf('data-act="back"') >= 0 &&
@@ -384,39 +390,21 @@ ok('新建按钮只对文字有效：inline-block 且左对齐到子分类名称
   styleSrc.indexOf('.sj-mgr-new-card .sj-mgr-new { margin-left: 0; }') >= 0 &&
   !/\.sj-mgr-new \{\s*display: block; width: 100%/.test(styleSrc));
 
-/* ---- 合并同名分类（2026-11-21-121）---- */
-ok('按「同一父级 + 同名」分组识别重复分类（不误并不同父级同名）',
-  appSrc.indexOf('function dupGroups(cats)') >= 0 &&
-  appSrc.indexOf('c.parentId || null, String(c.name || \'\').trim().toLocaleLowerCase()') >= 0 &&
-  appSrc.indexOf('.filter((g) => g.length > 1)') >= 0);
-ok('合并保留内容最多的一份：按子树笔记数与后代分类数打分',
-  appSrc.indexOf('function mergeScore(cat, cats, notes)') >= 0 &&
-  appSrc.indexOf('notes.filter((n) => ids.has(n.categoryId)).length') >= 0 &&
-  /mergeScore\(b, cats, notes\) - mergeScore\(a, cats, notes\)/.test(appSrc));
-ok('合并迁移笔记与子分类，笔记改 categoryId 并顶新 updatedAt 以便同步',
-  /if \(dropIds\.has\(n\.categoryId\)\) \{ n\.categoryId = keep\.id; n\.updatedAt = Date\.now\(\); movedNotes \+= 1; \}/.test(appSrc) &&
-  /if \(dropIds\.has\(c\.parentId\)\) c\.parentId = keep\.id;/.test(appSrc));
-ok('合并迭代多轮，处理子分类上移后新产生的同级同名',
-  /for \(let pass = 0; pass < 20; pass \+= 1\)/.test(appSrc) &&
-  /const gs = dupGroups\(cats\);[\s\S]{0,80}if \(!gs\.length\) break;/.test(appSrc));
-ok('合并前整库快照到 localStorage，失败即中止；落库用 setState 一次替换',
-  appSrc.indexOf("const MERGE_UNDO_KEY = 'sj_merge_undo_v1'") >= 0 &&
-  /localStorage\.setItem\(MERGE_UNDO_KEY, JSON\.stringify\(\{ at: Date\.now\(\), snap \}\)\)/.test(appSrc) &&
-  /window\.SJLocal\.setState\(\{ categories: result\.categories, notes: result\.notes, versions: result\.versions \}\)/.test(appSrc));
-ok('撤销合并恢复整库快照并清标记，合并后提示去同步',
-  appSrc.indexOf('async function undoMergeDups()') >= 0 &&
-  /window\.SJLocal\.setState\(backup\.snap\)/.test(appSrc) &&
-  /localStorage\.removeItem\(MERGE_UNDO_KEY\)/.test(appSrc) &&
-  appSrc.indexOf('合并后请到「设置 → 同步」上传一次') >= 0);
-ok('管理页提供合并入口与撤销入口，预览列出每组合并计划',
-  appSrc.indexOf('data-act="mgr-merge-dups"') >= 0 &&
-  appSrc.indexOf('data-act="mgr-undo-merge"') >= 0 &&
-  appSrc.indexOf('function previewMergeDups()') >= 0 &&
-  appSrc.indexOf('class="sj-merge-list"') >= 0);
-ok('合并相关样式仅窄屏、未在桌面放开（依托 .sj-cat-mgr 隐藏）',
-  styleSrc.indexOf('.sj-mgr-fix-card {') >= 0 &&
-  styleSrc.indexOf('.sj-merge-list {') >= 0 &&
-  styleSrc.indexOf('.sj-merge-row b {') >= 0);
+/* ---- 分类去重：已改为全自动（2026-11-26）----
+   重复应当被拦在源头（建类查重 / 同步合并 / 启动自愈），
+   而不是让用户去管理页点「合并同名分类」。手动入口及相关逻辑已删除。 */
+ok('管理页不再有手动合并 / 撤销入口',
+  appSrc.indexOf('mgr-merge-dups') < 0 && appSrc.indexOf('mgr-undo-merge') < 0
+  && appSrc.indexOf('previewMergeDups') < 0 && appSrc.indexOf('MERGE_UNDO_KEY') < 0
+  && appSrc.indexOf('合并同名分类') < 0);
+ok('去重判定已收进共享内核，界面不再自带一套 dupGroups / mergeScore',
+  appSrc.indexOf('function dupGroups(cats)') < 0 && appSrc.indexOf('function mergeScore(') < 0);
+ok('建类 / 改名在提交前先判重名（同一父级 + 同名）',
+  appSrc.indexOf('function dupCatError(name, parentId, excludeId)') >= 0
+  && /window\.SJCats\.siblingOf\(state\.categories, name, parentId \|\| null, excludeId\)/.test(appSrc));
+ok('手动合并的样式一并清掉，不留死代码',
+  styleSrc.indexOf('.sj-mgr-fix-card') < 0 && styleSrc.indexOf('.sj-merge-list') < 0);
+
 
 ok('底栏下线后主区铺到底；编辑态抬到 52px 工具条上方，附件面板仍不被遮挡',
   /body\.sj-note-open\.sj-note-edit \.app \{[\s\S]{0,140}bottom: calc\(52px \+ env\(safe-area-inset-bottom, 0px\)\);/.test(styleSrc) &&
@@ -556,16 +544,30 @@ ok('点底栏 A 按钮弹出「样式」面板：B/I/U、三种对齐、增减�
   // 点方框打勾
   /ul\.sj-task > li[\s\S]{0,220}classList\.toggle\('done'\)/.test(appSrc));
 
-ok('「样式」面板的颜色与纸张：7 颗色点、5 张纸、纸张记在本机',
+ok('「样式」面板的颜色与纸张：7 颗色点、5 张纸',
   indexSrc.indexOf('data-color="#d13b32"') >= 0 &&
   indexSrc.indexOf('data-color="default"') >= 0 &&
   (indexSrc.match(/class="sj-ss-dot/g) || []).length >= 7 &&
   (indexSrc.match(/class="sj-ss-paper/g) || []).length >= 5 &&
-  appSrc.indexOf("const PAPER_KEY = 'sj_paper_v1';") >= 0 &&
-  /function applyPaper\(idx\)[\s\S]{0,220}document\.body\.dataset\.paper = v/.test(appSrc) &&
   /html\[data-theme="light"\] body\.sj-note-open\[data-paper="2"\] \.editor-pane \{ background: #e9e1cd; \}/.test(styleSrc) &&
   /\.sj-ss-range \{[\s\S]{0,260}appearance: none/.test(styleSrc) &&
   /\.sj-style-sheet \{[\s\S]{0,220}position: fixed; z-index: 92/.test(styleSrc));
+
+ok('纸张底色单篇设置：按笔记 id 存本机映射，切笔记各自恢复（2026-11-23）',
+  appSrc.indexOf("const PAPER_MAP_KEY = 'sj_paper_by_note_v1';") >= 0 &&
+  appSrc.indexOf("const PAPER_DEFAULT_KEY = 'sj_paper_v1';") >= 0 &&
+  /function paperOf\(note\)[\s\S]{0,220}paperMap\(\)\[note\.id\]/.test(appSrc) &&
+  /function setPaperOf\(note, idx\)[\s\S]{0,200}m\[note\.id\] = String\(idx\)/.test(appSrc) &&
+  /function applyPaperTo\(note, idx\)[\s\S]{0,120}document\.body\.dataset\.paper = String\(idx\)/.test(appSrc) &&
+  /setAttachState\(note\.attachments && note\.attachments\.length \? 'open' : 'hidden'\);\s*\n\s*\/\* 换笔记：纸张底色[\s\S]{0,80}document\.body\.dataset\.paper = paperOf\(note\);/.test(appSrc) &&
+  /function applyPaper\(idx\)[\s\S]{0,120}applyPaperTo\(currentNote\(\), v\)/.test(appSrc) &&
+  !/const PAPER_KEY = 'sj_paper_v1';/.test(appSrc));
+
+ok('底栏格式按钮用「A≡」文本样式图标，粗描边 2.2',
+  /data-act="fmt"[\s\S]{0,200}ico-format-text/.test(indexSrc) &&
+  /class="ico ico-format-text"[\s\S]{0,260}M3\.2 15\.8L7\.4 5\.2l4\.2 10\.6/.test(indexSrc) &&
+  /M14 7h6\.6[\s\S]{0,120}M3 20h17\.6/.test(indexSrc) &&
+  /\.sj-edit-bar button \.ico-format-text \{ stroke-width: 2\.2; \}/.test(styleSrc));
 
 ok('输入法：格式操作静默聚焦不弹键盘，点正文才唤起输入法',
   appSrc.indexOf("const KB_POLICY = 'virtualkeyboardpolicy';") >= 0 &&
@@ -945,8 +947,23 @@ ok('阅读态标签只读：不渲染移除按钮，改完标签跟着刷新',
   !/RH_TAGS[\s\S]{0,200}tag-x/.test(appSrc)
   && /if \(window\.SJRefreshNoteMeta\) window\.SJRefreshNoteMeta\(\);/.test(appSrc)
   && /\.sj-rh-tags \{[\s\S]{0,120}display: flex; flex-wrap: wrap;/.test(styleSrc));
-ok('列表首页仍是原来那套全局菜单（两套内容按有没有打开笔记切）',
-  /act: 'tree', label: '目录分类'/.test(appSrc) && /MORE_ROWS/.test(appSrc));
+ok('列表首页全局菜单不再放「目录分类」（分类切换走首页大标题 ▾）',
+  !/act: 'tree'/.test(appSrc) && !/label: '目录分类'/.test(appSrc) && /MORE_ROWS/.test(appSrc));
+ok('导入/导出、分享/导出的子菜单点空白能收起，再点菜单按钮不会叠在一起',
+  /* 菜单按钮 stopPropagation，document 的 click 关 ctx 收不到；
+     改在 capture 阶段的 pointerdown 里两层一起收，按钮自己 click 也主动 hideCtx */
+  /document\.addEventListener\('pointerdown', \(e\) => \{[\s\S]{0,420}e\.target\.closest\('#ctxMenu'\)/.test(appSrc) &&
+  /if \(MENU && !MENU\.classList\.contains\('hidden'\)\) hideMoreMenu\(\);[\s\S]{0,180}if \(typeof hideCtx/.test(appSrc) &&
+  /MORE\.addEventListener\('click', \(e\) => \{[\s\S]{0,280}if \(typeof hideCtx === 'function'\) hideCtx\(\);/.test(appSrc));
+ok('笔记卡片 ⋯ 再点一次能收起（同篇 toggle、异篇切换、capture 不抢关）',
+  /let ctxNoteId = null;/.test(appSrc)
+  && /function noteMenu\(x, y, note\) \{\s*ctxNoteId = note\.id;/.test(appSrc)
+  && /function hideCtx\(\) \{[\s\S]{0,120}ctxNoteId = null;/.test(appSrc)
+  && /e\.target\.closest\('\[data-more\]'\)\) return;\s*if \(typeof hideCtx/.test(appSrc)
+  && /const more = e\.target\.closest\('\[data-more\]'\);[\s\S]{0,320}!ctx\.classList\.contains\('hidden'\) && ctxNoteId === note\.id\) \{\s*hideCtx\(\);\s*return;/.test(appSrc));
+ok('点 ⋯ 时卡片不闪淡绿（tap 高亮收掉、触屏 hover 残留收回、常驻态保留）',
+  /\.note-card, \.note-more \{ -webkit-tap-highlight-color: transparent; \}/.test(styleSrc)
+  && /@media \(hover: none\) \{\s*\.note-card:hover:not\(\.active\):not\(\.selected\) \{ background: var\(--surface\); \}/.test(styleSrc));
 ok('笔记菜单的动作全转手给现有按钮，不另写一套',
   /if \(act === 'n-share'\) \{ const el = \$\('#exportBtn2'\);/.test(appSrc)
   && /if \(act === 'n-star'\) \{ const el = \$\('#starBtn'\);/.test(appSrc)
@@ -1063,7 +1080,7 @@ ok('行距下拉回显当前值（不在预设档就临时补一档）',
   /function syncLhPicker\(\)[\s\S]{0,700}data-temp/.test(appSrc)
   && /tbLhSel\.value = v;/.test(appSrc)
   && /\.tb-select\.is-lh \{ min-width: 42px; \}/.test(styleSrc));
-ok('Markdown 笔记一被编辑即升级为富文本', /note\.content = \$\('#richPane'\)\.innerHTML;[\s\S]{0,80}note\.format = 'rich';/.test(appSrc));
+ok('Markdown 笔记一被编辑即升级为富文本', /note\.content = html;[\s\S]{0,80}note\.format = 'rich';/.test(appSrc));
 ok('新建笔记默认富文本', /categoryId: target, title: '', content: '',[\s\S]{0,120}format: 'rich'/.test(appSrc));
 ok('旧的 textarea 事件已摘掉', !/addEventListener\('input', onMdInput\)/.test(appSrc)
   && !/function onMdInput\(/.test(appSrc));
@@ -1118,6 +1135,413 @@ ok('分类名旁的小三角改成 12px SVG 箭头（原来是 9px 的 ▾ 字�
   && !/\.meta-caret \{ font-style: normal; font-size: 9px/.test(styleSrc));
 ok('侧栏分类树的展开箭头放大到 13px',
   /\.caret svg \{ width: 13px; height: 13px; \}/.test(styleSrc));
+
+console.log('\n图片裁剪（2026-11-23）');
+ok('图片宽度条有「裁剪」按钮', /data-w="crop"[^>]*>裁剪</.test(appSrc));
+ok('裁剪按钮接到 openImgCrop', /if \(v === 'crop'\) return openImgCrop\(\)/.test(appSrc));
+ok('裁剪层支持自由 + 原图 + 1:1 / 4:3 / 16:9 比例',
+  /key: 'free'/.test(appSrc) && /key: 'origin'/.test(appSrc)
+  && /key: '1', label: '1:1'/.test(appSrc) && /key: '43', label: '4:3'/.test(appSrc)
+  && /key: '169', label: '16:9'/.test(appSrc));
+ok('裁剪层有 8 个缩放把手与九宫格线',
+  /data-h="nw"/.test(appSrc) && /data-h="se"/.test(appSrc)
+  && /crop-third-v/.test(appSrc) && /crop-third-h/.test(appSrc));
+ok('裁剪结果用 canvas 重绘并按原图类型导出',
+  /ctx\.drawImage\(s\.img, sx, sy, sw, sh, 0, 0, cv\.width, cv\.height\)/.test(appSrc)
+  && /cv\.toDataURL\(keepPng \? 'image\/png' : 'image\/jpeg', 0\.92\)/.test(appSrc));
+ok('裁剪后替换 img.src 并按原模式落盘',
+  /target\.src = out/.test(appSrc) && /if \(s\.mode === 'rich'\) onRichInput\(\)/.test(appSrc));
+ok('跨域图拉不到时明确提示，不破坏原图',
+  /这张图来自外部站点，无法裁剪/.test(appSrc) && /catch \(_\) \{ return ''; \}/.test(appSrc));
+ok('裁剪层内点击不冒泡，避免误关宽度条清空 imgMode',
+  /el\.addEventListener\('click', \(e\) => \{\s*e\.stopPropagation\(\);/.test(appSrc));
+ok('裁剪样式两端一致（z-index 高于宽度条、把手、比例按钮）',
+  /\.crop-ui \{[\s\S]{0,80}z-index: 9100/.test(styleSrc)
+  && /\.crop-h\[data-h="nw"\]/.test(styleSrc) && /\.crop-bar button\.on/.test(styleSrc));
+ok('裁剪逻辑与样式两端逐字节一致', (() => {
+  const localApp = fs.readFileSync(path.join(DESKTOP, 'public', 'app.js'), 'utf8');
+  const localCss = fs.readFileSync(path.join(DESKTOP, 'public', 'style.css'), 'utf8');
+  const cut = (s, from, to) => { const a = s.indexOf(from), b = s.indexOf(to, a); return a >= 0 && b > a ? s.slice(a, b) : ''; };
+  const a1 = cut(appSrc, '  /* ---------------------------------------------------------- 图片裁剪', '  function bindImgResize(container, mode) {');
+  const a2 = cut(localApp, '  /* ---------------------------------------------------------- 图片裁剪', '  function bindImgResize(container, mode) {');
+  const c1 = cut(styleSrc, '/* ============================================================ 图片裁剪 */', '/* ============================================================ 标签管理 */');
+  const c2 = cut(localCss, '/* ============================================================ 图片裁剪 */', '/* ============================================================ 标签管理 */');
+  return !!a1 && a1 === a2 && !!c1 && c1 === c2;
+})());
+
+console.log('\n正文撤销栈（2026-11-23）');
+ok('撤销不再依赖原生 execCommand undo',
+  !/execCommand\(\s*['"]undo['"]\s*\)/.test(appSrc)
+  && !/execCommand\(\s*['"]redo['"]\s*\)/.test(appSrc));
+ok('有应用级 HTML 快照栈与 richUndo/richRedo',
+  /let richHist = \[\], richHistIdx = -1/.test(appSrc)
+  && /function richUndo\(\)/.test(appSrc) && /function richRedo\(\)/.test(appSrc)
+  && /function richHistRestore\(idx\)/.test(appSrc));
+ok('onRichInput 统一记录快照（覆盖裁剪/宽度/格式等程序化改动）',
+  /richHistRecord\(html\);/.test(appSrc) && /const html = \$\('#richPane'\)\.innerHTML/.test(appSrc));
+ok('打字合并窗口 500ms，避免一字一撤',
+  /richHistTyping/.test(appSrc) && /\}, 500\);/.test(appSrc));
+ok('进编辑态重建撤销栈（干净起点）',
+  /function toRichEditor\(\)/.test(appSrc) && /richHistReset\(pane\.innerHTML\)/.test(appSrc));
+ok('两端按钮接新撤销栈，且桌面端两处初始化',
+  /if \(a === 'nh-undo'\) richUndo\(\)/.test(appSrc)
+  && /if \(a === 'nh-redo'\) richRedo\(\)/.test(appSrc)
+  && (() => {
+    const la = fs.readFileSync(path.join(DESKTOP, 'public', 'app.js'), 'utf8');
+    return /\$\('#sjUndoBtn'\).*richUndo\(\)/s.test(la)
+      && /\$\('#sjRedoBtn'\).*richRedo\(\)/s.test(la)
+      && (la.match(/richHistReset\(/g) || []).length >= 3;
+  })());
+ok('撤销栈还原后重新 decorate 并落盘',
+  /pane\.innerHTML = html;\s*decorate\(pane\);/.test(appSrc)
+  && /note\.content = html; note\.format = 'rich'/.test(appSrc));
+ok('按钮禁用态随历史指针同步',
+  /function richHistSyncBtns\(\)[\s\S]{0,400}b\.disabled = !canU[\s\S]{0,200}b\.disabled = !canR/.test(appSrc));
+ok('无可撤销/重做步骤时按钮初始禁用且置灰（两端一致）',
+  (() => {
+    const ci = fs.readFileSync(path.join(CLOUD, 'index.html'), 'utf8');
+    const li = fs.readFileSync(path.join(DESKTOP, 'public', 'index.html'), 'utf8');
+    const cc = fs.readFileSync(path.join(CLOUD, 'style.css'), 'utf8');
+    const lc = fs.readFileSync(path.join(DESKTOP, 'public', 'style.css'), 'utf8');
+    return /data-act="nh-undo"[^>]*\sdisabled/.test(ci)
+      && /data-act="nh-redo"[^>]*\sdisabled/.test(ci)
+      && /id="sjUndoBtn"[^>]*\sdisabled/.test(li)
+      && /id="sjRedoBtn"[^>]*\sdisabled/.test(li)
+      && /\.sj-nh-btn:disabled\s*\{[^}]*opacity:\s*\.32/.test(cc)
+      && /\.sj-ea-btn:disabled\s*\{[^}]*opacity:\s*\.32/.test(lc)
+      && /\.sj-nh-btn:disabled:hover[^{]*\{[^}]*transparent/.test(cc)
+      && /\.sj-ea-btn:disabled:hover[^{]*\{[^}]*transparent/.test(lc);
+  })());
+
+ok('发现新版本：三层探测 + 顶部更新按钮 + 清缓存重开（手机端）',
+  indexSrc.indexOf('发现新版本') >= 0
+  && indexSrc.indexOf("box.id = 'sjUpdateTip'") >= 0
+  && indexSrc.indexOf('点此更新') >= 0
+  && /window\.__SJ_APP_BUILD__/.test(indexSrc)
+  && /searchParams\.get\('v'\)/.test(indexSrc)
+  && indexSrc.indexOf("const\\s+VERSION\\s*=\\s*'sj-") >= 0
+  && /fetch\(probe, \{ cache: 'no-store' \}\)/.test(indexSrc)
+  && /m\[1\] > SWV/.test(indexSrc)
+  && /searchParams\.set\('sjup'/.test(indexSrc)
+  && /getRegistrations\(\)/.test(indexSrc)
+  && /caches\.delete\(k\)/.test(indexSrc)
+  && /setInterval\(checkUpdate, 60000\)/.test(indexSrc)
+  && /visibilitychange/.test(indexSrc)
+  && /setTimeout\(finish, 4000\)/.test(indexSrc));
+ok('版本探测正则能从 sw.js 提取当前构建号',
+  (() => {
+    const m = /const\s+VERSION\s*=\s*'sj-([^']+)'/.exec(swSrc);
+    return !!m && m[1] === BUILD;
+  })());
+ok('app.js 暴露构建号供内联守卫比对',
+  /window\.__SJ_APP_BUILD__ = APP_BUILD;/.test(appSrc));
+/* 兜底页与更新提示条是内联写死的（必须不依赖 style.css），但颜色不能停在旧墨绿：
+   界面早已是宽屏石墨灰 / 窄屏华为蓝，墨绿只在两者之间的灰色地带出现。
+   2026-11-24 用户嫌兜底页那颗深石墨按钮不好看，改成淡蓝底 + 深蓝字。 */
+ok('内联兜底 UI 不再写死旧墨绿 #2f6f5e',
+  indexSrc.indexOf('#2f6f5e') < 0
+  && /id="sjBootRetry"[^>]*background:#e3eeff/.test(indexSrc)
+  && /border-radius:14px;background:#43403a/.test(indexSrc));
+ok('慢网首屏不误报「没能加载完」（10s 重载 / 18s 才提示 / 脚本报错立即提示）',
+  /if \(tries === 10 && !reloaded\)/.test(indexSrc)
+  && /if \(tries >= 18 && !panel\)/.test(indexSrc)
+  && /window\.__SJ_LOAD_ERR && !panel/.test(indexSrc)
+  && /src="\/app\.js\?sharecode=[^"]+" onerror="window\.__SJ_LOAD_ERR=1"/.test(indexSrc)
+  && (indexSrc.match(/onerror="window\.__SJ_LOAD_ERR=1"/g) || []).length >= 3);
+/* 返回手势：系统侧滑/返回键都是 history.back()，不接 popstate 就等于「退出应用」。
+   约定：只接管窄屏、只压「可返回的层」、层被按钮关掉时把记录收回来。 */
+ok('手机端返回手势：接入浏览器历史栈，逐层退回',
+  /let backN = 0;/.test(appSrc)
+  && /window\.addEventListener\('popstate'/.test(appSrc)
+  && /if \(backSilent > 0\) \{ backSilent--; return; \}/.test(appSrc)
+  && /if \(backN <= 0\) return;/.test(appSrc)
+  && /setInterval\(backSync, 300\)/.test(appSrc)
+  && /window\.SJBackSync = backSync;/.test(appSrc));
+ok('返回手势只接管窄屏，宽屏保持浏览器原义',
+  /function backLayers\(\) \{\s*if \(!NARROW\(\)\) return 0;/.test(appSrc)
+  && /if \(!NARROW\(\)\) \{\s*if \(backN > 0\) \{/.test(appSrc));
+ok('返回层级顺序与 Escape 一致：大图 → Aa → 菜单 → 弹窗 → 样式面板 → 四点菜单',
+  (() => {
+    const i = appSrc.indexOf('function backTop()');
+    const seg = appSrc.slice(i, i + 900);
+    const order = ['sjLightbox', 'sjAaSheet', 'ctxMenu', 'modalRoot', 'sj-style-open', 'sjMoreMenu'];
+    let at = -1;
+    for (const k of order) {
+      const p = seg.indexOf(k);
+      if (p < 0 || p < at) return false;
+      at = p;
+    }
+    return true;
+  })());
+ok('抽屉与笔记详情各算一层，关层后回收多余的 history 记录',
+  /function closeDrawer\(\) \{[\s\S]{0,160}window\.SJBackSync/.test(appSrc)
+  && /function closeEditor\(\) \{[\s\S]{0,900}window\.SJBackSync/.test(appSrc)
+  && /function openDrawer\(kind\) \{[\s\S]{0,400}window\.SJBackSync/.test(appSrc)
+  && /else if \(need < backN\) \{[\s\S]{0,120}history\.go\(-d\)/.test(appSrc)
+  && /if \(window\.SJBackSync\) window\.SJBackSync\(\);\s*\}\s*$/m.test(appSrc.slice(appSrc.indexOf('    try { localStorage.removeItem(\'sj_opening_note\')'), appSrc.indexOf('    try { localStorage.removeItem(\'sj_opening_note\')') + 400)));
+ok('样式面板暴露 window 桥，供返回手势先收面板',
+  /window\.SJCloseStyleSheet = closeStyleSheet;/.test(appSrc));
+ok('口令提示条跟随强调色，不再硬编码旧墨绿',
+  /\.pwd-tip \{[^}]*background: var\(--accent\)/.test(styleSrc)
+  && /html\[data-theme="dark"\] \.pwd-tip,[\s\S]{0,180}color: #1c1a17/.test(styleSrc));
+
+console.log('\n换块摘内联字号 / 标题层级（2026-11-25）');
+ok('换标题会清掉块内的内联 font-size，级别才看得出变化',
+  /function dropBlockFontSize\(\) \{/.test(appSrc)
+  && /el\.style\.removeProperty\('font-size'\)/.test(appSrc)
+  && /if \(cmd === 'formatBlock' && \/\^<\(h\[1-6\]\|p\)>\$\/i\.test\(String\(value\)\)\) dropBlockFontSize\(\);/.test(appSrc));
+ok('有选区时按 intersectsNode 找交集的块，引用块不误清',
+  /range\.intersectsNode\(el\)/.test(appSrc)
+  && /cmd === 'formatBlock'[\s\S]{0,120}dropBlockFontSize/.test(appSrc)
+  && /'<blockquote>'/.test(appSrc));
+ok('H5/H6 也有样式，导入的 Markdown 不掉回 0.83em',
+  /\.markdown-body h5 \{ font-size: \.92em; color: var\(--text-3\); \}/.test(styleSrc)
+  && /\.markdown-body h6 \{ font-size: \.9em; color: var\(--text-3\); font-weight: 500; \}/.test(styleSrc)
+  && /BLOCK_TAGS = \/\^\(P\|DIV\|LI\|BLOCKQUOTE\|PRE\|H1\|H2\|H3\|H4\|H5\|H6\)\$\//.test(appSrc));
+
+console.log('两端共享内核（2026-11-26）');
+const cloudMdconv = fs.readFileSync(path.join(CLOUD, 'mdconv.js'), 'utf8');
+ok('页面按 richtext-core → mdconv-core → mdconv.js 的顺序加载',
+  indexSrc.indexOf('/richtext-core.js') > 0
+  && indexSrc.indexOf('/richtext-core.js') < indexSrc.indexOf('/mdconv-core.js')
+  && indexSrc.indexOf('/mdconv-core.js') < indexSrc.indexOf('/mdconv.js')
+  && indexSrc.indexOf('/mdconv.js') < indexSrc.indexOf('/app.js'));
+ok('两个内核都进了离线预缓存清单',
+  /'\/richtext-core\.js'/.test(swSrc) && /'\/mdconv-core\.js'/.test(swSrc));
+ok('云端 mdconv.js 只剩适配层，不再自带一份净化实现',
+  /SJMDConvCore\.create\(/.test(cloudMdconv) && !/function stripDangerous/.test(cloudMdconv));
+ok('云端 app.js 不再内联 turndown 配置',
+  !/new TurndownService\(/.test(appSrc) && /SJRTCore\.createTurndown/.test(appSrc));
+
+console.log('分类自动去重（2026-11-26：全自动，无手动入口）');
+const mobileSrc = fs.readFileSync(path.join(CLOUD, 'mobilesync.js'), 'utf8');
+
+/* 判定逻辑已经收进共享内核 cat-core.js（与桌面端逐字相同），直接 require
+   真跑，而不是从 IIFE 里切字符串。 */
+const cloudCat = require(path.join(CLOUD, 'cat-core.js'));
+const { mergeCats, resolveId, pickDuplicateCatIds, dedupeCats, siblingOf, uniqueName } = cloudCat;
+ok('云端分类内核可独立加载（UMD，Node 与浏览器同一份）', typeof mergeCats === 'function');
+
+/* 复刻 11-22 的真实数据：本地 6 个分类，云端同一个分类躺着三套 id。 */
+const LOCAL_CATS = [
+  { id: 'L1', name: '学习素材', parentId: null, createdAt: 1 },
+  { id: 'L2', name: '前端开发', parentId: 'L1', createdAt: 2 },
+  { id: 'L3', name: '算法与数据结构', parentId: 'L1', createdAt: 3 },
+  { id: 'L4', name: '读书笔记', parentId: null, createdAt: 4 },
+  { id: 'L5', name: '工作记录', parentId: null, createdAt: 5 },
+  { id: 'L6', name: '页面布局', parentId: 'L2', createdAt: 6 },
+];
+const CLOUD_CATS = [
+  { id: 'C1', name: '学习素材', parentId: null, createdAt: 1 },
+  { id: 'C2', name: '前端开发', parentId: 'C1', createdAt: 2 },
+  { id: 'C3', name: '算法与数据结构', parentId: 'C1', createdAt: 3 },
+  { id: 'C4', name: '读书笔记', parentId: null, createdAt: 4 },
+  { id: 'C5', name: '工作记录', parentId: null, createdAt: 5 },
+  { id: 'D1', name: '学习素材', parentId: null, createdAt: 11 },
+  { id: 'D2', name: '前端开发', parentId: 'D1', createdAt: 12 },
+  { id: 'D3', name: '算法与数据结构', parentId: 'D1', createdAt: 13 },
+  { id: 'D4', name: '读书笔记', parentId: null, createdAt: 14 },
+  { id: 'D5', name: '工作记录', parentId: null, createdAt: 15 },
+  { id: 'L6', name: '页面布局', parentId: 'D2', createdAt: 6 },
+];
+const merged = mergeCats(LOCAL_CATS, CLOUD_CATS, []);
+const keptId = (name) => merged.list.filter((c) => c.name === name).map((c) => c.id);
+ok('三套同名分类并成一套（11 条云端 + 本地 → 6 条）',
+  merged.list.length === 6);
+ok('每组同名只剩一条',
+  ['学习素材', '前端开发', '算法与数据结构', '读书笔记', '工作记录', '页面布局']
+    .every((n) => keptId(n).length === 1));
+ok('10 条重复 id 被并掉，重映射指向保留下来的那条',
+  merged.remap.size === 10
+  && resolveId(merged.remap, 'D2') === keptId('前端开发')[0]
+  && resolveId(merged.remap, 'C4') === keptId('读书笔记')[0]);
+const mergedAgain = mergeCats(merged.list, [], []);
+ok('对合并结果再去一次重不会再有变化（幂等）',
+  mergedAgain.list.length === merged.list.length && mergedAgain.remap.size === 0);
+ok('并掉父级后，子分类挂到保留下来的父级上',
+  merged.list.find((c) => c.id === 'L6').parentId === keptId('前端开发')[0]);
+ok('层级树不会因父被并掉而断裂',
+  merged.list.filter((c) => c.parentId && !merged.list.some((x) => x.id === c.parentId)).length === 0);
+
+const remapped = { categoryId: 'D3' };
+remapped.categoryId = resolveId(merged.remap, remapped.categoryId);
+ok('笔记的 categoryId 跟着重映射到保留的分类',
+  remapped.categoryId === keptId('算法与数据结构')[0]);
+ok('重映射能一路走到底（链式 A→B→C），不死循环',
+  resolveId(new Map([['a', 'b'], ['b', 'c']]), 'a') === 'c');
+
+/* 本地库自愈：旧版同步留下的同父同名，在进界面之前就该被合掉，
+   而且保留内容多的那份（笔记跟着走，不丢）。 */
+const DUP_LOCAL = [
+  { id: 'X1', name: '工作记录', parentId: null, createdAt: 1 },
+  { id: 'X2', name: '工作记录', parentId: null, createdAt: 2 },
+  { id: 'X3', name: '  工作记录 ', parentId: null, createdAt: 3 },
+];
+const DUP_NOTES = [{ id: 'n1', categoryId: 'X2' }, { id: 'n2', categoryId: 'X2' }];
+const healed = dedupeCats(DUP_LOCAL, DUP_NOTES);
+const healedNotes = DUP_NOTES.map((n) => Object.assign({}, n));
+cloudCat.remapAll(healed.list, healedNotes, healed.remap);
+ok('本地自愈只留内容最多的一份（同名大小写 / 空格都算同一个）',
+  healed.list.length === 1 && healed.list[0].id === 'X2');
+ok('笔记指向跟着并到保留下来的分类',
+  healedNotes.every((n) => n.categoryId === 'X2'));
+
+ok('建类查重：同父同名判为重复，不同父级不算',
+  !!siblingOf(DUP_LOCAL, '工作记录', null, 'X1')
+  && !siblingOf(DUP_LOCAL, '工作记录', 'someParent', null));
+ok('没填名字时自动取一个没被占用的默认名，不偷偷改用户填的名字',
+  uniqueName([{ id: 'a', name: '未命名类别', parentId: null }], '未命名类别', null) === '未命名类别 2');
+
+
+ok('拉取时分类走共享内核 mergeCats，笔记 categoryId 跟着重映射',
+  /const catMerge = C\.mergeCats\(local\.categories, cloudCats/.test(mobileSrc)
+  && /const nc = C\.resolveId\(catMerge\.remap, n\.categoryId\)/.test(mobileSrc)
+  && !/const finalCats = merge\(local\.categories, cloudCats\)/.test(mobileSrc));
+ok('上传前按同名同父对齐云端 id，不再插新行',
+  /const a = await alignCatsToCloud\(local, owner\)/.test(mobileSrc)
+  && /const target = list\.find\(\(x\) => x\.id === c\.id\) \|\| list\[0\]/.test(mobileSrc)
+  && /idRemap\.set\(c\.id, target\.id\)/.test(mobileSrc));
+ok('上传前先理一遍本机分类，脏行不会再被推上去',
+  /const ded = C\.dedupeCats\(local\.categories, local\.notes\)/.test(mobileSrc)
+  && /C\.remapAll\(local\.categories, local\.notes, ded\.remap\)/.test(mobileSrc));
+ok('本机合并的数量会如实报给用户（不是静默改数据）',
+  mobileSrc.indexOf('把本机 ${localDeduped} 个重复分类并掉') > 0);
+ok('笔记传完之后才清云端重复分类（顺序反了会因引用而删不掉）',
+  (() => {
+    const notesUp = mobileSrc.indexOf('for (const n of local.notes) {');
+    const clean = mobileSrc.indexOf("cleanupDupCats(owner, local.categories)");
+    return notesUp > 0 && clean > notesUp;
+  })());
+ok('拉取后把合并结果回写云端，云端不会下次又长回来',
+  /reconcileCloudCats\(owner, finalCats, catMerge\.remap\)/.test(mobileSrc)
+  && /await restPatch\('sj_notes', q, \{ category_key: target \}\)/.test(mobileSrc));
+ok('清理是直连 DELETE，不是只在前端过滤',
+  /method: 'DELETE'/.test(mobileSrc) && /restDelete\('sj_categories', q\)/.test(mobileSrc));
+ok('删除分类会同步删云端行，并先把云端笔记挪到父级',
+  /window\.SJSync\.catDeleted\(Array\.from\(ids\), cat\.parentId \|\| null\)/.test(appSrc)
+  && /await restPatch\('sj_notes', nq, \{ category_key: parentId \|\| null \}\)/.test(mobileSrc)
+  && /restDelete\('sj_categories', cq\)/.test(mobileSrc));
+ok('离线时删除只影响本机，不抛错挡住操作',
+  /if \(!session \|\| !session\.user\) return 0;/.test(mobileSrc));
+ok('不再有「清理云端重复分类」手动按钮', !/syncFixCat/.test(mobileSrc) && !/doFixCats/.test(mobileSrc));
+ok('分类管理页不再有「合并同名分类」手动入口',
+  !/合并同名分类/.test(appSrc) && !/mgr-merge-dups/.test(appSrc) && !/previewMergeDups/.test(appSrc));
+
+/* 建类 / 改名必须在数据层就拦住重名，不能只靠界面提示。 */
+const cloudLocal = fs.readFileSync(path.join(CLOUD, 'local.js'), 'utf8');
+ok('云端建类走同父同名校验，重名直接报错',
+  /siblingOf\(cats, name, parentId\)/.test(cloudLocal)
+  && /同一级下已有同名类别/.test(cloudLocal));
+ok('云端改名 / 移动按「目标父级 + 最终名字」校验',
+  /const dup = window\.SJCats \? window\.SJCats\.siblingOf\(db\.categories, nextName, targetParent, cat\.id\)/.test(cloudLocal));
+ok('云端启动、整库写入、导入三处都会自动去重',
+  /const dupCat = healCategories\(\)/.test(cloudLocal)
+  && /healCategories\(\);\s*\n\s*db\.notes\.forEach\(indexNote\)/.test(cloudLocal)
+  && /healCategories\(\);\s*\n\s*save\(\);\s*\n\s*return \{ catAdded/.test(cloudLocal));
+ok('云端界面在提交前先判重名，反馈不用等一次请求（重名不关弹窗）',
+  /function dupCatError\(name, parentId, excludeId\)/.test(appSrc)
+  && /validate: \(v\) => dupCatError\(v, parentId, null\)/.test(appSrc)
+  && /validate: \(v\) => dupCatError\(v, cat\.parentId, cat\.id\)/.test(appSrc)
+  && /if \(bad\) \{ toast\(bad\.message \|\| String\(bad\)\)/.test(appSrc));
+ok('分类内核在 local.js 之前加载（启动就要用）',
+  indexSrc.indexOf('src="/cat-core.js') > 0
+  && indexSrc.indexOf('src="/cat-core.js') < indexSrc.indexOf('src="/local.js'));
+ok('分类内核进了离线预缓存清单', /'\/cat-core\.js'/.test(swSrc));
+
+
+/* 真删云端数据前必须验的三件事：只删多余副本、有笔记引用的不碰、
+   父被删时无引用的子分类跟着删（否则子分类变孤儿，界面上直接消失）。 */
+const CLOUD_ROWS = [
+  { id: 'A1', name: '学习素材', parentId: null },
+  { id: 'A2', name: '学习素材', parentId: null },
+  { id: 'A3', name: '学习素材', parentId: null },
+  { id: 'A2a', name: '前端开发', parentId: 'A2' },
+  { id: 'A3a', name: '前端开发', parentId: 'A3' },
+  { id: 'B1', name: '工作记录', parentId: null },
+  { id: 'X1', name: '页面布局', parentId: 'A1' },
+  { id: 'Y1', name: '页面布局', parentId: 'B1' },
+];
+const kill = pickDuplicateCatIds(CLOUD_ROWS, new Set(['A3a']), new Set(['A1']));
+ok('只删同父同名里多出来的副本（A2），保留本地那份与独占分类',
+  kill.length === 2 && kill.indexOf('A2') >= 0 && kill.indexOf('A1') < 0 && kill.indexOf('B1') < 0);
+ok('父被删时无引用的子分类一起删，不留孤儿',
+  kill.indexOf('A2a') >= 0);
+ok('子分支里有笔记引用时，父分类不删（A3 留下来）',
+  kill.indexOf('A3') < 0 && kill.indexOf('A3a') < 0);
+ok('同名但父级不同的分类不算重复，都不动',
+  kill.indexOf('X1') < 0 && kill.indexOf('Y1') < 0);
+
+console.log('\n删除文件夹 / 数据体检 / 自动同步（2026-11-27）');
+const attSrc = fs.readFileSync(path.join(CLOUD, 'attstore.js'), 'utf8');
+
+/* P0：删文件夹只删自身会留下 parentId 悬空的孤儿分类 —— 树上不渲染、
+   刷新后又从数据里冒出来，而它下面的笔记已经进了回收站。 */
+ok('云端删除文件夹时连整棵子树一起删，与桌面端行为一致',
+  /db\.categories = db\.categories\.filter\(\(c\) => !ids\.includes\(c\.id\)\);/.test(localSrc)
+  && localSrc.indexOf('affected.forEach((n) => { n.deletedAt = Date.now(); n.updatedAt = n.deletedAt; });') >= 0);
+ok('「移到父级」策略仍然只删自身（子分类改挂，不能连带删）',
+  /db\.categories\.filter\(\(c\) => c\.parentId === id\)\.forEach\(\(c\) => \(c\.parentId = parentId\)\);/.test(localSrc));
+
+/* 数据体检：悬空引用 / 环 / order / 标签，进库时统一修 */
+ok('云端每次进库都做体检，不只去重',
+  /const st = window\.SJCats\.healIntegrity\(db\.categories, db\.notes\)/.test(localSrc)
+  && /changed \+= st\.orphanCats \+ st\.cycleCats \+ st\.orphanNotes \+ st\.orderFixed \+ st\.tagFixed/.test(localSrc));
+ok('新建分类用「同级最大 order + 1」，删一个再建不会撞号',
+  /order: siblings\.length \? Math\.max\(\.\.\.siblings\.map\(\(c\) => Number\(c\.order\) \|\| 0\)\) \+ 1 : 0/.test(localSrc));
+ok('标签写入口按内核归一（忽略大小写与空白去重、去空、最多 10 个）',
+  /const k = window\.SJCats \? window\.SJCats\.normTag\(t\) : t\.toLowerCase\(\)/.test(appSrc)
+  && /const next = clean\.slice\(0, 10\);/.test(appSrc));
+ok('加标签时先判重，已有同名（大小写 / 空格不同）直接提示',
+  /const dup = tags\.find\(\(t\) => norm\(t\) === norm\(value\)\)/.test(appSrc));
+
+/* 自动同步：本机变更 → 去抖上传；打开 / 回前台 → 拉取 */
+ok('本机落盘后才广播变更（启动自愈不触发自动上传）',
+  /let saveReady = false;/.test(localSrc)
+  && /if \(saveReady\) \{\s*try \{ window\.dispatchEvent\(new Event\('sj-local-saved'\)\); \} catch \(_\) \{\}/.test(localSrc));
+ok('同步层监听本机变更，45 秒去抖后自动上传',
+  /const AUTO_PUSH_DELAY = 45000;/.test(mobileSrc)
+  && /window\.addEventListener\('sj-local-saved', scheduleAutoPush\);/.test(mobileSrc));
+ok('自动上传要求：已登录、开关开、可见、不在编辑、距上次同步 3 分钟以上',
+  /const AUTO_PUSH_GAP = 3 \* 60 \* 1000;/.test(mobileSrc)
+  && /if \(document\.hidden \|\| editingNow\(\)\) return;/.test(mobileSrc)
+  && /Date\.now\(\) - lastSyncAt\(\) < AUTO_PUSH_GAP/.test(mobileSrc));
+ok('回到前台自动拉取，10 分钟内不重复拉',
+  /const AUTO_PULL_GAP = 10 \* 60 \* 1000;/.test(mobileSrc)
+  && /document\.addEventListener\('visibilitychange', \(\) => \{/.test(mobileSrc)
+  && /Date\.now\(\) - lastPullAt\(\) < AUTO_PULL_GAP/.test(mobileSrc));
+ok('自动上传 / 拉取都走静默模式：不动按钮、不弹 toast',
+  /await doPush\(\{ auto: true \}\)/.test(mobileSrc) && /await doPull\(\{ auto: true \}\)/.test(mobileSrc)
+  && /if \(!auto\) \{ cancelAutoClose\(\); lastMsg = ''; lastKind = ''; \}/.test(mobileSrc));
+ok('自动流程遇到冲突整轮放弃，绝不静默替用户挑一边',
+  /if \(conflicts\.length && auto\) \{[\s\S]{0,120}throw new Error/.test(mobileSrc));
+ok('自动同步有开关，默认开启；关闭后不再自动触发',
+  /const AUTO_KEY = 'sj_auto_sync_v1';/.test(mobileSrc)
+  && /localStorage\.getItem\(AUTO_KEY\) !== '0'/.test(mobileSrc)
+  && /if \(!on && autoPushTimer\) \{ clearTimeout\(autoPushTimer\); autoPushTimer = null; \}/.test(mobileSrc));
+ok('同步面板展示自动同步开关与最近一次自动结果（不弹窗打扰）',
+  /id="syncAuto"/.test(mobileSrc) && /class="sync-auto-note"/.test(mobileSrc)
+  && /autoNote = `自动上传完成/.test(mobileSrc));
+
+/* 附件 GC：队列没变，只是不再需要用户点按钮 */
+ok('上传收尾自动清理云端无用附件（失败不影响本轮上传）',
+  /let gcDone = 0;\s*try \{ gcDone = await gcQueued\(owner, true\); \} catch \(_\) \{\}/.test(mobileSrc));
+ok('手动「清理云端无用附件」仍保留，用于失败后重试',
+  /id="syncGc"/.test(mobileSrc) && /async function doGc\(\)/.test(mobileSrc));
+
+/* 同步前快照轮转：只留一份时，连同步两次就把更早那个没问题的版本挤掉了 */
+ok('同步前快照保留最近 3 份并自动轮转',
+  /const SNAP_KEEP = 3;/.test(attSrc)
+  && /const drop = list\.slice\(0, Math\.max\(0, list\.length - SNAP_KEEP\)\);/.test(attSrc));
+ok('恢复入口列出多份快照供选择，而不是只能回到「上一次」',
+  /function getSnaps\(\)/.test(attSrc) && /name="sjSnapPick"/.test(mobileSrc)
+  && /class="sj-snap-list"/.test(mobileSrc));
+ok('快照选择与自动同步样式只增不改旧类名（窄屏不串版）',
+  /\.sync-auto \{/.test(styleSrc) && /\.sj-snap-row \{/.test(styleSrc));
+
+/* 存储写满：以前只弹一句 toast，用户下次打开才发现「少了几篇」 */
+ok('本机存储写满时逐级自动瘦身：裁版本 → 清过期回收站 → 放弃版本历史',
+  /const freedTrash = kept\.length !== db\.notes\.length;/.test(localSrc)
+  && /notes: db\.notes\.map\(stripAtt\), versions: \{\},/.test(localSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

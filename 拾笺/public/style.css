@@ -505,28 +505,42 @@ html[data-theme="dark"] .ico-moon { display: none; }
   font-variant-numeric: tabular-nums;
 }
 
-/* 树底悬停信息条：日期 / 标签贴在侧栏中段底部一行，绝对定位不占布局高度；
-   上方一层渐变把「最后一行被切一半」的断口糊掉，看起来像内容还在继续。 */
+/* 悬停信息浮层：目录里的笔记行只剩标题，悬停时把日期 / 标签补回来。
+   早先是一行贴在侧栏中段底部的渐变条——文字半透明地压在最后几行目录上，
+   跟正文叠在一起读不清（用户 2026-11-23 反馈）。这里改成跟着鼠标那一行走的
+   实心小卡片：不透明底 + 描边 + 阴影，自己就是一块完整的浮层，不再和谁叠。 */
 .tree-meta {
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
+  position: fixed;
+  left: 0; top: 0;
+  z-index: 640;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px 5px;
-  font-size: 11px;
-  line-height: 1.4;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  max-width: min(300px, calc(100vw - 16px));
+  padding: 5px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  font-size: 11.5px;
+  line-height: 1.35;
   color: var(--text-3);
-  background: linear-gradient(to bottom, transparent, var(--bg) 58%);
   opacity: 0;
-  transition: opacity .12s;
+  transform: translateY(-2px);
+  transition: opacity .12s var(--ease), transform .12s var(--ease);
   pointer-events: none;
   white-space: nowrap;
   overflow: hidden;
 }
-.tree-meta.on { opacity: 1; }
+.tree-meta.on { opacity: 1; transform: translateY(0); }
+/* 深色下 --surface(#1b1e20) 与侧栏底 #141618 差得太少，卡片会糊成一片；
+   提一级到 --surface-2，浮层才"浮"得起来。 */
+html[data-theme="dark"] .tree-meta { background: var(--surface-2); }
 .tree-meta-date { flex: none; color: var(--text-2); font-variant-numeric: tabular-nums; }
-.tree-meta-tags { overflow: hidden; text-overflow: ellipsis; }
+.tree-meta-line { display: flex; align-items: center; gap: 7px; max-width: 100%; }
+.tree-meta-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+.tree-meta-tags { overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
 
 .tree-row {
   display: flex;
@@ -1314,6 +1328,91 @@ html[data-theme="dark"] .tb-select {
 .tb-color-dot:hover { transform: scale(1.12); }
 .tb-color-dot.ring { background: transparent; border: 4px solid var(--text); }
 
+/* 文字背景色：方框里的 A，框的底色就是光标处的背景色。
+   和左边「A + 横线」（文字颜色）区分开：一个是字色，一个是底色。 */
+.tb-bg-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  font-weight: 700;
+  font-size: 10.5px;
+  line-height: 1;
+  letter-spacing: -.02em;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.tb-bg-box.has-bg { color: var(--text); }
+/* 背景色的色板用圆角方块，一眼看出是「涂一块底」而不是「改字色」 */
+.tb-color-pop.is-bg .tb-color-dot { border-radius: 5px; }
+/* 「无背景」在这个色板里不能沿用文字色的那个粗黑圈（看着像一块黑底），
+   改成一个画了斜杠的白块：读作「去掉」。 */
+.tb-color-pop.is-bg .tb-color-dot.ring {
+  background-color: var(--surface);
+  background-image: linear-gradient(to bottom right, transparent 43%, #c0392b 43%, #c0392b 57%, transparent 57%);
+  border: 1px solid var(--border);
+}
+
+/* 段落格式下拉（正文 / H1~H5）：按钮上写当前块名，右边一个小三角 */
+.tb-btn.tb-block { gap: 2px; padding: 0 4px 0 6px; }
+/* 对齐 / 缩进：图标 + 小箭头，按钮更紧一些，四个按钮的位置就省下来了 */
+.tb-btn.tb-align, .tb-btn.tb-indent { gap: 3px; padding: 0 4px 0 5px; }
+.tb-align-ico { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; }
+.tb-align-ico svg { width: 15px; height: 15px; }
+/* 小菜单里的图标列：和段落格式下拉那列勾对齐，宽度取同一个 13px 视觉档 */
+.tb-menu-ico { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; color: var(--text-2); }
+.tb-menu-ico svg { width: 16px; height: 16px; }
+.tb-block-item.on .tb-menu-ico { color: var(--accent); }
+.tb-menu-pop { min-width: 112px; }
+.tb-block-label { font-weight: 600; font-size: 12.5px; letter-spacing: -.01em; }
+.tb-caret {
+  width: 0;
+  height: 0;
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+  border-top: 4px solid currentColor;
+  opacity: .55;
+}
+.tb-block-pop {
+  position: fixed;
+  z-index: 90;
+  min-width: 128px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .18);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tb-block-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: background .12s;
+}
+.tb-block-item:hover { background: var(--surface-2); }
+.tb-block-item.on { background: var(--surface-2); }
+.tb-block-chk { flex: none; width: 13px; font-size: 12px; line-height: 1; color: var(--text-2); }
+.tb-block-item.on .tb-block-chk { color: var(--accent); }
+.tb-block-h { font-weight: 700; line-height: 1.25; }
+.tb-block-h1 { font-size: 20px; }
+.tb-block-h2 { font-size: 17px; }
+.tb-block-h3 { font-size: 15px; }
+.tb-block-h4 { font-size: 13.5px; }
+.tb-block-h5 { font-size: 12.5px; }
+.tb-block-sep { height: 1px; margin: 4px 6px; background: var(--border); }
+.tb-block-p .tb-block-h { font-size: 13px; font-weight: 500; }
+
 /* 编辑主体 */
 .editor-body {
   flex: 1;
@@ -1361,7 +1460,9 @@ html[data-theme="dark"] .tb-select {
 .markdown-body h1,
 .markdown-body h2,
 .markdown-body h3,
-.markdown-body h4 {
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
   font-weight: 650;
   line-height: 1.25; /* 标题行高收紧（正文仍 1.5+），建立清晰视觉层级 */
   margin: 1.6em 0 .6em;
@@ -1375,6 +1476,12 @@ html[data-theme="dark"] .tb-select {
 }
 .markdown-body h3 { font-size: 1.12em; }
 .markdown-body h4 { font-size: 1em; color: var(--text-2); }
+/* H5 / H6：2026-11-25 补。段落下拉里早就有 H5 入口，但样式只写到 h4，
+   选了 H5 会掉回浏览器默认（0.83em、上下 1.67em），空白比 H1 还大、
+   颜色也不回灰，夹在正文里像排坏了。补成「比正文小半档 + 更浅的灰」，
+   与 H4 的层级接得上；H6 更弱一档，只在导入的 Markdown 里出现。 */
+.markdown-body h5 { font-size: .92em; color: var(--text-3); }
+.markdown-body h6 { font-size: .9em; color: var(--text-3); font-weight: 500; }
 
 .markdown-body p { margin: 0 0 1em; }
 
@@ -1535,6 +1642,34 @@ html[data-theme="dark"] .tb-select {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   gap: 7px;
+}
+
+/* ---- 附件面板：阅读态可「收成一条窄条」----
+   和手机端同一约定：阅读态点表头 ⌄ 不整块抽走，而是压成一条窄条，
+   箭头翻上来 —— 既腾出正文空间，又留个抓手让人知道附件还在、点一下就展开。
+   编辑态不受影响：那边点了还是整块收起。 */
+body.sj-note-read .attach-panel.is-collapsed {
+  padding: 0;
+  max-height: none;
+  overflow: hidden;
+  cursor: pointer;
+}
+.attach-panel.is-collapsed .attach-head {
+  margin: 0; padding: 0; height: 26px;
+  justify-content: center; align-items: center;
+}
+.attach-panel.is-collapsed .attach-head > span,
+.attach-panel.is-collapsed #attachAddBtn,
+.attach-panel.is-collapsed .attach-list { display: none; }
+/* 窄条整条都是热区，别让人去戳那 26px 里的小图标
+   （.icon-btn.sm 自带 width:26px + flex:none，这里要同时覆盖才铺满整条） */
+.attach-panel.is-collapsed #closeAttachBtn {
+  flex: 1 1 auto; width: 100%; height: 26px; border-radius: 0;
+  color: var(--text-3);
+}
+.attach-panel.is-collapsed #closeAttachBtn .ico {
+  width: 17px; height: 17px;
+  transform: rotate(180deg);   /* ⌄ 翻成 ⌃：向上箭头 = 点一下展开 */
 }
 
 .att {
@@ -2162,7 +2297,9 @@ html[data-theme="dark"] .sj-tip {
   .print-area .markdown-body h1,
   .print-area .markdown-body h2,
   .print-area .markdown-body h3,
-  .print-area .markdown-body h4 {
+  .print-area .markdown-body h4,
+  .print-area .markdown-body h5,
+  .print-area .markdown-body h6 {
     font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
     color: #111;
     page-break-after: avoid;
@@ -2385,6 +2522,18 @@ html[data-theme="dark"] .sj-tip {
 .sync-sub { font-size: 12px; color: var(--text-3); margin-bottom: 12px; line-height: 1.6; }
 .sync-info { font-size: 12.5px; color: var(--text-2); margin-bottom: 12px; line-height: 1.7; }
 .sync-info b { color: var(--text); }
+/* 自动拉取：开关与最近一次结果，结果只在这里显示、不弹 toast */
+.sync-auto {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--text-2); line-height: 1.5;
+  margin: 0 0 12px; cursor: pointer;
+}
+.sync-auto input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); }
+.sync-auto-note {
+  font-size: 11.5px; color: var(--text-3); line-height: 1.6;
+  margin: -4px 0 12px; padding: 6px 10px;
+  background: var(--surface-2, rgba(0, 0, 0, 0.03)); border-radius: 8px;
+}
 .sync-panel .auth-row { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 0; }
 .sync-panel .auth-label { display: block; font-size: 12.5px; color: var(--text-2); margin: 8px 0 4px; }
 .sync-panel .auth-input {
@@ -2479,6 +2628,151 @@ img.sj-img-picked {
   .img-sizer button { padding: 4px 8px; }
 }
 
+/* ============================================================ 图片裁剪 */
+body.crop-open { overflow: hidden; }
+.crop-ui {
+  position: fixed; inset: 0; z-index: 9100;
+  display: grid; place-items: center;
+  padding: 16px;
+}
+.crop-ui.hidden { display: none; }
+.crop-mask { position: absolute; inset: 0; background: rgba(18, 18, 17, .62); }
+.crop-dialog {
+  position: relative;
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: var(--surface, #fffefc);
+  border: 1px solid var(--border, #e2dfd6);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg, 0 24px 60px -18px rgba(34, 32, 28, .28));
+  font-size: 13px;
+  color: var(--text, #22201c);
+}
+.crop-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  font-size: 14px; font-weight: 600;
+  border-bottom: 1px solid var(--border, #e2dfd6);
+}
+.crop-head .crop-x {
+  border: 0; background: transparent; cursor: pointer;
+  font-size: 20px; line-height: 1; padding: 0 4px;
+  color: var(--text-3, #9c968a);
+}
+.crop-head .crop-x:hover { color: var(--text, #22201c); }
+.crop-stage {
+  display: table;
+  position: relative;
+  margin: 14px auto;
+  overflow: hidden;
+  line-height: 0;
+  background: #000;
+  max-width: 100%;
+  touch-action: none;
+}
+.crop-img {
+  display: block;
+  max-width: min(680px, calc(100vw - 64px));
+  max-height: min(58vh, 520px);
+  width: auto; height: auto;
+  user-select: none; -webkit-user-select: none;
+  pointer-events: none;
+}
+.crop-sel {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, .95);
+  box-shadow: 0 0 0 9999px rgba(18, 18, 17, .58);
+  cursor: move;
+  touch-action: none;
+}
+.crop-third {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(255, 255, 255, .38);
+}
+.crop-third-v { top: 0; bottom: 0; width: 1px; }
+.crop-third-h { left: 0; right: 0; height: 1px; }
+.crop-h {
+  position: absolute;
+  width: 12px; height: 12px;
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid var(--accent, #2f6f5e);
+  border-radius: 2px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+}
+.crop-h[data-h="nw"] { left: 0; top: 0; transform: translate(-50%, -50%); cursor: nwse-resize; }
+.crop-h[data-h="n"]  { left: 50%; top: 0; transform: translate(-50%, -50%); cursor: ns-resize; }
+.crop-h[data-h="ne"] { right: 0; top: 0; transform: translate(50%, -50%); cursor: nesw-resize; }
+.crop-h[data-h="e"]  { right: 0; top: 50%; transform: translate(50%, -50%); cursor: ew-resize; }
+.crop-h[data-h="se"] { right: 0; bottom: 0; transform: translate(50%, 50%); cursor: nwse-resize; }
+.crop-h[data-h="s"]  { left: 50%; bottom: 0; transform: translate(-50%, 50%); cursor: ns-resize; }
+.crop-h[data-h="sw"] { left: 0; bottom: 0; transform: translate(-50%, 50%); cursor: nesw-resize; }
+.crop-h[data-h="w"]  { left: 0; top: 50%; transform: translate(-50%, -50%); cursor: ew-resize; }
+.crop-bar {
+  display: flex; align-items: center; gap: 5px;
+  padding: 10px 16px 4px;
+  flex-wrap: wrap;
+}
+.crop-ratios { display: flex; gap: 5px; flex-wrap: wrap; }
+.crop-bar button {
+  border: 1px solid var(--border, #e2dfd6);
+  background: var(--surface, #fffefc);
+  color: var(--text, #22201c);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font: inherit; font-size: 12px;
+  cursor: pointer;
+  transition: background .15s var(--ease), border-color .15s var(--ease);
+}
+.crop-bar button:hover {
+  background: var(--accent-soft, rgba(47, 111, 94, .10));
+  border-color: var(--accent-line, rgba(47, 111, 94, .28));
+}
+.crop-bar button.on {
+  background: var(--accent, #2f6f5e);
+  border-color: var(--accent, #2f6f5e);
+  color: #fff;
+}
+.crop-size {
+  margin-left: auto;
+  color: var(--text-3, #9c968a);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+.crop-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 8px 16px 14px;
+}
+.crop-foot button {
+  border: 1px solid var(--border, #e2dfd6);
+  background: var(--surface, #fffefc);
+  color: var(--text, #22201c);
+  border-radius: 8px;
+  padding: 6px 16px;
+  font: inherit; font-size: 13px;
+  cursor: pointer;
+}
+.crop-foot button:hover { background: var(--accent-soft, rgba(47, 111, 94, .10)); }
+.crop-foot button.primary {
+  background: var(--accent, #2f6f5e);
+  border-color: var(--accent, #2f6f5e);
+  color: #fff;
+}
+.crop-foot button.primary:hover { filter: brightness(1.06); }
+
+@media (max-width: 520px) {
+  .crop-ui { padding: 10px; }
+  .crop-dialog { width: calc(100vw - 20px); max-height: calc(100vh - 20px); border-radius: 12px; }
+  .crop-head { padding: 10px 12px; }
+  .crop-img { max-width: calc(100vw - 44px); max-height: 52vh; }
+  .crop-stage { margin: 10px auto; }
+  .crop-bar { padding: 8px 12px 2px; }
+  .crop-foot { padding: 6px 12px 12px; }
+  .crop-h { width: 16px; height: 16px; }
+}
 /* ============================================================ 标签管理 */
 .tag-head-right { display: flex; align-items: center; gap: 3px; }
 .tag-manage {
@@ -2864,6 +3158,40 @@ body.sj-note-read .sj-read-hero {
   max-width: 760px;
   margin: 0 auto;
 }
+/* 双栏收起：编辑区整块让出来了，列宽上限跟着放宽一档 —— 否则腾出的宽度全变成
+   两侧留白（1530px 窗口、双栏收起时阅读态左右各 385px），正文孤零零悬在中间，
+   顶部工具条又是通栏的，边界对不齐更显空。只放宽上限、仍然居中，行宽不散。
+   窄屏（≤980px）不参与：那时侧栏是抽屉，收起类不代表「让出了宽度」。 */
+@media (min-width: 981px) {
+  /* 编辑态收成一条文档列：正文、标题行、meta、标签、工具条共用同一个列宽
+     （--doc-col）并一起居中。原先只有正文居中、上面几行通栏，窗口一宽就并排
+     出现两三条不同的左边线（窗口左缘一条、正文一条），看着像没对齐。 */
+  body.sj-note-edit { --doc-col: 880px; }
+  /* 侧栏收起后编辑区整块让出来，列宽跟着放宽一档，否则腾出的宽度全变两侧留白 */
+  body.sj-note-edit.nav-sb-collapse { --doc-col: 980px; }
+
+  body.sj-note-edit .rich-pane { max-width: var(--doc-col); }
+
+  body.sj-note-edit .editor-head,
+  body.sj-note-edit .meta-row,
+  body.sj-note-edit .tag-row,
+  body.sj-note-edit .toolbar {
+    width: 100%;
+    max-width: var(--doc-col);
+    margin-left: auto;
+    margin-right: auto;
+  }
+  /* 让这几行的文字左界与正文的 32px 内边距对齐：工具条原来 28、标题行右边 22 */
+  body.sj-note-edit .toolbar { padding-left: 32px; padding-right: 32px; }
+  body.sj-note-edit .editor-head { padding-right: 32px; }
+  /* 收进 880 宽后工具条差十几像素，最后一颗「清除格式」会被挤到第二行。
+     把按钮间距和分隔线留白各收 1~2px（肉眼看不出），整条就回到一行。 */
+  body.sj-note-edit .toolbar { column-gap: 1px; }
+  body.sj-note-edit .tb-sep { margin: 0 3px; }
+
+  body.nav-sb-collapse.sj-note-read .rich-pane,
+  body.nav-sb-collapse.sj-note-read .sj-read-hero { max-width: 860px; }
+}
 
 /* 阅读态的大标题 */
 .sj-read-hero { display: none; }
@@ -2927,6 +3255,9 @@ body.sj-note-edit .sj-edit-acts { display: flex; }
   cursor: pointer;
 }
 .sj-ea-btn:hover { background: var(--surface-2); }
+/* 没有可撤销/重做步骤时置灰禁用，不再给出可点的视觉暗示 */
+.sj-ea-btn:disabled { opacity: .32; color: var(--text-3, var(--text)); cursor: default; }
+.sj-ea-btn:disabled:hover, .sj-ea-btn:disabled:active { background: transparent; }
 .sj-ea-btn .ico { width: 19px; height: 19px; }
 .sj-ea-btn.sj-ea-done { color: var(--accent); }
 .sj-ea-btn.sj-ea-done .ico { stroke-width: 2.4; }

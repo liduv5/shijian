@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-22-164';
+  var SWV = '2026-11-27-178';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -84,11 +84,118 @@
       navigator.serviceWorker.addEventListener('controllerchange', verGuard);
     } catch (_) {}
   }
+  /* ---------------------------------------------------------- 发现新版本按钮
+     上面的自动守卫要「重新打开页面 + 旧 SW 已接管」两个条件同时成立才生效；
+     手机常驻后台、HTML 走网络而脚本走旧缓存时可能都碰不上，于是「改了没反应」
+     完全无从察知。这里做三层探测，任一命中就在顶部放一个不挡事的提示：
+       ① 页面是新的，但 app.js 还是旧构建（HTML 与脚本各缓存一份，最常见）
+       ② 接管页面的 Service Worker 仍停在旧版本
+       ③ 服务器上的 sw.js 版本已领先本页（常驻后台不关页也会发现）
+     点「点此更新」才清缓存重开 —— 由用户决定时机，不打断正在写的东西。
+     所有样式内联，不依赖可能被缓存的 style.css；每次会话每个版本只提示一次。 */
+  var UPDATE_SEEN = 'sj_update_seen_';
+  var updateShown = false;
+  function showUpdateTip() {
+    if (updateShown || document.getElementById('sjUpdateTip')) return;
+    try { if (sessionStorage.getItem(UPDATE_SEEN + SWV) === '1') return; } catch (_) {}
+    if (document.readyState === 'loading' || !document.body) {
+      document.addEventListener('DOMContentLoaded', function () { showUpdateTip(); }, false);
+      return;
+    }
+    updateShown = true;
+    try { sessionStorage.setItem(UPDATE_SEEN + SWV, '1'); } catch (_) {}
+    var box = document.createElement('div');
+    box.id = 'sjUpdateTip';
+    box.setAttribute('role', 'status');
+    box.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:99998;'
+      + 'display:flex;align-items:center;gap:10px;max-width:calc(100% - 24px);'
+      /* 兜底 UI 不能依赖 style.css（要覆盖的场景之一就是 CSS 挂了），但也不该
+         写死旧墨绿：界面在宽屏是石墨灰 #43403a、窄屏是华为蓝 #0a59f7，墨绿只在
+         两者之间的灰色地带出现，于是这个按钮看着像上一代遗留。这里统一用中性
+         石墨灰 —— 深色底 + 白字，浅色/深色主题下都清晰，也不会跟任何主题打架。 */
+      + 'padding:9px 10px 9px 14px;border-radius:14px;background:#43403a;color:#fff;'
+      + 'box-shadow:0 6px 24px rgba(0,0,0,.22);'
+      + 'font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif';
+    box.innerHTML = '<span style="white-space:nowrap">发现新版本</span>'
+      + '<button id="sjUpdateGo" style="border:0;border-radius:9px;background:#fff;color:#43403a;'
+      + 'padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer">点此更新</button>'
+      + '<button id="sjUpdateNo" aria-label="稍后再说" style="border:0;background:transparent;color:#fff;'
+      + 'font-size:18px;line-height:1;padding:2px 4px;cursor:pointer">×</button>';
+    document.body.appendChild(box);
+    var no = document.getElementById('sjUpdateNo');
+    if (no) no.onclick = function () {
+      if (box.parentNode) box.parentNode.removeChild(box);
+    };
+    var go = document.getElementById('sjUpdateGo');
+    if (go) go.onclick = function () {
+      go.disabled = true;
+      go.textContent = '正在更新…';
+      try { if (window.SJSaveNow) window.SJSaveNow(); } catch (_) {}
+      var done = false;
+      var finish = function () {
+        if (done) return;
+        done = true;
+        var t = new URL(location.href);
+        t.searchParams.set('sjup', String(Date.now()));
+        location.replace(t.toString());
+      };
+      /* 老内核的 Promise 链可能一直挂着；4 秒兜底硬刷，保证一定能离开旧页面。 */
+      setTimeout(finish, 4000);
+      if (!('serviceWorker' in navigator)) { finish(); return; }
+      Promise.resolve()
+        .then(function () { return navigator.serviceWorker.getRegistrations(); })
+        .then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })
+        .catch(function () {})
+        .then(function () { return window.caches ? caches.keys() : []; })
+        .then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); })
+        .catch(function () {})
+        .then(finish, finish);
+    };
+  }
+  function checkUpdate() {
+    /* ① HTML 是新版、脚本还是旧版 */
+    try {
+      var appB = window.__SJ_APP_BUILD__;
+      if (appB && appB !== SWV) { showUpdateTip(); return; }
+    } catch (_) {}
+    /* ② 接管页面的 SW 仍是旧版 */
+    try {
+      var c = ('serviceWorker' in navigator) ? navigator.serviceWorker.controller : null;
+      if (c) {
+        var have = new URL(c.scriptURL).searchParams.get('v') || '';
+        if (have && have !== SWV) { showUpdateTip(); return; }
+      }
+    } catch (_) {}
+    /* ③ 服务器上已发了更新的版本；sw.js 本身不在 SW 资源白名单里，
+       这里再带唯一时间戳 + no-store，绕开浏览器与 CDN 的旧副本。 */
+    try {
+      var probe = '/sw.js?sharecode=' + encodeURIComponent(SC) + '&t=' + Date.now();
+      fetch(probe, { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.text() : ''; })
+        .then(function (txt) {
+          var m = /const\s+VERSION\s*=\s*'sj-([^']+)'/.exec(txt || '');
+          /* 只有服务器版本「领先」才提示：CDN 万一吐出旧副本，不能反过来误报。
+             版本号固定 YYYY-MM-DD-NNN，字典序即时间序。 */
+          if (m && m[1] > SWV) showUpdateTip();
+        })
+        .catch(function () {});
+    } catch (_) {}
+  }
+  /* 启动即查；app.js 的构建号是异步写入的，load 后再查一次；
+     切回前台与每 60 秒各查一次，覆盖「应用一直挂在后台」的场景。 */
+  checkUpdate();
+  try {
+    window.addEventListener('load', checkUpdate);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') checkUpdate();
+    }, false);
+    setInterval(checkUpdate, 60000);
+  } catch (_) {}
   function showFail() {
     if (document.getElementById('sjBootFail')) return;
     var d = document.createElement('div');
     d.id = 'sjBootFail';
-    d.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#f5f6fa;color:#1f2329;'
+    d.style.cssText = 'position:fixed;inset:0;z-index:99999;background:var(--bg, #f4f3ef);color:#1f2329;'
       + 'font:15px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;'
       + 'display:flex;align-items:center;justify-content:center;padding:24px';
     d.innerHTML = '<div style="max-width:340px;background:#fff;border-radius:16px;padding:32px 26px;'
@@ -96,8 +203,8 @@
       + '<div style="font-size:19px;font-weight:600;margin-bottom:10px">拾笺没能加载完</div>'
       + '<div style="font-size:13px;color:#4e5969;margin-bottom:20px">可能是网络不稳，或访问链接不完整。'
       + '点下面的按钮用完整链接重新打开。</div>'
-      + '<button id="sjBootRetry" style="width:100%;padding:12px;border:0;border-radius:10px;'
-      + 'background:#2f6f5e;color:#fff;font-size:15px">重新打开拾笺</button></div>';
+      + '<button id="sjBootRetry" style="width:100%;padding:12px;border:1px solid #cfe0fb;border-radius:10px;'
+      + 'background:#e3eeff;color:#0b57d0;font-size:15px;font-weight:600">重新打开拾笺</button></div>';
     document.body.appendChild(d);
     var btn = document.getElementById('sjBootRetry');
     if (btn) btn.onclick = function () {
@@ -115,14 +222,25 @@
         clearInterval(timer);
         return;
       }
-      if (tries === 6 && !reloaded) {
+      /* 脚本明确报错（403 / 断网，<script onerror> 会置位）就别再等，立刻给出口；
+         单纯「还没下载完」不置位，也就不至于把慢网误判成故障。 */
+      if (window.__SJ_LOAD_ERR && !panel) {
+        clearInterval(timer);
+        showFail();
+        panel = document.getElementById('sjBootFail');
+        return;
+      }
+      /* 自愈重载从 6 秒放宽到 10 秒、失败页从 8 秒放宽到 18 秒：点「点此更新」
+         清完缓存后首屏要把 app.js/local.js/mobilesync.js 全部重新拉一遍，
+         原来的 8 秒在移动网络下经常还没下完，反而弹出「没能加载完」。 */
+      if (tries === 10 && !reloaded) {
         try { sessionStorage.setItem('sj_boot_reload', '1'); } catch (_) {}
         clearInterval(timer);
         location.reload();
         return;
       }
-      if (tries >= 8 && !panel) { showFail(); panel = document.getElementById('sjBootFail'); }
-      if (tries >= 30) clearInterval(timer);
+      if (tries >= 18 && !panel) { showFail(); panel = document.getElementById('sjBootFail'); }
+      if (tries >= 45) clearInterval(timer);
     }, 1000);
   }
   if (document.readyState === 'complete') watch();
@@ -358,10 +476,10 @@
           <svg viewBox="0 0 24 24" class="ico"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
         <div class="sj-nh-acts">
-          <button type="button" class="sj-nh-btn" data-act="nh-undo" aria-label="撤销">
+          <button type="button" class="sj-nh-btn" data-act="nh-undo" aria-label="撤销" disabled>
             <svg viewBox="0 0 24 24" class="ico"><path d="M9 7L4 12l5 5"/><path d="M4 12h9a5 5 0 0 1 0 10h-2"/></svg>
           </button>
-          <button type="button" class="sj-nh-btn" data-act="nh-redo" aria-label="重做">
+          <button type="button" class="sj-nh-btn" data-act="nh-redo" aria-label="重做" disabled>
             <svg viewBox="0 0 24 24" class="ico"><path d="M15 7l5 5-5 5"/><path d="M20 12h-9a5 5 0 0 0 0 10h2"/></svg>
           </button>
           <button type="button" class="sj-nh-btn sj-nh-done" data-act="nh-done" aria-label="完成编辑">
@@ -478,7 +596,7 @@
          每个图标都对应现有能力（格式条 / 插图 / 附件 / 收藏 / 移动分类），不新增数据链路。 -->
     <div class="sj-edit-bar hidden" id="sjEditBar">
       <button type="button" data-act="fmt" aria-label="格式工具">
-        <svg viewBox="0 0 24 24" class="ico"><path d="M4 19L9.5 5h1.6L16.6 19"/><path d="M6.6 14.2h7.4"/></svg>
+        <svg viewBox="0 0 24 24" class="ico ico-format-text"><path d="M3.2 15.8L7.4 5.2l4.2 10.6"/><path d="M4.8 12.4h5.2"/><path d="M14 7h6.6"/><path d="M14 11h6.6"/><path d="M14 15h4.4"/><path d="M3 20h17.6"/></svg>
       </button>
       <button type="button" data-act="img" aria-label="插入图片">
         <svg viewBox="0 0 24 24" class="ico"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.4"/><path d="M4 17l5-5 4 4 3-3 4 4"/></svg>
@@ -753,18 +871,25 @@
 <script src="/vendor/turndown.js?sharecode=X4WPKTHLIN"></script>
 <script src="/vendor/turndown-plugin-gfm.js?sharecode=X4WPKTHLIN"></script>
 <script src="/vendor/highlight.min.js?sharecode=X4WPKTHLIN"></script>
+<!-- 共享内核（与桌面端同一份文件，md5 校验）：turndown 配置 / md→rich。
+     顺序：richtext-core 要在 app.js 前，mdconv-core 要在 mdconv.js 前。 -->
+<script src="/richtext-core.js?sharecode=X4WPKTHLIN" onerror="window.__SJ_LOAD_ERR=1"></script>
+<script src="/mdconv-core.js?sharecode=X4WPKTHLIN" onerror="window.__SJ_LOAD_ERR=1"></script>
 <script src="/mdconv.js?sharecode=X4WPKTHLIN"></script>
+<!-- 分类身份 / 去重内核（与桌面端同一份文件，md5 校验）。
+     local.js 启动时就要用它清理重复分类，必须排在 local.js 之前。 -->
+<script src="/cat-core.js?sharecode=X4WPKTHLIN" onerror="window.__SJ_LOAD_ERR=1"></script>
 <script src="/export.js?sharecode=X4WPKTHLIN"></script>
 <script src="/attstore.js?sharecode=X4WPKTHLIN"></script>
-<script src="/local.js?sharecode=X4WPKTHLIN"></script>
-<script src="/mobilesync.js?sharecode=X4WPKTHLIN"></script>
+<script src="/local.js?sharecode=X4WPKTHLIN" onerror="window.__SJ_LOAD_ERR=1"></script>
+<script src="/mobilesync.js?sharecode=X4WPKTHLIN" onerror="window.__SJ_LOAD_ERR=1"></script>
 <!-- ============ v1.8.0 增强模块（全文检索 / 反向链接 / 版本对比 / 冲突 / 加密） ============ -->
 <script src="/fts.js?sharecode=X4WPKTHLIN"></script>
 <script src="/backlinks.js?sharecode=X4WPKTHLIN"></script>
 <script src="/diffview.js?sharecode=X4WPKTHLIN"></script>
 <script src="/conflict.js?sharecode=X4WPKTHLIN"></script>
 <script src="/e2ee.js?sharecode=X4WPKTHLIN"></script>
-<script src="/app.js?sharecode=X4WPKTHLIN"></script>
+<script src="/app.js?sharecode=X4WPKTHLIN" onerror="window.__SJ_LOAD_ERR=1"></script>
 <script src="/sjplus.js?sharecode=X4WPKTHLIN"></script>
 <script src="/pwa.js?sharecode=X4WPKTHLIN"></script>
 </body>

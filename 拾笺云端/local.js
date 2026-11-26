@@ -18,6 +18,27 @@
   /* ---------------------------------------------------------- 内存库 */
   let db = { categories: [], notes: [], versions: {} };
 
+  /* 分类自愈：同父同名只留一份，笔记与子分类跟着改指向。
+     与桌面 server.js 的 healCategories 是同一套判定（SJCats 内核）。
+     启动、导入、同步落地后都会跑，用户不需要任何「去重」入口。 */
+  function healCategories() {
+    if (!window.SJCats) return 0;
+    let changed = 0;
+    const r = window.SJCats.dedupeCats(db.categories, db.notes);
+    if (r.remap.size) {
+      db.categories = r.list;
+      window.SJCats.remapAll(db.categories, db.notes, r.remap);
+      changed += r.remap.size;
+    }
+    /* 去重之后再做一次体检：删文件夹留下的悬空父级、同步带来的悬空
+       categoryId、撞号的 order、写法不一的标签，都在这里理顺。
+       手机上没有控制台可看，脏数据只会以「笔记不见了」的形式出现，
+       所以每次进库都体检一次，比事后排查便宜得多。 */
+    const st = window.SJCats.healIntegrity(db.categories, db.notes);
+    changed += st.orphanCats + st.cycleCats + st.orphanNotes + st.orderFixed + st.tagFixed;
+    return changed;
+  }
+
   function load() {
     try {
       const raw = localStorage.getItem(LS_KEY);
@@ -41,12 +62,16 @@
         n.format = 'rich'; healed++;
       }
     });
-    if (healed) save();
+    /* 旧版同步留下的重复分类，在进界面之前就理干净。 */
+    const dupCat = healCategories();
+    if (healed || dupCat) save();
     purgeExpiredTrash();
     /* 标记「本分区跑过主程序」。quick.html 靠它区分「sj_mobile_v1 就是
        主库」与「旧版独立速记图标遗留的库」：前者绝不能当待迁移速记
        灌进链接参数，后者仍要能带回。清站点数据后下次启动自动重建。 */
     try { localStorage.setItem('sj_main_lib', '1'); } catch (_) {}
+    /* 从这里开始，save() 才算「用户改了东西」，可以通知自动同步。 */
+    saveReady = true;
   }
 
   /* 二进制进 IndexedDB，localStorage 只留附件元信息：
@@ -87,6 +112,10 @@
     return out;
   }
 
+  /* load 完成前不广播变更：启动时的自愈 / 迁移也会 save()，
+     但那时还没有「用户改了什么」，广播出去会让自动同步刚开机就推一次全量。 */
+  let saveReady = false;
+
   function save() {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify({
@@ -110,9 +139,31 @@
         else if (window.toast) window.toast('本地空间紧张，已清理较早的历史版本');
       } catch (e2) {
         console.error('再次保存失败', e2);
-        if (typeof toast === 'function') toast('本地存储空间不足，部分内容可能未保存');
-        else if (window.toast) window.toast('本地存储空间不足，部分内容可能未保存');
+        /* 还写不下：回收站里超过 30 天的笔记本来就该清了，先清它；
+           再不行就连历史版本一起放弃 —— 正文永远比历史重要。
+           以前到这一步就只剩一句 toast，用户下次打开发现「少了几篇」。 */
+        try {
+          const cut = Date.now() - TRASH_TTL;
+          const kept = db.notes.filter((n) => !(n.deletedAt && Number(n.deletedAt) < cut));
+          const freedTrash = kept.length !== db.notes.length;
+          if (freedTrash) db.notes = kept;
+          localStorage.setItem(LS_KEY, JSON.stringify({
+            categories: db.categories, notes: db.notes.map(stripAtt), versions: {},
+          }));
+          const tip = freedTrash ? '本地空间不足，已清理回收站过期笔记与历史版本' : '本地空间紧张，已清理历史版本';
+          if (typeof toast === 'function') toast(tip);
+          else if (window.toast) window.toast(tip);
+        } catch (e3) {
+          console.error('第三次保存失败', e3);
+          if (typeof toast === 'function') toast('本地存储空间不足，部分内容可能未保存');
+          else if (window.toast) window.toast('本地存储空间不足，部分内容可能未保存');
+        }
       }
+    }
+    /* 通知同步层：本机数据变了。自动上传靠这个事件去抖，
+       不需要轮询整库比对。 */
+    if (saveReady) {
+      try { window.dispatchEvent(new Event('sj-local-saved')); } catch (_) {}
     }
   }
   /* 回收站：软删除的笔记 30 天后真删，别让 localStorage 无限膨胀。 */
@@ -446,14 +497,24 @@
 
       if (method === 'POST' && !id) {
         const cats = db.categories;
-        if (body.parentId && !cats.some((c) => c.id === body.parentId)) throw new Error('父类别不存在');
-        const siblings = cats.filter((c) => c.parentId === (body.parentId || null));
+        const parentId = body.parentId || null;
+        if (parentId && !cats.some((c) => c.id === parentId)) throw new Error('父类别不存在');
+        /* 没填名字时取一个没被占用的默认名；用户自己填的重名直接报错。 */
+        const raw = window.SJCats ? window.SJCats.cleanName(body.name) : String(body.name || '').trim();
+        const name = raw || (window.SJCats
+          ? window.SJCats.uniqueName(cats, '未命名类别', parentId)
+          : '未命名类别');
+        const dup = window.SJCats ? window.SJCats.siblingOf(cats, name, parentId) : null;
+        if (dup) throw new Error(`同一级下已有同名类别「${dup.name}」，换个名字吧`);
+        const siblings = cats.filter((c) => c.parentId === parentId);
         const cat = {
           id: uid(),
-          name: String(body.name || '').trim() || '未命名类别',
-          parentId: body.parentId || null,
+          name,
+          parentId,
           expanded: true,
-          order: siblings.length,
+          /* 用「同级最大 order + 1」而不是「同级数量」：删掉一个再建，
+             数量会撞上已有 order，拖动排序的结果就取决于数组顺序。 */
+          order: siblings.length ? Math.max(...siblings.map((c) => Number(c.order) || 0)) + 1 : 0,
           createdAt: Date.now(),
         };
         db.categories.push(cat);
@@ -468,20 +529,30 @@
       if (method === 'PATCH' && id) {
         const cat = db.categories.find((c) => c.id === id);
         if (!cat) throw new Error('类别不存在');
-        if (typeof body.name === 'string' && body.name.trim()) cat.name = body.name.trim();
-        if (typeof body.expanded === 'boolean') cat.expanded = body.expanded;
-        if (typeof body.order === 'number') cat.order = body.order;
-        /* 分类颜色：0-7 调色板索引，null 表示跟随按序默认色。 */
-        if (body.color === null) delete cat.color;
-        else if (Number.isInteger(body.color) && body.color >= 0 && body.color <= 7) cat.color = body.color;
+        /* 先定目标父级，再按「目标位置 + 最终名字」查重：改名与移动
+           同时发生时只看当前父级会漏判。 */
+        let targetParent = cat.parentId || null;
         if (body.parentId !== undefined) {
           if (body.parentId && !db.categories.some((c) => c.id === body.parentId)) throw new Error('目标类别不存在');
           if (body.parentId === id) throw new Error('不能移动到自身');
           if (body.parentId && descendants(db.categories, id).includes(body.parentId)) {
             throw new Error('不能移动到自己的子类别下');
           }
-          cat.parentId = body.parentId || null;
+          targetParent = body.parentId || null;
         }
+        const cleaned = typeof body.name === 'string'
+          ? (window.SJCats ? window.SJCats.cleanName(body.name) : body.name.trim())
+          : '';
+        const nextName = cleaned || cat.name;
+        const dup = window.SJCats ? window.SJCats.siblingOf(db.categories, nextName, targetParent, cat.id) : null;
+        if (dup) throw new Error(`目标位置已有同名类别「${dup.name}」，换个名字吧`);
+        cat.name = nextName;
+        cat.parentId = targetParent;
+        if (typeof body.expanded === 'boolean') cat.expanded = body.expanded;
+        if (typeof body.order === 'number') cat.order = body.order;
+        /* 分类颜色：0-7 调色板索引，null 表示跟随按序默认色。 */
+        if (body.color === null) delete cat.color;
+        else if (Number.isInteger(body.color) && body.color >= 0 && body.color <= 7) cat.color = body.color;
         save();
         return clone(cat);
       }
@@ -498,8 +569,12 @@
           db.categories.filter((c) => c.parentId === id).forEach((c) => (c.parentId = parentId));
           db.categories = db.categories.filter((c) => c.id !== id);
         } else {
+          /* 删文件夹要连整棵子树一起删。只删自身会留下 parentId 指向
+             已消失父级的孤儿分类：树上不渲染（看着像删干净了），刷新后
+             又从数据里冒出来，而它下面的笔记已经进了回收站 —— 用户视角
+             就是「笔记莫名消失」。桌面端一直用 ids 删，这里补齐同款。 */
           affected.forEach((n) => { n.deletedAt = Date.now(); n.updatedAt = n.deletedAt; });
-          db.categories = db.categories.filter((c) => c.id !== id);
+          db.categories = db.categories.filter((c) => !ids.includes(c.id));
         }
         save();
         return { ok: true };
@@ -709,6 +784,8 @@
         }));
         noteIds.add(n.id); noteAdded++;
       }
+      /* 备份里自带同父同名的旧数据，导入后统一理一次。 */
+      healCategories();
       save();
       return { catAdded, noteAdded, skipped, lostFiles: 0 };
     }
@@ -727,6 +804,9 @@
     db.categories = Array.isArray(data.categories) ? clone(data.categories) : [];
     db.notes = Array.isArray(data.notes) ? clone(data.notes) : [];
     db.versions = (data.versions && typeof data.versions === 'object') ? clone(data.versions) : {};
+    /* 整库写入是外部数据进本机的唯一大门（同步落地、恢复快照、导入），
+       在这里再去一次重，等于给所有入口上了同一道保险。 */
+    healCategories();
     db.notes.forEach(indexNote);
     /* 二进制已经交给附件仓（indexNote 里 stash 了），内存里不必再留一份：
        十来张手机照片就是几十上百 MB，手机上很容易被系统回收掉整个页面。

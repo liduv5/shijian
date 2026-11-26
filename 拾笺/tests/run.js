@@ -6,6 +6,7 @@
    跑法：node 拾笺/tests/run.js */
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const ROOT = path.join(__dirname, '..', 'public');
 const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
@@ -89,10 +90,9 @@ ok('面板专用的选区暂存已下线（工具条常驻不抢焦点）',
 ok('工具条渲染函数仍在', /function renderToolbar\(/.test(js));
 ok('工具条只有一套（不再按格式分叉）', !/if \(viewFormat === 'md'\)/.test(js));
 ok('工具条有下划线', /btn\(I\.underline, '下划线'/.test(js));
-ok('工具条有三档对齐（左/中/右）',
-  /btn\(I\.alignLeft, '左对齐', \(\) => cssCmd\('justifyLeft'\)\)/.test(js)
-  && /btn\(I\.alignCenter, '居中', \(\) => cssCmd\('justifyCenter'\)\)/.test(js)
-  && /btn\(I\.alignRight, '右对齐', \(\) => cssCmd\('justifyRight'\)\)/.test(js));
+ok('对齐收成一个下拉（左/右/居中/两端），按钮挂 tb-align',
+  /tbAlignBtn = btn\([\s\S]{0,200}'对齐方式', \(\) => toggleAlignPop\(tbAlignBtn\), 'tb-align'/.test(js)
+  && /'justifyFull'/.test(js));
 ok('工具条能插入表格', /btn\(I\.table, '插入表格', insertRichTable\)/.test(js));
 ok('对齐类命令用 styleWithCSS=true（否则净化会把样式抹掉）',
   /function cssCmd\([\s\S]{0,300}styleWithCSS', false, true/.test(js));
@@ -116,7 +116,8 @@ ok('颜色横线读的是光标前一个字符的颜色（不是上次用过的�
   && /function paintColorMark\(\)[\s\S]{0,320}caretTextColor\(\)/.test(js)
   && !/lastTextColor/.test(js));
 ok('光标一动颜色横线就跟着刷（和字体/字号下拉同一趟）',
-  /function syncFontPickers\(\) \{[\s\S]{0,240}?paintColorMark\(\);/.test(js));
+  /function syncFontPickers\(\) \{[\s\S]{0,200}?syncUI\(\);/.test(js)
+  && /function syncUI\(\) \{[\s\S]{0,200}?paintColorMark\(\);/.test(js));
 ok('光标同步不吊死在 rAF 上（后台标签页一帧都不给也有 setTimeout 兜底）',
   /fontPickTimer = setTimeout\(run, 32\)/.test(js)
   && /cancelAnimationFrame\(fontPickTick\)/.test(js));
@@ -183,8 +184,8 @@ ok('行距是像素下拉，档位按正文基准字号生成',
   /const LH_PX = lhSteps\(\);/.test(js)
   && /function lhSteps\(\) \{[\s\S]{0,200}v \+= 2/.test(js)
   && /function clampLh\(v\)/.test(js)
-  && /state\.richLh = clampLh\(state\.richLh\);/.test(js)
-  && /state\.richLh = px;/.test(js)
+  && /setState\(\{ richLh: clampLh\(state\.richLh\) \}\);/.test(js)
+  && /setState\(\{ richLh: px \}\);/.test(js)
   && !/LH_STEPS/.test(js) && !/LH_LABELS/.test(js));
 ok('行距写进 CSS 变量时带 px，老倍数自动换算成像素',
   /setProperty\('--sj-rich-lh', state\.richLh \+ 'px'\)/.test(js)
@@ -252,7 +253,7 @@ ok('阅读态分类不回手型、不给 ▾',
 
 /* ---------- 6. 数据格式没被动过（回归保护） ---------- */
 console.log('\n数据格式与保存链路未受影响');
-ok('富文本仍存 innerHTML', /note\.content = \$\('#richPane'\)\.innerHTML;/.test(js));
+ok('富文本仍存 innerHTML', /const html = \$\('#richPane'\)\.innerHTML;[\s\S]{0,80}note\.content = html;/.test(js));
 ok('存储层单一化：正文恒为富文本，无 md 渲染分支',
   /function noteHtml\(/.test(js)
   && /DOMPurify\.sanitize\(note\.content \? String\(note\.content\) : ''\)/.test(js)
@@ -270,7 +271,7 @@ console.log('\n编辑面收敛（Markdown / 富文本双模式已下线）');
 ok('Markdown 源码框已从 DOM 移除', !/id="mdPane"/.test(html) && !/id="mdInput"/.test(html));
 ok('编辑面只有 richPane 一个', !/id="mdPane"/.test(html) && !/id="previewPane"/.test(html)
   && /id="richPane"/.test(html) && !/\$\('#mdPane'\)/.test(js));
-ok('Markdown 笔记一被编辑即升级为富文本', /note\.content = \$\('#richPane'\)\.innerHTML;[\s\S]{0,80}note\.format = 'rich';/.test(js));
+ok('Markdown 笔记一被编辑即升级为富文本', /note\.content = html;[\s\S]{0,80}note\.format = 'rich';/.test(js));
 ok('新建笔记默认富文本', /categoryId: target, title: '', content: '', format: 'rich'/.test(js));
 ok('旧的 textarea 事件已摘掉', !/addEventListener\('input', onMdInput\)/.test(js)
   && !/function onMdInput\(/.test(js));
@@ -278,13 +279,19 @@ ok('旧的格式切换函数已摘掉', !/function switchFormat\(/.test(js));
 ok('md 专属的插入助手已摘掉', !/function prefixLine\(/.test(js) && !/function wrapSel\(/.test(js));
 ok('富文本补上了表格插入', /function insertRichTable\(/.test(js));
 ok('正文只经富文本容器写回', !/note\.content = \$\('#mdInput'\)\.value;/.test(js)
-  && /note\.content = \$\('#richPane'\)\.innerHTML;/.test(js));
+  && /const html = \$\('#richPane'\)\.innerHTML;/.test(js));
 
 /* ---------- 7. 与手机端同源的视觉约定 ---------- */
 console.log('\n与手机端一致的约定');
 ok('编辑态有撤销 / 重做（与手机端同一套）', /id="sjUndoBtn"/.test(html) && /id="sjRedoBtn"/.test(html));
-ok('撤销用 execCommand undo', /execCommand\('undo'\)/.test(js));
-ok('重做用 execCommand redo', /execCommand\('redo'\)/.test(js));
+ok('撤销走自建 HTML 快照栈，无可撤销时置灰禁用',
+  /richUndo\(\)/.test(js) && /b\.disabled = !canU/.test(js)
+  && /id="sjUndoBtn"[^>]*\sdisabled/.test(html)
+  && /\.sj-ea-btn:disabled\s*\{[^}]*opacity:\s*\.32/.test(css));
+ok('重做走自建 HTML 快照栈，无可重做时置灰禁用',
+  /richRedo\(\)/.test(js) && /b\.disabled = !canR/.test(js)
+  && /id="sjRedoBtn"[^>]*\sdisabled/.test(html)
+  && /\.sj-ea-btn:disabled:hover[^{]*\{[^}]*transparent/.test(css));
 ok('常驻工具条样式在（横排、可换行、有最小高度）',
   /\.toolbar \{[\s\S]{0,300}display: flex;[\s\S]{0,300}flex-wrap: wrap;/.test(css));
 
@@ -307,13 +314,20 @@ ok('保存状态的小圆点仍是中性色（没被染成金）',
 console.log('\n存储层收敛为单一富文本');
 const serverJs = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const mdconvJs = fs.readFileSync(path.join(__dirname, '..', 'lib', 'mdconv.js'), 'utf8');
+/* 转换与净化逻辑已搬到两端共用的内核里，lib/mdconv.js 只是 Node 侧适配层。
+   这里读内核，同时校验它和云端那份逐字相同。 */
+const mdconvCore = read('mdconv-core.js');
+const rtCore = read('richtext-core.js');
 ok('客户端不再有 format 分支',
   !/format === 'rich'/.test(js) && !/format === 'md'/.test(js)
   && !/format !== 'rich'/.test(js) && !/format !== 'md'/.test(js));
 ok('viewFormat 状态变量已删除', !/viewFormat/.test(js));
 ok('格式嗅探函数已删除', !/looksRichContent/.test(js));
 ok('服务端有 md→rich 转换层', /require\('.\/lib\/mdconv\.js'\)/.test(serverJs)
-  && /function mdToRich\(/.test(mdconvJs) && /function toRichHtml\(/.test(mdconvJs));
+  && /function mdToRich\(/.test(mdconvCore) && /function toRichHtml\(/.test(mdconvCore));
+ok('适配层只做装配，不再自带一份转换逻辑',
+  /require\('\.\.\/public\/mdconv-core\.js'\)/.test(mdconvJs)
+  && !/function stripDangerous/.test(mdconvJs));
 ok('服务端写入路径一律转成富文本',
   /content: toRichHtml\(\{ content: body\.content/.test(serverJs)
   && /note\.content = toRichHtml\(\{ content: body\.content/.test(serverJs)
@@ -324,8 +338,8 @@ ok('服务端种子笔记已是富文本',
   /content: mdToRich\(welcome\), format: 'rich'/.test(serverJs)
   && /content: mdToRich\(codeNote\), format: 'rich'/.test(serverJs));
 ok('服务端转换层拦住了危险协议',
-  /isDangerousUrl/.test(mdconvJs) && /javascript:/.test(mdconvJs)
-  && /DANGEROUS_ATTR/.test(mdconvJs));
+  /isDangerousUrl/.test(mdconvCore) && /javascript:/.test(mdconvCore)
+  && /DANGEROUS_ATTR/.test(mdconvCore));
 ok('客户端保留 Markdown 出口：源码查看', /function showMarkdownSource\(/.test(js)
   && /td\.turndown/.test(js));
 ok('客户端保留 Markdown 出口：导出 .md', /NoteExport\.toMarkdown/.test(js));
@@ -347,7 +361,7 @@ ok('Aa 浮层只有字号、行距两行滑杆 + 恢复默认',
   /id="readAaFs"/.test(html) && /id="readAaLh"/.test(html) && /id="readAaReset"/.test(html)
   && /function aaSync\(\)/.test(js) && /function aaToggle\(\)/.test(js));
 ok('Aa 只改显示偏好：写 --sj-rich-fs、存本机、不标脏',
-  /state\.richFs = clampFs\(AA_FS\.value\)/.test(js)
+  /setState\(\{ richFs: clampFs\(AA_FS\.value\) \}\)/.test(js)
   && /setProperty\('--sj-rich-fs', state\.richFs \+ 'px'\)/.test(js)
   && /localStorage\.setItem\('sj_rich_fs'/.test(js)
   && !/state\.richFs[\s\S]{0,120}markDirty\(\)/.test(js));
@@ -401,6 +415,334 @@ ok('分类名旁的小三角改成 12px SVG 箭头（原来是 9px 的 ▾ 字�
   && !/\.meta-caret \{ font-style: normal; font-size: 9px/.test(css));
 ok('侧栏分类树的展开箭头放大到 13px',
   /\.caret svg \{ width: 13px; height: 13px; \}/.test(css));
+
+ok('收起侧栏/列表用面板图标，与编辑器返回箭头区分（2026-11-23）',
+  /function svgCollapse\(\)/.test(js)
+  && /<rect x="3\.5" y="4\.5"/.test(js)
+  && !/svgChevron/.test(js)
+  && /sbBtn\.innerHTML = svgCollapse\(\)/.test(js)
+  && /listBtn\.innerHTML = svgCollapse\(\)/.test(js)
+  && /id="editorBack"[\s\S]{0,220}M20 12H5[\s\S]{0,80}M11 6l-6 6 6 6/.test(html));
+
+console.log('\n附件面板三态折叠（电脑端，与手机端一致 2026-11-23）');
+ok('附件面板三态（open / collapsed / hidden）有统一读写函数',
+  /function attachStateOf\(\) \{/.test(js) && /function setAttachState\(state\) \{/.test(js)
+  && /function attachHasAny\(\) \{/.test(js));
+ok('阅读态点 ⌄ 压成窄条、箭头翻上来；编辑态仍是整块收起',
+  /noteMode === 'read'[\s\S]{0,160}classList\.toggle\('is-collapsed'\)/.test(js)
+  && /body\.sj-note-read \.attach-panel\.is-collapsed \{/.test(css)
+  && /\.attach-panel\.is-collapsed #closeAttachBtn \.ico \{[\s\S]{0,120}rotate\(180deg\)/.test(css));
+ok('窄条整条是抓手（按钮铺满 + 点面板也能展开）',
+  /#closeAttachBtn \{\s+(?:flex: 1 1 auto; )?width: 100%; height: 26px/.test(css)
+  && /\$\('#attachPanel'\)\.addEventListener\('click'/.test(js));
+ok('换笔记重置为摊开、上传附件后展开、切形态同步附件态',
+  /setAttachState\(note\.attachments && note\.attachments\.length \? 'open' : 'hidden'\)/.test(js)
+  && /setAttachState\('open'\);[\s\S]{0,60}toast\(`已添加/.test(js)
+  && /if \(edit\) \{[\s\S]{0,160}attachStateOf\(\) === 'collapsed'[\s\S]{0,120}setAttachState\(attachHasAny\(\)/.test(js));
+
+
+console.log('\n目录悬停信息改成跟随行的浮层（2026-11-23）');
+ok('浮层是不透明卡片，不再用底部渐变条压在目录文字上',
+  /\.tree-meta \{[\s\S]{0,120}position: fixed/.test(css)
+  && /\.tree-meta \{[\s\S]{0,600}background: var\(--surface\)/.test(css)
+  && !/\.tree-meta \{[\s\S]{0,300}linear-gradient\(to bottom, transparent/.test(css));
+ok('浮层贴着被悬停那一行定位，并夹在目录滚动区内',
+  /const r = row\.getBoundingClientRect\(\);/.test(js)
+  && /meta\.offsetWidth/.test(js)
+  && /r\.top - h - 5/.test(js)
+  && /c\.right - w - 8/.test(js));
+ok('扫过目录不闪卡片，也不再叠一层原生 title',
+  /setTimeout\(\(\) => showTreeMeta\(row\), 120\)/.test(js)
+  && !/row\.title = n\.title/.test(js)
+  && /tree-meta-title/.test(js));
+
+/* ---------- 4d. 段落格式合并 + 文字背景色（2026-11-25） ---------- */
+console.log('\n段落格式下拉与文字背景色');
+ok('H1/H2/H3/正文 不再各占一个按钮，合成一个下拉',
+  !/'<span class="tb-text">H1<\/span>'/.test(js)
+  && /'<span class="tb-block-label">正文<\/span><span class="tb-caret"><\/span>'/.test(js)
+  && /function toggleBlockPop\(/.test(js));
+ok('菜单里有 H1~H5 和正文，并且只标当前那一条',
+  /const BLOCK_OPTS = \[\['h1', 'H1'\], \['h2', 'H2'\], \['h3', 'H3'\], \['h4', 'H4'\], \['h5', 'H5'\], \['p', '正文'\]\]/.test(js)
+  && /tb-block-chk/.test(js)
+  && /function blockTagAtCaret\(/.test(js));
+ok('按钮上写的是光标所在的块名，光标一动就跟着换',
+  /function paintBlockLabel\(\)[\s\S]{0,320}blockTagAtCaret\(\)/.test(js)
+  && /function syncUI\(\) \{[\s\S]{0,200}?paintBlockLabel\(\);/.test(js));
+ok('换块后光标落到新块末尾（旧节点换掉后 caretToBlockEnd 会空转）',
+  /function applyBlockTag\([\s\S]{0,700}const now = window\.getSelection\(\);[\s\S]{0,260}caretToBlockEnd\(closestBlock\(r\.startContainer\)\)/.test(js));
+ok('有文字背景色按钮，走 hiliteColor（styleWithCSS=true）',
+  /'文字背景色', \(\) => toggleColorPop\(bgBtn, 'bg'\)/.test(js)
+  && /execCommand\('hiliteColor', false, color\)/.test(js)
+  && /function applyBgColor\(/.test(js));
+ok('背景色是半透明调子（深色主题下不会浅底浅字）',
+  /const BG_COLORS = \[/.test(js) && /rgba\(209,59,50,\.20\)/.test(js)
+  && !/const BG_COLORS = \[[\s\S]{0,400}#f/i.test(js));
+ok('「无背景」是抹掉内联 background，不是盖一块白底',
+  /stripCharStyles\(range, \['background-color', 'background'\]\)/.test(js));
+ok('方框里的 A 回显光标处的背景色',
+  /function paintBgMark\(\)[\s\S]{0,300}caretBgColor\(\)/.test(js)
+  && /function syncUI\(\) \{[\s\S]{0,200}?paintBgMark\(\);/.test(js));
+ok('色板和段落菜单都不吃点击焦点（mousedown 被拦）',
+  /function toggleBlockPop\([\s\S]{0,900}pop\.addEventListener\('mousedown', \(e\) => e\.preventDefault\(\)\)/.test(js)
+  && /\.tb-block-pop \{[\s\S]{0,60}position: fixed/.test(css));
+
+console.log('行内代码（2026-11-25）');
+ok('工具栏有独立的「行内代码」按钮，图标与代码块不重样',
+  /const inlineCodeBtn = btn\(I\.codeInline, '行内代码 \(Ctrl\+E\)', toggleInlineCode/.test(js)
+  && /codeInline: '<svg viewBox="0 0 24 24" class="ico"><rect/.test(js)
+  && /code: '<svg viewBox="0 0 24 24" class="ico"><path d="M9 8l-4 4 4 4M15 8l4 4-4 4"\/><\/svg>'/.test(js));
+ok('按文本节点逐个包 code，不用 surroundContents 硬套整段',
+  /function wrapInlineCode\([\s\S]{0,900}r\.extractContents\(\)/.test(js)
+  && !/\.surroundContents\(/.test(js)
+  && /if \(t === range\.startContainer\) r\.setStart\(t, range\.startOffset\)/.test(js));
+ok('光标已在行内代码里再按一次就脱掉（不是又包一层）',
+  /function toggleInlineCode\(\)[\s\S]{0,600}const code = inlineCodeAt\(range\.startContainer\)/.test(js)
+  && /unwrapInlineCode\(code\)/.test(js)
+  && /function unwrapInlineCode\([\s\S]{0,320}parent\.replaceChild\(frag, code\)/.test(js));
+ok('代码块里的 code 不算行内代码（不参与切换）',
+  /function inlineCodeAt\([\s\S]{0,300}el\.closest\('pre'\) \? null : el/.test(js));
+ok('没选中时插一对占位并全选，可直接打字替换',
+  /fresh\.textContent = '代码'[\s\S]{0,260}r\.selectNodeContents\(fresh\)/.test(js));
+ok('Ctrl / ⌘ + E 是行内代码快捷键，只在编辑态接管',
+  /if \(mod && e\.key\.toLowerCase\(\) === 'e' && !e\.shiftKey\)[\s\S]{0,220}toggleInlineCode\(\)/.test(js));
+ok('光标在行内代码里按钮亮着',
+  /function paintInlineCodeMark\(\)[\s\S]{0,320}\[data-act="inline-code"\]/.test(js)
+  && /function syncUI\(\) \{[\s\S]{0,200}?paintInlineCodeMark\(\);/.test(js));
+
+console.log('标题层级（2026-11-25）');
+ok('H5/H6 有自己的样式，不会掉回浏览器默认的 0.83em / 1.67em',
+  /\.markdown-body h5 \{ font-size: \.92em; color: var\(--text-3\); \}/.test(css)
+  && /\.markdown-body h6 \{ font-size: \.9em; color: var\(--text-3\); font-weight: 500; \}/.test(css));
+ok('H1~H6 共用同一套行高与上下留白',
+  /\.markdown-body h1,\s*\.markdown-body h2,\s*\.markdown-body h3,\s*\.markdown-body h4,\s*\.markdown-body h5,\s*\.markdown-body h6 \{[\s\S]{0,260}margin: 1\.6em 0 \.6em/.test(css));
+ok('打印样式跟着覆盖到 H5/H6',
+  /\.print-area \.markdown-body h4,\s*\.print-area \.markdown-body h5,\s*\.print-area \.markdown-body h6 \{/.test(css));
+
+console.log('换块时摘掉内联字号（2026-11-25）');
+ok('换标题会清掉块内的内联 font-size，级别才看得出变化',
+  /function dropBlockFontSize\(range\) \{/.test(js)
+  && /el\.style\.removeProperty\('font-size'\)/.test(js)
+  && /el\.removeAttribute\('style'\);/.test(js));
+ok('formatBlock 之后立刻清，清理范围跟着当前选区',
+  /document\.execCommand\('formatBlock', false, '<' \+ tag \+ '>'\);[\s\S]{0,420}dropBlockFontSize\(r\);/.test(js)
+  && /range\.intersectsNode\(el\)/.test(js));
+
+console.log('收起侧栏后放宽正文列宽（2026-11-25）');
+ok('编辑列宽走 --doc-col：展开 880、收起 980，只在 ≥981px 生效',
+  /@media \(min-width: 981px\) \{[\s\S]{0,600}body\.sj-note-edit \{ --doc-col: 880px; \}[\s\S]{0,200}body\.sj-note-edit\.nav-sb-collapse \{ --doc-col: 980px; \}/.test(css));
+ok('标题行/meta/标签/工具条与正文同列同宽，不再各有各的左边界',
+  /body\.sj-note-edit \.editor-head,\s*body\.sj-note-edit \.meta-row,\s*body\.sj-note-edit \.tag-row,\s*body\.sj-note-edit \.toolbar \{[\s\S]{0,200}max-width: var\(--doc-col\)/.test(css)
+  && /body\.sj-note-edit \.rich-pane \{ max-width: var\(--doc-col\); \}/.test(css));
+ok('工具条与标题行补到 32px 内边距，文字左界跟正文齐；间距收紧避免折行',
+  /body\.sj-note-edit \.toolbar \{ padding-left: 32px; padding-right: 32px; \}/.test(css)
+  && /body\.sj-note-edit \.editor-head \{ padding-right: 32px; \}/.test(css)
+  && /body\.sj-note-edit \.toolbar \{ column-gap: 1px; \}/.test(css)
+  && /body\.sj-note-edit \.tb-sep \{ margin: 0 3px; \}/.test(css));
+ok('阅读收起后正文与大标题一起放到 860',
+  /body\.nav-sb-collapse\.sj-note-read \.rich-pane,\s*body\.nav-sb-collapse\.sj-note-read \.sj-read-hero \{ max-width: 860px; \}/.test(css));
+ok('没收起时仍是原来的 760 / 880，默认视图不受影响',
+  /body\.sj-note-read \.rich-pane \{\s*overflow: visible;\s*max-width: 760px;/.test(css)
+  && /^\.rich-pane \{[\s\S]{0,120}max-width: 880px;/m.test(css));
+
+console.log('对齐合并 + 缩进（2026-11-25）');
+ok('三个平铺的对齐按钮已收成一个下拉',
+  !/btn\(I\.alignLeft, '左对齐'/.test(js)
+  && !/btn\(I\.alignCenter, '居中'/.test(js)
+  && !/btn\(I\.alignRight, '右对齐'/.test(js));
+ok('下拉里有左/右/居中/两端四种，两端走 justifyFull',
+  /const ALIGN_OPTS = \[[\s\S]{0,320}'justifyFull'/.test(js)
+  && /'左对齐', 'justifyLeft'/.test(js) && /'右对齐', 'justifyRight'/.test(js) && /'居中', 'justifyCenter'/.test(js));
+ok('按钮图标跟着光标所在块的对齐方式换',
+  /function paintAlignIcon\(\)/.test(js) && /paintAlignIcon\(\);/.test(js)
+  && /function alignAtCaret\(\)/.test(js) && /getComputedStyle\(blk\)\.textAlign/.test(js));
+ok('缩进是块级 margin-left，不用 execCommand(indent)，免得变成引用',
+  /function stepIndent\(dir\)/.test(js) && /el\.style\.marginLeft = \(lv \* INDENT_STEP_EM\) \+ 'em'/.test(js)
+  && !/execCommand\('indent', false/.test(js));
+ok('缩进有上下限，不会一路缩到底',
+  /INDENT_STEP_EM = 2/.test(js) && /INDENT_MAX_EM = 8/.test(js)
+  && /Math\.min\(INDENT_MAX_EM \/ INDENT_STEP_EM, lv\)/.test(js));
+ok('选中多段时每段都缩，嵌套块不叠加两份',
+  /function blocksForRange\(range\)/.test(js) && /el\.contains\(o\)/.test(js));
+ok('缩进改完主动走一遍 onRichInput，否则不标脏、自动保存不跑',
+  /if \(blocks\.length\) onRichInput\(\);/.test(js));
+
+console.log('首次启动的欢迎笔记（2026-11-25）');
+const serverSrc = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+const welcomeSrc = (serverSrc.match(/const welcome = `([\s\S]*?)`;\n/) || [])[1] || '';
+ok('欢迎笔记还在种子里，且没被拆成多段', welcomeSrc.length > 400);
+ok('不再写「三个区域 / 底部工具条」那套老布局',
+  !/三个区域/.test(welcomeSrc) && !/底部工具条/.test(welcomeSrc));
+ok('改成现在的两栏：左边导航 + 右边正文',
+  /## 界面就两块/.test(welcomeSrc) && /左边导航/.test(welcomeSrc) && /右边正文/.test(welcomeSrc));
+ok('带上侧栏收起 / 展开导航', /收起侧栏/.test(welcomeSrc) && /展开导航/.test(welcomeSrc));
+ok('带上标题级别下拉与行内代码 Ctrl+E',
+  /H1~H5/.test(welcomeSrc) && /Ctrl\+E/.test(welcomeSrc));
+ok('带上同步到云端与手机端', /同步到云端/.test(welcomeSrc) && /拾笺云端/.test(welcomeSrc));
+
+console.log('两端共享内核（2026-11-26）');
+/* 真源在桌面 public/，同步脚本推到云端；这里用 md5 卡住漂移。
+   以前 mdconv 两边各抄一份，已经漂成 44/84 行相同。 */
+const CLOUD_DIR = path.join(__dirname, '..', '..', '拾笺云端');
+const md5 = (p) => crypto.createHash('md5').update(fs.readFileSync(p)).digest('hex');
+for (const f of ['mdconv-core.js', 'richtext-core.js', 'cat-core.js']) {
+  const a = path.join(ROOT, f);
+  const b = path.join(CLOUD_DIR, f);
+  ok('共享内核两端逐字相同：' + f,
+    fs.existsSync(a) && fs.existsSync(b) && md5(a) === md5(b));
+}
+ok('桌面页面在内核之后才加载 app.js',
+  html.indexOf('/richtext-core.js') > 0
+  && html.indexOf('/richtext-core.js') < html.indexOf('/app.js'));
+ok('app.js 不再内联一份 turndown 配置',
+  !/new TurndownService\(/.test(js) && /SJRTCore\.createTurndown/.test(js));
+ok('内核支持 Node 与浏览器两种加载方式',
+  /module\.exports = factory\(\)/.test(rtCore) && /root\.SJRTCore = factory\(\)/.test(rtCore)
+  && /root\.SJMDConvCore = factory\(\)/.test(mdconvCore)
+  && /root\.SJCats = factory\(\)/.test(read('cat-core.js')));
+
+console.log('分类自动去重（2026-11-26）');
+/* 重复分类的根治：建类时就不许重名 + 启动 / 导入 / 同步时自动合并。
+   判定逻辑在 public/cat-core.js（与云端逐字相同），这里直接 require 真跑。 */
+const SJCats = require('../public/cat-core.js');
+
+const dupCats = [
+  { id: 'a', name: '工作记录', parentId: null, createdAt: 1 },
+  { id: 'b', name: ' 工作记录 ', parentId: null, createdAt: 2 },
+  { id: 'c', name: '工作记录', parentId: 'p1', createdAt: 3 },
+];
+ok('同一父级下同名（空格 / 大小写不敏感）判为重复，不同父级不算',
+  !!SJCats.siblingOf(dupCats, '工作记录', null, 'a')
+  && !SJCats.siblingOf(dupCats, '工作记录', 'p1', 'c'));
+ok('没填名字时自动取没被占用的默认名，不偷偷改用户填的名字',
+  SJCats.uniqueName([{ id: 'x', name: '未命名类别', parentId: null }], '未命名类别', null) === '未命名类别 2');
+
+const dupNotes = [{ id: 'n1', categoryId: 'a' }, { id: 'n2', categoryId: 'a' }];
+const healed = SJCats.dedupeCats(dupCats.filter((c) => c.parentId === null), dupNotes);
+const healedNotes = dupNotes.map((n) => Object.assign({}, n));
+SJCats.remapAll(healed.list, healedNotes, healed.remap);
+ok('本地自愈只留内容最多的一份，笔记跟着改指向',
+  healed.list.length === 1 && healed.list[0].id === 'a'
+  && healedNotes.every((n) => n.categoryId === 'a'));
+
+ok('服务端启动时自愈一次，库里的旧重复不会露到界面上',
+  /function healCategories\(\)/.test(serverSrc) && /if \(healCategories\(\)\) persistNow\(\);/.test(serverSrc));
+ok('建类接口拒绝同级重名（返回 409，不是静默改名）',
+  /const dup = SJCats\.siblingOf\(db\.categories, name, parentId\)/.test(serverSrc)
+  && /sendError\(res, 409, `同一级下已有同名类别/.test(serverSrc));
+ok('改名 / 移动接口按「目标父级 + 最终名字」判重',
+  /let targetParent = cat\.parentId \|\| null;/.test(serverSrc)
+  && /SJCats\.siblingOf\(db\.categories, nextName, targetParent, cat\.id\)/.test(serverSrc));
+ok('导入备份后也去一次重（备份里可能自带同名）',
+  /const catFixed = healCategories\(\);/.test(serverSrc));
+ok('界面提交前先判重名，反馈不用等一次请求（重名不关弹窗）',
+  /function dupCatError\(name, parentId, excludeId\)/.test(js)
+  && /validate: \(v\) => dupCatError\(v, parentId, null\)/.test(js)
+  && /validate: \(v\) => dupCatError\(v, cat\.parentId, cat\.id\)/.test(js)
+  && /if \(bad\) \{ toast\(bad\.message \|\| String\(bad\)\)/.test(js));
+ok('分类内核在 app.js 之前加载',
+  html.indexOf('src="/cat-core.js"') > 0
+  && html.indexOf('src="/cat-core.js"') < html.indexOf('src="/app.js"'));
+
+
+console.log('状态与刷新收口（2026-11-26）');
+/* 以前 state 有 50 处直接赋值、工具条高亮有 8 处零散调用，
+   「缩进改完没标脏」「换了块对齐图标不动」都是这么来的。 */
+const stateAssign = (js.match(/(?:^|[^.\w])state\.[a-zA-Z]+\s*=(?!=)[^\n;]*/gm) || [])
+  .filter((s) => !/!!on/.test(s));
+ok('state 只有一个赋值入口：全文件没有裸赋值（helper 内部除外）',
+  stateAssign.length === 0 && /function setState\(patch\)/.test(js));
+ok('setState 返回真正变化的字段，便于调用方决定要不要重绘',
+  /if \(state\[k\] !== patch\[k\]\) changed\.push\(k\)/.test(js));
+ok('dirty 开关收进 setDirty，业务 markDirty 仍是那套快照判定',
+  /function setDirty\(on = true\)/.test(js) && /function markDirty\(\)/.test(js)
+  && /if \(snapshot\(note\) === savedSnapshot\)/.test(js));
+ok('工具条高亮有唯一刷新入口 syncUI',
+  /function syncUI\(\) \{[\s\S]{0,220}paintInlineCodeMark\(\);/.test(js));
+for (const fn of ['paintColorMark', 'paintBgMark', 'paintBlockLabel', 'paintAlignIcon', 'paintInlineCodeMark']) {
+  const hits = js.split(fn + '();').length - 1;
+  ok('只有 syncUI 调用 ' + fn + '（其余调用点都已合并）', hits === 1);
+}
+
+console.log('数据体检、自动维护与自动同步（2026-11-27）');
+/* 删文件夹留下悬空父级、同步只留 id 留下悬空分类、order 撞号、标签大小写
+   重复 —— 这些以前都要等用户发现「笔记不见了」才暴露。现在统一在进库时修。 */
+
+/* 内核是真跑一遍，不是只匹配源码文字：这里判断错会动到用户数据。 */
+const hCats = [
+  { id: 'r', name: '根', parentId: null, order: 7 },
+  { id: 'o', name: '父已删', parentId: 'gone', order: 0 },
+  { id: 'k1', name: '子甲', parentId: 'r', order: 3 },
+  { id: 'k2', name: '子乙', parentId: 'r', order: 3 },
+  { id: 'cy1', name: '环一', parentId: 'cy2', order: 0 },
+  { id: 'cy2', name: '环二', parentId: 'cy1', order: 0 },
+];
+const hNotes = [
+  { id: 'hn1', categoryId: 'gone', tags: ['工作', '工作 ', 'Work'] },
+  { id: 'hn2', tags: ['work', ''] },
+];
+const hStat = SJCats.healIntegrity(hCats, hNotes);
+ok('悬空的父级提升为根，而不是删掉分类（删了会连带丢笔记）',
+  hStat.orphanCats === 1 && hCats.find((c) => c.id === 'o').parentId === null);
+ok('分类成环时断开一处（断一个环就没了），树渲染不会无限递归',
+  hStat.cycleCats === 1 && hCats.find((c) => c.id === 'cy1').parentId === null
+  && hCats.find((c) => c.id === 'cy2').parentId === 'cy1');
+ok('挂在已删分类上的笔记归到未分类',
+  hStat.orphanNotes === 1 && hNotes[0].categoryId === null);
+ok('同一父级下 order 重排成 0..n-1，不再撞号',
+  hStat.orderFixed > 0
+  && hCats.filter((c) => c.parentId === 'r').map((c) => c.order).sort().join(',') === '0,1');
+ok('标签按「忽略大小写与空白」归一：篇内去重、去空、跨篇统一写法',
+  hNotes[0].tags.length === 2 && hNotes[0].tags[0] === '工作'
+  && hNotes[1].tags.length === 1 && hNotes[1].tags[0] === hNotes[0].tags[1]);
+const hAgain = SJCats.healIntegrity(hCats, hNotes);
+ok('体检是幂等的：再跑一次没有任何改动',
+  hAgain.orphanCats === 0 && hAgain.cycleCats === 0 && hAgain.orphanNotes === 0
+  && hAgain.orderFixed === 0 && hAgain.tagFixed === 0);
+ok('服务端启动 / 导入都走同一套体检（去重 + 体检合并在 healCategories 里）',
+  /const st = SJCats\.healIntegrity\(db\.categories, db\.notes\)/.test(serverSrc)
+  && /changed \+= st\.orphanCats \+ st\.cycleCats \+ st\.orphanNotes \+ st\.orderFixed \+ st\.tagFixed/.test(serverSrc));
+
+/* 维护不再只挂在启动上：开机自启的机器可能连跑几周 */
+ok('常驻进程每 6 小时跑一次维护（回收站 / 孤儿附件 / 备份裁剪 / 当日备份）',
+  /const MAINT_MS = 6 \* 3600 \* 1000/.test(serverSrc)
+  && /setInterval\(runMaintenance, MAINT_MS\)\.unref\(\)/.test(serverSrc)
+  && /try \{ cleanOrphanFiles\(\); \} catch \(_\) \{\}/.test(serverSrc)
+  && /try \{ autoBackup\(\); \} catch \(_\) \{\}/.test(serverSrc));
+ok('有未落盘改动时跳过本轮维护，避免和防抖写盘抢同一份文件',
+  /if \(saving \|\| saveTimer\) return;/.test(serverSrc));
+ok('备份裁剪覆盖 db.json.bak-* 与每日 auto-*（不只 backup-*）',
+  /\^db\\\.json\\\.bak-\[\\w-\]\+\$/.test(serverSrc)
+  && /\^auto-\\d\{8\}\\\.json\$/.test(serverSrc));
+ok('孤儿附件清扫放过「刚上传、笔记还没保存」的 24 小时窗口',
+  /const cut = Date\.now\(\) - 24 \* 3600 \* 1000;/.test(serverSrc)
+  && /if \(!st\.isFile\(\) \|\| st\.mtimeMs > cut\) continue;/.test(serverSrc));
+ok('新建分类用「同级最大 order + 1」，删一个再建不会撞号',
+  /order: siblings\.length \? Math\.max\(\.\.\.siblings\.map\(\(c\) => Number\(c\.order\) \|\| 0\)\) \+ 1 : 0/.test(serverSrc));
+
+/* 标签：所有写入口共用内核的归一规则 */
+ok('加标签时先按内核判重，已有同名（大小写 / 空格不同）就直接提示',
+  /const dup = tags\.find\(\(t\) => norm\(t\) === norm\(value\)\)/.test(js)
+  && /已经有标签「/.test(js));
+ok('批量写标签（含合并）也走同一套归一：去空、忽略大小写去重、最多 10 个',
+  /const k = window\.SJCats \? window\.SJCats\.normTag\(t\) : t\.toLowerCase\(\)/.test(js)
+  && /note\.tags = next\.slice\(0, 10\);/.test(js));
+
+/* 自动同步：桌面只自动「收」，不自动「传」 */
+ok('桌面拉取支持静默模式（自动流程不动按钮、不弹 toast）',
+  /async function doPull\(opts\)/.test(syncJs) && /const auto = !!\(opts && opts\.auto\)/.test(syncJs)
+  && /if \(!auto && btn\) \{ btn\.disabled = true;/.test(syncJs));
+ok('自动拉取遇到冲突整轮放弃，绝不静默替用户挑一边',
+  /if \(conflicts\.length && auto\) \{\s*throw new Error/.test(syncJs));
+ok('打开页面与回到前台时自动拉取，且距上次同步 10 分钟内不重复拉',
+  /const AUTO_PULL_GAP = 10 \* 60 \* 1000/.test(syncJs)
+  && /addEventListener\('visibilitychange'/.test(syncJs)
+  && /Date\.now\(\) - lastSyncAt\(\) < AUTO_PULL_GAP/.test(syncJs));
+ok('自动拉取有开关，默认开启（存 localStorage）',
+  /localStorage\.getItem\('sj_auto_pull_v1'\) !== '0'/.test(syncJs)
+  && /id="syncAuto"/.test(syncJs));
+ok('上传收尾自动清理云端无用附件，不用再点按钮',
+  /let gcDone = 0;\s*try \{ gcDone = await gcQueued\(true\); \} catch \(_\) \{\}/.test(syncJs));
 
 console.log(`\n结果：${pass} 通过，${fail} 失败`);
 process.exit(fail ? 1 : 0);

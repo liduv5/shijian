@@ -19,11 +19,15 @@
   const $ = (s, r) => (r || document).querySelector(s);
   const LS_EMAIL = 'sj_cloud_session_email';
   const LS_LAST = 'sj_last_sync';
+  const LS_LAST_PULL = 'sj_last_pull';
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对。 */
-  const BUILD = '2026-11-22-164';
+  const BUILD = '2026-11-27-178';
   let session = null;
   let pendingOtp = null;
   let cooldownTimer = null;
+  /* 最近一次自动同步的结果。只在同步面板里展示，不弹 toast ——
+     自动流程不该打断用户正在做的事，但也不能悄无声息地失败。 */
+  let autoNote = '';
 
   /* 直接灌进界面数据源（window.SJState 是 app.js 内 state 的同一引用），
      调 SJRefresh 更新统计/树/列表，不依赖可能被 IndexedDB 就绪卡住的 boot()。 */
@@ -135,6 +139,156 @@
     } finally {
       if (kill) clearTimeout(kill);
     }
+  }
+
+  /* 直连删除（与 restRead 同一套鉴权，绕开 SDK 的 CORS 限制）。
+     分类以前只有 upsert、没有 delete，云端行只增不减：本地删掉的分类
+     下次拉取又被并回来，看着像「每次同步都有重复分类」。 */
+  async function restDelete(table, query) {
+    const token = await withTimeout(() => gcToken(), 4000, '');
+    if (!token) return false;
+    const res = await fetch(REST_BASE + '/.cloud/database/rest/' + table + '?' + query, {
+      method: 'DELETE',
+      headers: {
+        Accept: 'application/json',
+        Authorization: 'Bearer ' + token,
+        'x-wb-webapp-access-key': REST_PK,
+      },
+    });
+    return !!(res && res.ok);
+  }
+
+  /* 直连改字段（只用于把笔记的 category_key 挪到父级，不碰正文与时间戳）。 */
+  async function restPatch(table, query, body) {
+    const token = await withTimeout(() => gcToken(), 4000, '');
+    if (!token) return false;
+    const res = await fetch(REST_BASE + '/.cloud/database/rest/' + table + '?' + query, {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token,
+        'x-wb-webapp-access-key': REST_PK,
+      },
+      body: JSON.stringify(body),
+    });
+    return !!(res && res.ok);
+  }
+
+  /* ---------------------------------------------------------- 分类身份
+     分类 id 是两端各自 crypto 随机生成的，同一个分类在电脑和手机上可以
+     是两个 id。同步只认 id 就会把「同名同父」的两份都留下，树上出现重复。
+     「怎么算同一个分类、该留哪份、哪些能安全删」全在 cat-core.js（与桌面端
+     逐字相同），这里只负责网络读写，不再各写一套判定。 */
+  const C = window.SJCats;
+  function catsReady() {
+    if (C) return true;
+    syncMsg('页面组件版本较旧，请刷新后重试');
+    return false;
+  }
+
+  /* 上传前把本地分类的 id 对齐到云端已有的那一行（同名同父就复用云端 id，
+     不再插一份新的）。不这样做的话，两端各自建一次同名分类就永久多一条，
+     而且每同步一次都可能再添一条。对齐只改 id 与指向，不动名字与笔记正文。 */
+  async function alignCatsToCloud(local, owner) {
+    let res = null;
+    try { res = await withTimeout(() => restRead('sj_categories', owner), 8000, null); } catch (_) {}
+    if (!res || res.error) { if (cloud) res = await withTimeout(() => cloud.database.from('sj_categories').select('*').eq('owner_id', owner), 6000, null); }
+    if (!res || res.error || !Array.isArray(res.data)) return { ok: false, changed: 0 };
+    const cloudCats = res.data.map(rowToCat);
+    const byKey = new Map();
+    cloudCats.forEach((c) => {
+      const k = C.catKey(c.name, c.parentId || null);
+      const g = byKey.get(k);
+      if (g) g.push(c); else byKey.set(k, [c]);
+    });
+
+    const catById = new Map((local.categories || []).map((c) => [c.id, c]));
+    const depthOf = (id) => {
+      let d = 0, cur = catById.get(id), guard = 0;
+      while (cur && cur.parentId && guard++ < 64) { d++; cur = catById.get(cur.parentId); }
+      return d;
+    };
+    /* 父先子后：子分类的 key 依赖父级已经对齐好的 id。 */
+    const order = (local.categories || []).slice().sort((a, b) => depthOf(a.id) - depthOf(b.id));
+    const idRemap = new Map();
+    let changed = 0;
+    for (const c of order) {
+      const pid = c.parentId ? (C.resolveId(idRemap, c.parentId)) : null;
+      const list = byKey.get(C.catKey(c.name, pid)) || [];
+      if (!list.length) continue;
+      const target = list.find((x) => x.id === c.id) || list[0];
+      if (target.id === c.id) continue;
+      idRemap.set(c.id, target.id);
+      changed++;
+    }
+    if (!changed) return { ok: true, changed: 0 };
+
+    const fix = (id) => C.resolveId(idRemap, id);
+    for (const c of (local.categories || [])) {
+      const nid = fix(c.id);
+      if (nid && nid !== c.id) c.id = nid;
+      if (c.parentId) { const np = fix(c.parentId); if (np) c.parentId = np; }
+    }
+    for (const n of (local.notes || [])) {
+      if (!n.categoryId) continue;
+      const nc = fix(n.categoryId);
+      if (nc && nc !== n.categoryId) n.categoryId = nc;
+    }
+    /* 改完立刻落库：否则下次 pull 又从本地旧 id 算一遍，等于没改。 */
+    try {
+      if (window.SJLocal && window.SJLocal.setState) {
+        window.SJLocal.setState({ categories: local.categories, notes: local.notes, versions: local.versions });
+      }
+      refreshFromLocal(local.categories, local.notes);
+    } catch (_) {}
+    return { ok: true, changed };
+  }
+
+  /* 云端重复分类清理：只删「同父同名里多出来的、且没有笔记引用」的行。
+     有引用的先留着 —— 删了会让云端笔记指向不存在的分类，下次拉取变未分类。
+     独占分类（不在任何同名组里）一律不动，避免误删另一台设备刚建的。
+     判定本身在 cat-core.js（与桌面端逐字相同），这里只负责发 DELETE。 */
+  async function cleanupDupCats(owner, localCats) {
+    let res = null;
+    try { res = await withTimeout(() => restRead('sj_categories', owner), 8000, null); } catch (_) {}
+    if (!res || res.error || !Array.isArray(res.data)) return 0;
+    let noteRes = null;
+    try { noteRes = await withTimeout(() => restRead('sj_notes', owner), 8000, null); } catch (_) {}
+    const used = new Set();
+    if (noteRes && Array.isArray(noteRes.data)) noteRes.data.forEach((r) => { if (r.category_key) used.add(r.category_key); });
+
+    const cloudCats = res.data.map(rowToCat);
+    const localIds = new Set((localCats || []).map((c) => c.id));
+    const kill = C.pickDuplicateCatIds(cloudCats, used, localIds);
+    let ok = 0;
+    for (const id of kill) {
+      const q = 'id=eq.' + encodeURIComponent(id) + '&owner_id=eq.' + encodeURIComponent(owner);
+      try { if (await restDelete('sj_categories', q)) ok++; } catch (_) {}
+    }
+    return ok;
+  }
+
+  /* 拉取时云端自己也可能带着重复（另一台设备 + 旧版同步留下的）。
+     本地合并只把界面上的重复收起来，云端脏行还在，换台设备又会长回来。
+     这里把合并结果回写云端，三步顺序不能反：
+       ① 先把保留的分类 upsert 上去（云端可能还没有这个 id）
+       ② 云端笔记里指向被并掉 id 的，改指保留 id
+       ③ 再删同父同名、已无人引用的多余行
+     任何一步读不到云端就整段放弃，本机内容不受影响。 */
+  async function reconcileCloudCats(owner, cats, remap) {
+    if (!remap || !remap.size) return 0;
+    const rows = (cats || []).map((c) => catToRow(c, owner));
+    if (!rows.length) return 0;
+    const up = await withTimeout(() => cloud.database.from('sj_categories').upsert(rows), 20000, null);
+    if (!up || up.error) return 0;
+    for (const [from, to] of remap) {
+      const target = C.resolveId(remap, to);
+      if (!target || target === from) continue;
+      const q = 'category_key=eq.' + encodeURIComponent(from) + '&owner_id=eq.' + encodeURIComponent(owner);
+      try { await restPatch('sj_notes', q, { category_key: target }); } catch (_) {}
+    }
+    try { return await cleanupDupCats(owner, cats); } catch (_) { return 0; }
   }
 
   /* ---------------------------------------------------------- 行转换（云端 schema） */
@@ -530,6 +684,9 @@
       (loggedIn
         ? '<div class="sync-info">已登录：<b>' + escapeHtml(email) + '</b><br>上次同步：' + last + '</div>' +
           '<p class="auth-msg" id="syncMsg"></p>' +
+          (autoNote ? '<p class="sync-auto-note">' + escapeHtml(autoNote) + '</p>' : '') +
+          '<label class="sync-auto"><input type="checkbox" id="syncAuto"'
+            + (autoOn() ? ' checked' : '') + '> 自动同步（改完自动上传，打开时自动拉取）</label>' +
           '<button class="auth-btn" id="syncPush">上传本地笔记到云端</button>' +
           '<button class="auth-btn ghost" id="syncPull">从云端拉取到本地</button>' +
           (gcN ? '<button class="auth-btn ghost" id="syncGc">清理云端无用附件（' + gcN + '）</button>' : '') +
@@ -578,6 +735,7 @@
       const gc = $('#syncGc'); if (gc) gc.onclick = () => doGc();
       const restore = $('#syncRestore'); if (restore) restore.onclick = () => restoreBeforeSync();
       const setPwd = $('#syncSetPwd'); if (setPwd) setPwd.onclick = () => openSetPwd();
+      const autoBox = $('#syncAuto'); if (autoBox) autoBox.onchange = () => setAutoOn(autoBox.checked);
     } else {
       const codeBtn = $('#syncCodeBtn'); if (codeBtn) codeBtn.onclick = () => sendCode($('#syncEmail').value.trim(), codeBtn);
       const form = $('#syncLoginForm'); if (form) form.onsubmit = (e) => { e.preventDefault(); doLogin(); };
@@ -747,45 +905,73 @@
     return out;
   }
 
-  /* -72：把「上次从云端拉取之前」的本机状态找回来。覆盖当前内容不可逆，
-     必须先确认；快照不存在 / 附件仓不可用都如实说明，不假装成功。 */
+  /* 同步前快照保留最近 3 份（attstore 负责轮转），这里让用户挑某一份回退。
+     以前只留一份，连续同步两次后「更早那个还没问题的版本」就再也找不回来了。 */
   async function restoreBeforeSync() {
     if (!window.SJAttStore || !window.SJAttStore.getSnap) {
       syncMsg('本机不支持同步前快照'); return;
     }
-    const snap = await window.SJAttStore.getSnap();
-    if (!snap || !Array.isArray(snap.notes)) { syncMsg('没有可恢复的同步前快照'); return; }
-    const t = new Date(snap.at || 0);
+    const snaps = window.SJAttStore.getSnaps
+      ? await window.SJAttStore.getSnaps()
+      : [await window.SJAttStore.getSnap()].filter(Boolean);
+    const list = (snaps || []).filter((s) => s && Array.isArray(s.notes));
+    if (!list.length) { syncMsg('没有可恢复的同步前快照'); return; }
+    const rows = list.slice(0, 3).map((s, i) => {
+      const t = new Date(s.at || 0);
+      return '<label class="sj-snap-row"><input type="radio" name="sjSnapPick" value="' + i + '"'
+        + (i === 0 ? ' checked' : '') + '>'
+        + '<span><b>' + escapeHtml(t.toLocaleString('zh-CN')) + '</b>'
+        + '<em>' + (s.notes || []).length + ' 篇 · ' + (s.categories || []).length + ' 个分类</em></span></label>';
+    }).join('');
     const m = window.openModal(
-      '<div class="hist-head"><div><h3>恢复同步前的本机内容</h3><p>快照时间：'
-      + escapeHtml(t.toLocaleString('zh-CN')) + '，共 ' + snap.notes.length + ' 篇</p></div>'
+      '<div class="hist-head"><div><h3>恢复同步前的本机内容</h3><p>保留最近 '
+      + list.length + ' 份快照，选一份回退</p></div>'
       + '<button class="icon-btn" data-act="close" title="关闭">✕</button></div>'
-      + '<div class="sj-batch-form"><p class="e2ee-warn">当前本机内容会被这份快照覆盖，'
-      + '建议先导出一次普通备份。</p>'
+      + '<div class="sj-batch-form"><div class="sj-snap-list">' + rows + '</div>'
+      + '<p class="e2ee-warn">当前本机内容会被所选快照覆盖，建议先导出一次普通备份。</p>'
       + '<div class="modal-actions"><button class="btn ghost" data-act="close">取消</button>'
       + '<button class="btn primary" id="sjRestoreGo">确认恢复</button></div></div>');
     m.querySelectorAll('[data-act="close"]').forEach((b) => b.addEventListener('click', window.closeModal));
     m.querySelector('#sjRestoreGo').addEventListener('click', async () => {
       try {
+        const picked = m.querySelector('input[name="sjSnapPick"]:checked');
+        const snap = list[Number(picked ? picked.value : 0)] || list[0];
         window.SJLocal.setState({
           categories: snap.categories || [], notes: snap.notes, versions: snap.versions || {},
         });
         if (window.SJBoot) await window.SJBoot();
         window.closeModal();
-        syncMsg('已恢复上次同步前的本机内容（' + snap.notes.length + ' 篇）', 'ok');
-        toast('已恢复同步前状态');
+        syncMsg('已恢复 ' + new Date(snap.at || 0).toLocaleString('zh-CN') + ' 的快照（'
+          + snap.notes.length + ' 篇）', 'ok');
+        toast('已恢复所选快照');
       } catch (e) { syncMsg('恢复失败：' + e.message); }
     });
   }
 
-  async function doPush() {
+  async function doPush(opts) {
+    const auto = !!(opts && opts.auto);
     if (!session || !session.user) return;
-    cancelAutoClose(); lastMsg = ''; lastKind = '';
+    if (!catsReady()) return;
+    if (!auto) { cancelAutoClose(); lastMsg = ''; lastKind = ''; }
     const owner = session.user.id;
-    if (!markBusy('push', '#syncPush', '上传中…（可再点重试）')) return;
+    if (!markBusy('push', auto ? '' : '#syncPush', '上传中…（可再点重试）')) return;
     try {
       if (window.SJSaveNow) window.SJSaveNow();
       const local = window.SJLocal.getState();
+
+      /* 上传前先理一遍本机分类：库里如果还留着同父同名（旧版同步的残留），
+         先合并再上传，云端就不会被这批脏行再污染一次。 */
+      let localDeduped = 0;
+      try {
+        const ded = C.dedupeCats(local.categories, local.notes);
+        if (ded.remap.size) {
+          localDeduped = ded.remap.size;
+          local.categories = ded.list;
+          C.remapAll(local.categories, local.notes, ded.remap);
+          window.SJLocal.setState({ categories: local.categories, notes: local.notes, versions: local.versions });
+          refreshFromLocal(local.categories, local.notes);
+        }
+      } catch (_) {}
 
       /* -72 推送方向冲突预检：以前只有拉取方向检测冲突，上传是逐篇 upsert
          直接 LWW，云端较新的内容会被无声覆盖。读不到云端现状就整轮停下，
@@ -802,6 +988,11 @@
           throw new Error('读取云端现有笔记失败，为避免覆盖已停止上传，请检查网络后重试');
         }
         const conflicts = pushConflicts(local.notes, (rows.data || []).map(rowToNote));
+        /* 自动流程不弹窗、也不替用户做取舍：整轮停下，留给手动同步处理。
+           静默地「挑一边」才是真正会丢数据的做法。 */
+        if (conflicts.length && auto) {
+          throw new Error(`有 ${conflicts.length} 篇笔记两端都改过，已暂停自动上传`);
+        }
         if (conflicts.length) {
           await new Promise((resolve) => {
             window.SJConflict.show(conflicts, (res) => {
@@ -817,6 +1008,15 @@
           if (skipIds.size) toast(`已跳过 ${skipIds.size} 篇冲突笔记，未覆盖云端`);
         }
       }
+
+      /* 先把本地分类的 id 对齐到云端已有的同名行：以前两端各自 uid() 建类，
+         云端就成了「一个分类三条记录」，每次同步都原样搬回来。对齐失败不拦上传
+         （最坏就是多一条，和以前一样），只在有改动时提示一句。 */
+      let aligned = 0;
+      try {
+        const a = await alignCatsToCloud(local, owner);
+        aligned = a.changed || 0;
+      } catch (_) {}
 
       const catRows = local.categories.map((c) => catToRow(c, owner));
       if (catRows.length) {
@@ -852,23 +1052,51 @@
         if (r.error) throw new Error(friendly(r.error));
       }
 
+      /* 清云端同父同名的多余副本 —— 必须放在笔记上传之后：
+         之前放在笔记之前，云端笔记还指着旧 id，被引用的脏行不敢删，
+         于是「每次同步都清、每次都没清干净」。现在笔记已改指保留项，
+         再删就不会留下空壳。 */
+      let dupRemoved = 0;
+      try { dupRemoved = await cleanupDupCats(owner, local.categories); } catch (_) {}
+
+      /* 附件清理也顺手做完。队列里是「本地彻底删掉笔记」时记下的云端路径，
+         以前要用户手动点「清理云端无用附件」——分类去重都自动化了，这一步
+         没有理由还留按钮。失败不影响本轮上传结果，队列会留到下次。 */
+      let gcDone = 0;
+      try { gcDone = await gcQueued(owner, true); } catch (_) {}
+
       localStorage.setItem(LS_LAST, String(Date.now()));
-      if (missing) {
-        syncMsg(`已上传 ${local.categories.length} 个类别 + ${local.notes.length} 篇笔记；有 ${missing} 个附件没能上传（本机找不到原文件），请重新插入后再传`, '');
+      /* 对齐 / 清理过的量单独说一句：用户报「重复分类」时，这两句就是凭证。 */
+      const catNote = (localDeduped ? `，把本机 ${localDeduped} 个重复分类并掉` : '')
+        + (aligned ? `，对齐 ${aligned} 个分类的 id` : '')
+        + (dupRemoved ? `，清掉云端 ${dupRemoved} 个重复分类` : '')
+        + (gcDone ? `，清掉 ${gcDone} 个云端附件` : '');
+      if (auto) {
+        /* 自动同步不弹 toast、不自动关面板：用户可能正在写东西。
+           结果留在面板顶部（autoNote），需要时打开同步面板能看到。 */
+        autoNote = `自动上传完成（${local.categories.length} 个类别 · ${local.notes.length} 篇）`
+          + (dupRemoved || aligned || gcDone ? '，顺手清理了冗余' : '');
+      } else if (missing) {
+        syncMsg(`已上传 ${local.categories.length} 个类别 + ${local.notes.length} 篇笔记${catNote}；有 ${missing} 个附件没能上传（本机找不到原文件），请重新插入后再传`, '');
         toast('笔记已上传，但有附件没传上去');
         scheduleClose(3500);
       } else {
-        syncMsg(`已上传 ${local.categories.length} 个类别 + ${local.notes.length} 篇笔记`, 'ok');
-        toast('已同步到云端，电脑端登录同一账号即可查看');
+        syncMsg(`已上传 ${local.categories.length} 个类别 + ${local.notes.length} 篇笔记${catNote}`, 'ok');
+        toast(dupRemoved || aligned || localDeduped || gcDone ? '已同步到云端，顺手理掉了冗余数据' : '已同步到云端，电脑端登录同一账号即可查看');
         scheduleClose(2000);
       }
     } catch (e) {
-      syncMsg('上传失败：' + e.message);
-      toast('上传失败：' + e.message);
-      scheduleClose(3500);
+      if (auto) {
+        autoNote = '自动上传未完成：' + e.message;
+        console.warn('[同步] 自动上传跳过：', e.message);
+      } else {
+        syncMsg('上传失败：' + e.message);
+        toast('上传失败：' + e.message);
+        scheduleClose(3500);
+      }
     } finally {
-      clearBusy('push', '#syncPush', '上传本地笔记到云端');
-      renderPanel();
+      clearBusy('push', auto ? '' : '#syncPush', auto ? '' : '上传本地笔记到云端');
+      if (!auto || $('#syncPanel')) renderPanel();
     }
   }
 
@@ -888,26 +1116,41 @@
     }), 12000, null);
     return !!(r && (r.ok || r.status === 404));
   }
-  async function doGc() {
-    if (!session || !session.user) return;
-    cancelAutoClose(); lastMsg = ''; lastKind = '';
+  /* 真正干活的那一层：清掉本地记下的「已删除附件」队列。
+     silent=true 时不出 toast、不改面板 —— 给同步收尾自动调用用。
+     返回成功删除的个数；token 拿不到就返回 0，不抛错（自动流程不该
+     因为登录态抖动就打断整轮同步）。 */
+  async function gcQueued(owner, silent) {
+    if (!owner) return 0;
     const queue = window.SJAttGC ? window.SJAttGC.list() : {};
     const paths = Object.keys(queue);
-    if (!paths.length) { syncMsg('没有需要清理的云端附件', 'ok'); scheduleClose(2000); return; }
-    if (!markBusy('gc', '#syncGc', '清理中…（可再点重试）')) return;
-    try {
-      const token = await gcToken();
-      if (!token) throw new Error('登录状态已失效，请退出后重新登录');
-      let ok = 0; const failed = [];
-      for (const p of paths) {
-        try { if (await gcDelete(p, token)) ok++; else failed.push(p); }
-        catch (_) { failed.push(p); }
-      }
-      if (window.SJAttGC) window.SJAttGC.drop(paths.filter((p) => failed.indexOf(p) < 0));
+    if (!paths.length) return 0;
+    const token = await gcToken();
+    if (!token) return 0;
+    let ok = 0; const failed = [];
+    for (const p of paths) {
+      try { if (await gcDelete(p, token)) ok++; else failed.push(p); }
+      catch (_) { failed.push(p); }
+    }
+    if (window.SJAttGC) window.SJAttGC.drop(paths.filter((p) => failed.indexOf(p) < 0));
+    if (!silent) {
       syncMsg(`已清理 ${ok} 个云端附件${failed.length ? '，' + failed.length + ' 个失败，可稍后重试' : ''}`,
         failed.length ? '' : 'ok');
       toast(failed.length ? '部分附件清理失败' : '云端附件已清理');
       scheduleClose(failed.length ? 3500 : 2000);
+    }
+    return ok;
+  }
+
+  async function doGc() {
+    if (!session || !session.user) return;
+    cancelAutoClose(); lastMsg = ''; lastKind = '';
+    const queue = window.SJAttGC ? window.SJAttGC.list() : {};
+    if (!Object.keys(queue).length) { syncMsg('没有需要清理的云端附件', 'ok'); scheduleClose(2000); return; }
+    if (!markBusy('gc', '#syncGc', '清理中…（可再点重试）')) return;
+    try {
+      const n = await gcQueued(session.user.id, false);
+      if (!n) throw new Error('登录状态已失效，请退出后重新登录');
     } catch (e) {
       syncMsg('清理失败：' + e.message);
       toast('清理失败：' + e.message);
@@ -925,13 +1168,15 @@
   function markBusy(key, sel, text) {
     if (busy.has(key)) return false;
     busy.add(key);
-    const b = $(sel);
+    /* 自动同步没有按钮可改文字，sel 传空时跳过 —— 但 busy 标记照旧，
+       避免自动流程和手动点击同时跑一轮。 */
+    const b = sel ? $(sel) : null;
     if (b) { b.disabled = false; b.textContent = text; }
     return true;
   }
   function clearBusy(key, sel, text) {
     busy.delete(key);
-    const b = $(sel);
+    const b = sel ? $(sel) : null;
     if (b) {
       b.disabled = false;
       if (text) b.textContent = text;
@@ -951,8 +1196,9 @@
   }
   /* 同步按钮永不 disabled：异步链路挂起时用户仍可重试。
      再点一次 = 停止上一次。 */
-  function markPullBusy() {
+  function markPullBusy(quiet) {
     pulling = true;
+    if (quiet) return;
     const b = $('#syncPull');
     if (b) { b.disabled = false; b.textContent = '正在拉取…（再点重试）'; }
   }
@@ -1003,9 +1249,13 @@
     } catch (_) {}
   }
 
-  async function doPull() {
+  async function doPull(opts) {
+    const auto = !!(opts && opts.auto);
     if (!session || !session.user) return;
+    if (!catsReady()) return;
     if (pulling) {
+      /* 自动流程不插队、也不打断正在进行的拉取 */
+      if (auto) return;
       /* 再点一次 = 停止上一次，不让用户只能干等 */
       pullSeq++;
       restorePullBtn();
@@ -1013,12 +1263,13 @@
       return;
     }
     const seq = ++pullSeq;
-    cancelAutoClose(); lastMsg = ''; lastKind = '';
-    markPullBusy();
-    syncMsg('正在连接云端…（按钮一直可点，随时可重试）');
+    if (!auto) { cancelAutoClose(); lastMsg = ''; lastKind = ''; }
+    markPullBusy(auto);
+    if (!auto) syncMsg('正在连接云端…（按钮一直可点，随时可重试）');
     /* 硬恢复：5 秒还没拿到云端数据就把按钮文字还给用户。
-       即使这个定时器也被浏览器冻结，按钮本来就没被禁用，用户照样能操作。 */
-    const hardTimer = setTimeout(() => {
+       即使这个定时器也被浏览器冻结，按钮本来就没被禁用，用户照样能操作。
+       自动流程没有按钮可恢复，跳过。 */
+    const hardTimer = auto ? null : setTimeout(() => {
       if (seq === pullSeq && pulling) {
         /* 作废本次：否则弱网时旧流程仍会在稍后完成，覆盖用户随后重试的
            按钮状态与面板（hardTimer 5s < 直连 8s + SDK 兜底 6s，弱网必触发）。 */
@@ -1107,8 +1358,20 @@
         }
         return Array.from(map.values());
       };
-      const finalCats = merge(local.categories, cloudCats);
+      /* 分类不能像笔记那样只按 id 合并：同名同父的两条在两端可能是两个 id
+         （各自 uid() 建的），只认 id 就会把两份都留下 —— 这就是「同步后
+         分类重复」的来源。判定在 cat-core.js（与桌面端同一份），
+         笔记的 categoryId 跟着重映射到保留下来的那条。 */
+      const catMerge = C.mergeCats(local.categories, cloudCats, local.notes.concat(cloudNotes));
+      const finalCats = catMerge.list;
       const finalNotes = merge(local.notes, cloudNotes);
+      if (catMerge.remap.size) {
+        finalNotes.forEach((n) => {
+          if (!n.categoryId) return;
+          const nc = C.resolveId(catMerge.remap, n.categoryId);
+          if (nc && nc !== n.categoryId) n.categoryId = nc;
+        });
+      }
       /* -72 同步前自动快照：拉取会整库覆盖本机内容。桌面端走
          /api/import?mode=lww 时服务端本就写 backup-*.json，云端没有这层保护。
          这里把覆盖前的状态存进 IndexedDB 独立仓（不占 localStorage 配额，
@@ -1152,11 +1415,19 @@
       if (!uiOk) extra += '；界面未自动刷新，请重开页面确认';
       if (!saveOk) extra += '；本机保存校验未通过（可能存储已满），请重开页面确认笔记还在';
       if (!snapOk) extra += '；同步前快照未保存';
-      syncMsg(`已从云端拉取最新内容（类别 ${cloudCats.length}，笔记 ${cloudNotes.length}，本机 ${finalNotes.length} 篇）${extra}`, 'ok');
-      toast('已从云端同步到本地');
+      if (catMerge.remap.size) extra += `；合并了 ${catMerge.remap.size} 个重复分类`;
+      /* 自动拉取的节流依据：手动拉取也记一笔，避免刚拉完又自动拉一遍。 */
+      localStorage.setItem(LS_LAST_PULL, String(Date.now()));
       clearTimeout(hardTimer);
       restorePullBtn(seq);
-      scheduleClose((noPath || attCount) ? 6000 : 2000);
+      if (auto) {
+        autoNote = `自动拉取完成（本机 ${finalNotes.length} 篇）`
+          + (catMerge.remap.size ? `，并掉 ${catMerge.remap.size} 个重复分类` : '');
+      } else {
+        syncMsg(`已从云端拉取最新内容（类别 ${finalCats.length}，笔记 ${cloudNotes.length}，本机 ${finalNotes.length} 篇）${extra}`, 'ok');
+        toast('已从云端同步到本地');
+        scheduleClose((noPath || attCount) ? 6000 : 2000);
+      }
 
       /* 写盘 / 重渲染 / 冲突弹窗放下一个宏任务，且互不等待。 */
       setTimeout(() => {
@@ -1166,7 +1437,17 @@
           if (window.SJLocal.flushAtt) withTimeout(() => window.SJLocal.flushAtt(), 5000, null);
           if (window.SJBoot) withTimeout(() => window.SJBoot(keepId), 5000, null);
           if (window.SJLocal.watchFiles) window.SJLocal.watchFiles();
-          if (conflicts.length && window.SJConflict) {
+          /* 云端也有重复时顺手收敛云端：本地已经干净了，云端不跟着干净
+             的话，换设备 / 清缓存后又会长回来。失败只当没做成，不打扰用户。 */
+          if (catMerge.remap.size && seq === pullSeq) {
+            withTimeout(() => reconcileCloudCats(owner, finalCats, catMerge.remap), 30000, 0)
+              .catch(() => {});
+          }
+          if (conflicts.length && auto) {
+            /* 自动拉取已经按 LWW 合并了，冲突留给用户在同步面板里手动处理；
+               不弹窗、不打断正在写的笔记。 */
+            autoNote += `；有 ${conflicts.length} 篇两端都改过，需手动同步`;
+          } else if (conflicts.length && window.SJConflict) {
             window.SJConflict.show(conflicts, function (res) {
               const st = window.SJLocal.getState();
               const m2 = new Map(st.notes.map((x) => [x.id, x]));
@@ -1195,9 +1476,14 @@
         setTimeout(() => backfillAttachments(cloudNotes, keepId, seq), 1200);
       }
     } catch (e) {
-      syncMsg('拉取失败：' + e.message);
-      toast('拉取失败：' + e.message);
-      scheduleClose(3500);
+      if (auto) {
+        autoNote = '自动拉取未完成：' + e.message;
+        console.warn('[同步] 自动拉取跳过：', e.message);
+      } else {
+        syncMsg('拉取失败：' + e.message);
+        toast('拉取失败：' + e.message);
+        scheduleClose(3500);
+      }
     } finally {
       clearTimeout(hardTimer);
       /* 已被重试 / 硬恢复作废的旧流程，不要再动按钮和面板 */
@@ -1208,13 +1494,110 @@
     }
   }
 
+  /* 删除分类时同步云端：以前只删本机，云端那行还在，下次拉取原样复活，
+     用户看到的就是「删了又回来」。先把云端引用该分类的笔记挪到父级，
+     再删分类行 —— 顺序反了会让云端笔记短暂指向不存在的分类。
+     未登录 / 网络失败都不拦本地删除，只是下次同步可能再拉回来。 */
+  async function catDeleted(ids, parentId) {
+    if (!session || !session.user) return 0;
+    if (!Array.isArray(ids) || !ids.length) return 0;
+    const owner = session.user.id;
+    let ok = 0;
+    for (const id of ids) {
+      if (!id) continue;
+      const nq = 'category_key=eq.' + encodeURIComponent(id) + '&owner_id=eq.' + encodeURIComponent(owner);
+      try { await restPatch('sj_notes', nq, { category_key: parentId || null }); } catch (_) {}
+      const cq = 'id=eq.' + encodeURIComponent(id) + '&owner_id=eq.' + encodeURIComponent(owner);
+      try { if (await restDelete('sj_categories', cq)) ok++; } catch (_) {}
+    }
+    return ok;
+  }
+
+  /* ---------------------------------------------------------- 自动同步
+     「忘记点同步」才是重复分类、内容对不上的真正源头：去重做得再彻底，
+     只要两端不同步，差异就一直在那儿。所以补两个自动时机：
+       · 本机数据变更后 45 秒（去抖）自动上传
+       · 打开应用 / 回到前台时自动拉取
+     两条都很保守：已登录、开关打开、不在编辑中、页面可见、距上次同步够久。
+     全程静默 —— 不弹 toast、不弹冲突窗口；遇到冲突直接停下交给手动同步，
+     绝不替用户挑一边（静默挑一边才是真正会丢数据的行为）。 */
+  const AUTO_KEY = 'sj_auto_sync_v1';
+  const AUTO_PUSH_DELAY = 45000;          /* 变更后等这么久再传，别打断打字 */
+  const AUTO_PUSH_GAP = 3 * 60 * 1000;    /* 两次自动上传的最小间隔 */
+  const AUTO_PULL_GAP = 10 * 60 * 1000;   /* 两次自动拉取的最小间隔 */
+  let autoPushTimer = null;
+  let autoRunning = false;
+
+  function autoOn() {
+    try { return localStorage.getItem(AUTO_KEY) !== '0'; } catch (_) { return true; }
+  }
+  function setAutoOn(on) {
+    try { localStorage.setItem(AUTO_KEY, on ? '1' : '0'); } catch (_) {}
+    /* 关掉时把还挂着的去抖任务一起取消，否则关完 45 秒还会传一次。 */
+    if (!on && autoPushTimer) { clearTimeout(autoPushTimer); autoPushTimer = null; }
+    if (on) setTimeout(runAutoPull, 1500);
+    renderPanel();
+  }
+  function lastPullAt() { return Number(localStorage.getItem(LS_LAST_PULL) || 0); }
+
+  /* 正在编辑就不动：自动上传会把半句话推上去（无害但多余），
+     自动拉取会整库重绘（会打断输入）。判断不了时按「在编辑」处理。 */
+  function editingNow() {
+    try {
+      if (document.body && document.body.classList.contains('sj-note-edit')) return true;
+      const el = document.activeElement;
+      return !!(el && el.isContentEditable);
+    } catch (_) { return true; }
+  }
+
+  function scheduleAutoPush() {
+    if (!autoOn()) return;
+    if (autoPushTimer) clearTimeout(autoPushTimer);
+    autoPushTimer = setTimeout(runAutoPush, AUTO_PUSH_DELAY);
+  }
+
+  async function runAutoPush() {
+    autoPushTimer = null;
+    if (autoRunning || !autoOn() || !session || !session.user) return;
+    if (Date.now() - lastSyncAt() < AUTO_PUSH_GAP) return;
+    if (document.hidden || editingNow()) return;
+    autoRunning = true;
+    try { await doPush({ auto: true }); } catch (_) {}
+    finally { autoRunning = false; }
+  }
+
+  async function runAutoPull() {
+    if (autoRunning || !autoOn() || !session || !session.user) return;
+    if (Date.now() - lastPullAt() < AUTO_PULL_GAP) return;
+    if (document.hidden || editingNow()) return;
+    autoRunning = true;
+    try { await doPull({ auto: true }); } catch (_) {}
+    finally { autoRunning = false; }
+  }
+
+  /* local.js 每次落盘都会派发 sj-local-saved（编辑、删除、建类都算）。
+     同步落地也会触发一次，但那时 LS_LAST 刚被写过，会被 AUTO_PUSH_GAP
+     挡掉，不会形成「拉取 → 保存 → 上传」的回环。 */
+  window.addEventListener('sj-local-saved', scheduleAutoPush);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    runAutoPull();
+  });
+
   /* ---------------------------------------------------------- 初始化 */
   (async function init() {
     try { session = normSession(await cloud.auth.getSession()); } catch (e) { session = null; }
     cloud.auth.onAuthStateChange((e) => {
-      if (e === 'SIGNED_OUT') { session = null; localStorage.removeItem(LS_EMAIL); renderPanel(); }
+      if (e === 'SIGNED_OUT') { session = null; localStorage.removeItem(LS_EMAIL); renderPanel(); return; }
+      /* 登录态刚恢复时上面那次 getSession 可能还是空的，这里补一次自动拉取 */
+      if (session && session.user) setTimeout(runAutoPull, 3000);
     });
+    /* 给启动渲染留出时间：一上来就整库重绘会和首屏抢资源。 */
+    if (session && session.user) setTimeout(runAutoPull, 6000);
   })();
 
-  window.SJSync = { open: openPanel, close: closePanel, getSession: () => session };
+  window.SJSync = {
+    open: openPanel, close: closePanel, getSession: () => session, catDeleted,
+    autoOn, setAutoOn,
+  };
 })();

@@ -149,14 +149,41 @@
   function snapStore(mode) {
     return open().then((db) => db.transaction(SNAP_STORE, mode).objectStore(SNAP_STORE));
   }
+  /* 同步前快照保留最近 3 份：只留一份的话，连续两次同步就会把「更早那个
+     还没问题的版本」挤掉，用户真正想回退时反而没有退路。key 里带时间戳，
+     字典序即时间序，取最新一份给旧调用点用。 */
+  const SNAP_PREFIX = 'snap-';
+  const SNAP_KEEP = 3;
+  function snapKeys() {
+    return snapStore('readonly').then((s) => reqP(s.getAllKeys()))
+      .then((keys) => (keys || []).map(String)).catch(() => []);
+  }
+  function pruneSnaps() {
+    return snapKeys().then((keys) => {
+      const list = keys.filter((k) => k.indexOf(SNAP_PREFIX) === 0).sort();
+      const drop = list.slice(0, Math.max(0, list.length - SNAP_KEEP));
+      return snapStore('readwrite').then((s) => Promise.all(
+        drop.map((k) => reqP(s.delete(k))),
+      )).catch(() => {});
+    }).catch(() => {});
+  }
   function putSnap(data) {
     if (!usable) return Promise.resolve(false);
-    return snapStore('readwrite').then((s) => reqP(s.put(data, 'before')))
+    const key = SNAP_PREFIX + Date.now();
+    return snapStore('readwrite').then((s) => reqP(s.put(data, key)))
+      .then(() => pruneSnaps())
       .then(() => true).catch(() => false);
   }
+  /* 旧版只存了 key='before' 这一份，读的时候一起带出来（按 at 排序后
+     它会自然排在后面），下次写入时被轮转规则淘汰。 */
+  function getSnaps() {
+    if (!usable) return Promise.resolve([]);
+    return snapStore('readonly').then((s) => reqP(s.getAll()))
+      .then((rows) => (rows || []).filter((r) => r && r.at).sort((a, b) => b.at - a.at))
+      .catch(() => []);
+  }
   function getSnap() {
-    if (!usable) return Promise.resolve(null);
-    return snapStore('readonly').then((s) => reqP(s.get('before'))).catch(() => null);
+    return getSnaps().then((l) => l[0] || null);
   }
 
   /* 清空（重置本地数据时用）：附件与快照一起清，避免重置后还能恢复出旧库。 */
@@ -176,5 +203,5 @@
     return { count: mem.size, bytes };
   }
 
-  window.SJAttStore = { put, get, has, del, clear, all, usage, putSnap, getSnap, get usable() { return usable; } };
+  window.SJAttStore = { put, get, has, del, clear, all, usage, putSnap, getSnap, getSnaps, get usable() { return usable; } };
 })();

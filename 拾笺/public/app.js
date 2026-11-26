@@ -24,6 +24,8 @@
     download: '<svg viewBox="0 0 24 24" class="ico"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg>',
     x: '<svg viewBox="0 0 24 24" class="ico"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     code: '<svg viewBox="0 0 24 24" class="ico"><path d="M9 8l-4 4 4 4M15 8l4 4-4 4"/></svg>',
+    /* 行内代码：小胶囊包住一对尖括号 —— 和上面「裸尖括号」的代码块图标区分开 */
+    codeInline: '<svg viewBox="0 0 24 24" class="ico"><rect x="2.6" y="6" width="18.8" height="12" rx="3.4"/><path d="M10.2 10.2l-1.9 1.9L10.2 14M13.8 10.2l1.9 1.9L13.8 14"/></svg>',
     bold: '<svg viewBox="0 0 24 24" class="ico"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/></svg>',
     italic: '<svg viewBox="0 0 24 24" class="ico"><path d="M10 4h8M6 20h8M14.5 4l-3 16"/></svg>',
     strike: '<svg viewBox="0 0 24 24" class="ico"><path d="M4 12h16M8 8a4 3 0 0 1 8 0M8 16a4 3 0 0 0 8 0"/></svg>',
@@ -31,6 +33,9 @@
     alignLeft: '<svg viewBox="0 0 24 24" class="ico"><path d="M4 6h16M4 11h10M4 16h13"/></svg>',
     alignCenter: '<svg viewBox="0 0 24 24" class="ico"><path d="M4 6h16M7 11h10M5.5 16h13"/></svg>',
     alignRight: '<svg viewBox="0 0 24 24" class="ico"><path d="M4 6h16M10 11h10M7 16h13"/></svg>',
+    alignJustify: '<svg viewBox="0 0 24 24" class="ico"><path d="M4 6h16M4 11h16M4 16h16"/></svg>',
+    indentInc: '<svg viewBox="0 0 24 24" class="ico"><path d="M10 7h10M10 12h10M10 17h10"/><path d="M3 9l4.5 3-4.5 3z"/></svg>',
+    indentDec: '<svg viewBox="0 0 24 24" class="ico"><path d="M10 7h10M10 12h10M10 17h10"/><path d="M7.5 9l-4.5 3 4.5 3z"/></svg>',
     quote: '<svg viewBox="0 0 24 24" class="ico"><path d="M9 7H5v5h4v5H5M19 7h-4v5h4v5h-4"/></svg>',
     list: '<svg viewBox="0 0 24 24" class="ico"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg>',
     listOrdered: '<svg viewBox="0 0 24 24" class="ico"><path d="M10 6h10M10 12h10M10 18h10"/><path d="M4 5h1v4M3 9h3"/><path d="M3.5 14h1.5a1 1 0 0 1 0 2H3.5h1.5a1 1 0 0 1 0 2H3.5"/></svg>',
@@ -75,6 +80,31 @@
     dirty: false,
   };
 
+  /* ---------------------------------------------------------- 状态收口
+     2026-11-26：以前 state 有 50 处直接赋值，散在几十个事件处理里，
+     谁改了什么、改完要不要重绘全靠人记 —— 「缩进改完没标脏」「换了块
+     工具条不刷新」都是这么来的。现在统一走 setState：
+       · 只有一个赋值入口，改哪几个字段一眼可见
+       · 返回值是「真的变了」的字段名，调用方可以据此决定重绘
+     只做赋值，不隐式触发渲染：重绘时机差异太大（有的要整页、有的
+     只刷列表），隐式重绘会让时序更难猜。要刷工具条就显式调 syncUI()。 */
+  function setState(patch) {
+    const changed = [];
+    for (const k of Object.keys(patch)) {
+      if (state[k] !== patch[k]) changed.push(k);
+      state[k] = patch[k];
+    }
+    return changed;
+  }
+
+  /* 翻「有未保存改动」这个开关。别和下面那个同名的业务函数搞混：
+     markDirty() 是「按内容快照判定到底改没改」的重逻辑（会写草稿副本、
+     改保存状态文案），本函数只动 flag。之所以必须收口：state.dirty 牵动
+     自动保存、离开提醒和标题前的圆点，散着写最容易漏。 */
+  function setDirty(on = true) {
+    state.dirty = !!on;
+  }
+
   const byOrder = (a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name, 'zh');
   const catMap = () => new Map(state.categories.map((c) => [c.id, c]));
   const noteById = (id) => state.notes.find((n) => n.id === id) || null;
@@ -115,8 +145,8 @@
   function discardDraft() {
     if (!draftNote) return;
     draftNote = null;
-    state.selNote = null;
-    state.dirty = false;
+    setState({ selNote: null });
+    setDirty(false);
     savedSnapshot = '';
     clearEditDraft(DRAFT_ID);
     /* 空白草稿从未进过 state.notes，这里只需收起编辑器并重绘列表。 */
@@ -140,8 +170,8 @@
         state.notes.push(d);
         draftNote = null;
         if (state.selNote === DRAFT_ID) {
-          state.selNote = d.id;
-          state.dirty = false;
+          setState({ selNote: d.id });
+          setDirty(false);
           savedSnapshot = snapshot(d);
           setSaveState('saved');
           clearEditDraft(DRAFT_ID);
@@ -161,7 +191,7 @@
       } catch (e) {
         /* 落库失败不能丢内容：保留草稿并标脏，下次离开再试。 */
         if (state.selNote === DRAFT_ID) {
-          state.dirty = true;
+          setDirty(true);
           setSaveState('error', '保存失败，请重试');
         }
         toast(e.message);
@@ -208,24 +238,13 @@
   /* ---------------------------------------------------------- Markdown */
   marked.setOptions({ gfm: true, breaks: false, headerIds: false, mangle: false });
 
-  const td = new TurndownService({
-    headingStyle: 'atx',
-    hr: '---',
-    bulletListMarker: '-',
-    codeBlockStyle: 'fenced',
-    emDelimiter: '*',
-  });
-  if (window.turndownPluginGfm) td.use(turndownPluginGfm.gfm);
-  /* 富文本里调过宽度的图片，转 Markdown 时保留为 <img>，否则宽度会丢 */
-  td.addRule('imgWithWidth', {
-    filter: (node) => node.nodeName === 'IMG' && /(^|;)\s*width\s*:/i.test(node.getAttribute('style') || ''),
-    replacement: (content, node) => {
-      const src = node.getAttribute('src') || '';
-      const alt = node.getAttribute('alt') || '';
-      const w = ((/width\s*:\s*([^;]+)/i.exec(node.getAttribute('style') || '') || [])[1] || '').trim();
-      return `<img src="${src}" alt="${alt}" style="width:${w}">`;
-    },
-  });
+  /* Turndown 的配置（标题 atx / 列表用 - / 围栏代码 / * 作斜体）和
+     「保留图片宽度」那条规则都在 richtext-core.js 里，与云端同一份。
+     这里只做装配：缺插件时内核会退回基础转换，不会让整页挂掉。 */
+  const td = window.SJRTCore.createTurndown(
+    window.TurndownService,
+    window.turndownPluginGfm
+  );
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -286,6 +305,7 @@
       <button type="button" data-w="75">75%</button>
       <button type="button" data-w="100">100%</button>
       <button type="button" data-w="reset" class="is-ghost">原始</button>
+      <button type="button" data-w="crop" class="is-ghost" title="裁剪图片">裁剪</button>
       <input type="range" min="10" max="100" step="5" value="100" aria-label="图片宽度">
       <span class="img-sizer-pct">100%</span>
       <button type="button" data-w="close" class="is-ghost is-close" aria-label="关闭">×</button>`;
@@ -299,6 +319,7 @@
       if (!btn) return;
       const v = btn.dataset.w;
       if (v === 'close') return closeImgSizer();
+      if (v === 'crop') return openImgCrop();
       if (v === 'reset') { applyImgWidth(null); range.value = 100; pctText.textContent = '100%'; return; }
       const n = parseInt(v, 10);
       range.value = n; pctText.textContent = n + '%';
@@ -363,6 +384,236 @@
     if (imgSizer) imgSizer.classList.add('hidden');
     $$('img.sj-img-picked').forEach((x) => x.classList.remove('sj-img-picked'));
     imgEl = null; imgIdx = -1; imgMode = '';
+  }
+
+  /* ---------------------------------------------------------- 图片裁剪
+     从宽度条的「裁剪」进入：拖选区 → canvas 重绘 → 新 data URL 替换 <img src>，
+     再按当前模式落盘。选区坐标按「显示矩形」存，导出时乘 natural/display 换回原始像素；
+     跨域图 fetch 不到就明确提示，绝不把污染画布导出成坏图。 */
+  let cropUI = null, cropSt = null;
+  const CROP_RATIOS = [
+    { key: 'free', label: '自由', r: 0 },
+    { key: 'origin', label: '原图', r: 0 },
+    { key: '1', label: '1:1', r: 1 },
+    { key: '43', label: '4:3', r: 4 / 3 },
+    { key: '169', label: '16:9', r: 16 / 9 },
+  ];
+
+  function cropEnsureUI() {
+    if (cropUI) return cropUI;
+    const el = document.createElement('div');
+    el.className = 'crop-ui hidden';
+    el.innerHTML = `
+      <div class="crop-mask"></div>
+      <div class="crop-dialog">
+        <div class="crop-head"><span>裁剪图片</span><button type="button" class="crop-x" data-act="cancel" aria-label="关闭">×</button></div>
+        <div class="crop-stage"><img class="crop-img" alt=""><div class="crop-sel">
+          <i class="crop-third crop-third-v" style="left:33.333%"></i><i class="crop-third crop-third-h" style="top:33.333%"></i>
+          <i class="crop-third crop-third-v" style="left:66.666%"></i><i class="crop-third crop-third-h" style="top:66.666%"></i>
+          <i class="crop-h" data-h="nw"></i><i class="crop-h" data-h="n"></i><i class="crop-h" data-h="ne"></i>
+          <i class="crop-h" data-h="e"></i><i class="crop-h" data-h="se"></i><i class="crop-h" data-h="s"></i>
+          <i class="crop-h" data-h="sw"></i><i class="crop-h" data-h="w"></i>
+        </div></div>
+        <div class="crop-bar">
+          <div class="crop-ratios">${CROP_RATIOS.map((x) => `<button type="button" data-ratio="${x.key}"${x.key === 'free' ? ' class="on"' : ''}>${x.label}</button>`).join('')}</div>
+          <span class="crop-size"></span>
+        </div>
+        <div class="crop-foot">
+          <button type="button" data-act="reset">重置</button>
+          <button type="button" data-act="cancel">取消</button>
+          <button type="button" class="primary" data-act="done">完成</button>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+    cropUI = el;
+
+    /* 裁剪层内的点击不冒泡到 document —— 否则会触发「点空白关宽度条」，
+       把 imgEl/imgMode 清空，完成时就没法按原模式落盘。 */
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const r = e.target.closest('[data-ratio]');
+      if (r) { cropApplyRatio(r.dataset.ratio); return; }
+      const a = e.target.closest('[data-act]');
+      if (!a) return;
+      if (a.dataset.act === 'cancel') cropClose();
+      else if (a.dataset.act === 'reset') cropReset();
+      else if (a.dataset.act === 'done') cropDone();
+    });
+    el.querySelector('.crop-mask').addEventListener('click', cropClose);
+    const sel = el.querySelector('.crop-sel');
+    sel.addEventListener('pointerdown', (e) => {
+      if (!cropSt) return;
+      const h = e.target.closest('.crop-h');
+      cropSt.drag = { dir: h ? h.dataset.h : 'move', sx: e.clientX, sy: e.clientY, orig: { ...cropSt.sel } };
+      try { sel.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    sel.addEventListener('pointermove', (e) => {
+      if (!cropSt || !cropSt.drag) return;
+      cropDrag(e);
+      e.preventDefault();
+    });
+    sel.addEventListener('pointerup', () => { if (cropSt) cropSt.drag = null; });
+    sel.addEventListener('pointercancel', () => { if (cropSt) cropSt.drag = null; });
+    document.addEventListener('keydown', (e) => {
+      if (cropUI && !cropUI.classList.contains('hidden') && e.key === 'Escape') { e.stopPropagation(); cropClose(); }
+    }, true);
+    return el;
+  }
+
+  async function cropFetchDataUrl(src) {
+    if (/^(data|blob):/i.test(src)) return src;
+    try {
+      const r = await fetch(src, { credentials: 'include' });
+      if (!r.ok) return '';
+      const b = await r.blob();
+      return await new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(fr.result);
+        fr.onerror = rej;
+        fr.readAsDataURL(b);
+      });
+    } catch (_) { return ''; }
+  }
+
+  function cropClose() {
+    if (cropUI) cropUI.classList.add('hidden');
+    document.body.classList.remove('crop-open');
+    cropSt = null;
+  }
+
+  function cropPaint() {
+    if (!cropSt) return;
+    const s = cropSt, el = cropUI.querySelector('.crop-sel');
+    el.style.left = s.sel.x + 'px'; el.style.top = s.sel.y + 'px';
+    el.style.width = s.sel.w + 'px'; el.style.height = s.sel.h + 'px';
+    const f = s.nat.w / s.disp.w;
+    cropUI.querySelector('.crop-size').textContent =
+      Math.max(1, Math.round(s.sel.w * f)) + ' × ' + Math.max(1, Math.round(s.sel.h * f)) + ' px';
+  }
+
+  function cropClamp() {
+    if (!cropSt) return;
+    const d = cropSt.disp, s = cropSt.sel;
+    s.w = Math.max(24, Math.min(d.w, s.w));
+    s.h = Math.max(24, Math.min(d.h, s.h));
+    s.x = Math.max(0, Math.min(d.w - s.w, s.x));
+    s.y = Math.max(0, Math.min(d.h - s.h, s.y));
+  }
+
+  function cropRatioOf(key) {
+    if (key === 'free') return 0;
+    if (key === 'origin') return cropSt.nat.w / cropSt.nat.h || 0;
+    const hit = CROP_RATIOS.find((x) => x.key === key);
+    return hit ? hit.r : 0;
+  }
+
+  function cropApplyRatio(key) {
+    if (!cropSt) return;
+    cropSt.ratioKey = key;
+    cropSt.ratio = cropRatioOf(key);
+    cropUI.querySelectorAll('[data-ratio]').forEach((b) => b.classList.toggle('on', b.dataset.ratio === key));
+    if (cropSt.ratio) {
+      const c = { x: cropSt.sel.x + cropSt.sel.w / 2, y: cropSt.sel.y + cropSt.sel.h / 2 };
+      let w = cropSt.sel.w, h = w / cropSt.ratio;
+      if (h > cropSt.disp.h) { h = cropSt.disp.h; w = h * cropSt.ratio; }
+      if (w > cropSt.disp.w) { w = cropSt.disp.w; h = w / cropSt.ratio; }
+      cropSt.sel = { x: c.x - w / 2, y: c.y - h / 2, w, h };
+      cropClamp();
+    }
+    cropPaint();
+  }
+
+  function cropReset() {
+    if (!cropSt) return;
+    const d = cropSt.disp;
+    cropSt.sel = { x: d.w * 0.1, y: d.h * 0.1, w: d.w * 0.8, h: d.h * 0.8 };
+    cropSt.ratio = 0; cropSt.ratioKey = 'free';
+    cropUI.querySelectorAll('[data-ratio]').forEach((b) => b.classList.toggle('on', b.dataset.ratio === 'free'));
+    cropPaint();
+  }
+
+  function cropDrag(e) {
+    const t = cropSt.drag, o = t.orig, dir = t.dir;
+    const dx = e.clientX - t.sx, dy = e.clientY - t.sy;
+    let { x, y, w, h } = o;
+    const min = 24;
+    if (dir === 'move') {
+      x = o.x + dx; y = o.y + dy;
+    } else {
+      if (dir.includes('w')) { x = o.x + dx; w = o.w - dx; }
+      if (dir.includes('e')) { w = o.w + dx; }
+      if (dir.includes('n')) { y = o.y + dy; h = o.h - dy; }
+      if (dir.includes('s')) { h = o.h + dy; }
+      if (w < min) { if (dir.includes('w')) x = o.x + o.w - min; w = min; }
+      if (h < min) { if (dir.includes('n')) y = o.y + o.h - min; h = min; }
+      if (cropSt.ratio) {
+        if (dir.length === 2) {
+          h = w / cropSt.ratio;
+          if (dir.includes('n')) y = o.y + o.h - h;
+        } else if (dir === 'e' || dir === 'w') {
+          const cy = o.y + o.h / 2; h = w / cropSt.ratio; y = cy - h / 2;
+        } else {
+          const cx = o.x + o.w / 2; w = h * cropSt.ratio; x = cx - w / 2;
+        }
+      }
+    }
+    cropSt.sel = { x, y, w, h };
+    cropClamp(); cropPaint();
+  }
+
+  function cropDone() {
+    if (!cropSt) return;
+    try {
+      const s = cropSt, f = s.nat.w / s.disp.w;
+      const sx = s.sel.x * f, sy = s.sel.y * f, sw = s.sel.w * f, sh = s.sel.h * f;
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(sw)); cv.height = Math.max(1, Math.round(sh));
+      const ctx = cv.getContext('2d');
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(s.img, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+      const keepPng = /^data:image\/(png|webp)/i.test(s.src);
+      const out = cv.toDataURL(keepPng ? 'image/png' : 'image/jpeg', 0.92);
+      const target = s.target;
+      target.src = out;
+      if (s.mode === 'rich') onRichInput();
+      cropClose();
+      closeImgSizer();
+      toast('图片已裁剪');
+    } catch (err) {
+      cropClose();
+      toast('裁剪失败：' + (err && err.message ? err.message : '这张图不允许裁剪'));
+    }
+  }
+
+  async function openImgCrop() {
+    if (!imgEl) return;
+    const src = imgEl.currentSrc || imgEl.src || imgEl.getAttribute('src') || '';
+    if (!src) { toast('这张图还没有可用的地址'); return; }
+    const ui = cropEnsureUI();
+    cropClose();
+    ui.classList.remove('hidden');
+    document.body.classList.add('crop-open');
+    const img = ui.querySelector('.crop-img');
+    const usable = await cropFetchDataUrl(src);
+    if (!usable && !/^(data|blob):/i.test(src)) {
+      cropClose();
+      toast('这张图来自外部站点，无法裁剪（可先下载到本地再插入）');
+      return;
+    }
+    const finalSrc = usable || src;
+    await new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; img.src = finalSrc; });
+    if (!img.naturalWidth) { cropClose(); toast('图片加载失败，无法裁剪'); return; }
+    const dw = img.clientWidth || img.naturalWidth, dh = img.clientHeight || img.naturalHeight;
+    cropSt = {
+      target: imgEl, mode: imgMode, src: finalSrc, img,
+      nat: { w: img.naturalWidth, h: img.naturalHeight },
+      disp: { w: dw, h: dh }, sel: { x: dw * 0.1, y: dh * 0.1, w: dw * 0.8, h: dh * 0.8 },
+      ratio: 0, ratioKey: 'free', drag: null,
+    };
+    ui.querySelectorAll('[data-ratio]').forEach((b) => b.classList.toggle('on', b.dataset.ratio === 'free'));
+    cropPaint();
   }
 
   function bindImgResize(container, mode) {
@@ -509,7 +760,8 @@
     row.dataset.nid = n.id;
     row.draggable = true;
     row.style.paddingLeft = 28 + d * 18 + 'px';
-    row.title = n.title || '无标题笔记';
+    /* 不再挂原生 title：浏览器那套黑框白底提示会在 1 秒后冒出来，跟我们自己
+       的悬停卡片同时出现、互相压着。标题被裁掉时由卡片补全（见 showTreeMeta）。 */
     /* 批量子集不换 DOM 结构：勾选框常驻，只在 .tree.batch-mode 时显形，
        这样进出多选不必重建整棵树，行高也不会跳。 */
     row.innerHTML = `
@@ -900,7 +1152,7 @@
           try { await api(`/api/notes/${id}`, { method: 'DELETE' }); ok++; } catch (_) {}
         }
         const doomed = new Set(ids);
-        state.notes = state.notes.filter((n) => !doomed.has(n.id));
+        setState({ notes: state.notes.filter((n) => !doomed.has(n.id)) });
         if (state.selNote && doomed.has(state.selNote)) closeEditor();
         exitBatch();
         toast(`已移到回收站 ${ok} 篇，30 天内可恢复`);
@@ -1192,8 +1444,8 @@
       el.innerHTML = `<span class="tag-text">${escapeHtml(tag)}</span><span class="tag-count">${count}</span>`;
       el.title = `筛选含「${tag}」的笔记`;
       el.addEventListener('click', () => {
-        state.selCat = state.selCat === 'tag:' + tag ? 'all' : 'tag:' + tag;
-        state.search = '';
+        setState({ selCat: state.selCat === 'tag:' + tag ? 'all' : 'tag:' + tag });
+        setState({ search: '' });
         $('#searchInput').value = '';
         renderTree();
         renderList();
@@ -1245,17 +1497,22 @@
     const value = input.value.trim().replace(/^#/, '');
     if (note && value) {
       const tags = note.tags || [];
-      if (!tags.includes(value)) {
-        if (tags.length >= 10) {
-          toast('每条笔记最多 10 个标签');
-        } else {
-          note.tags = [...tags, value];
-          note.updatedAt = Date.now();
-          markDirty();
-          renderNoteTags();
-          renderTags();
-          renderList();
-        }
+      /* 标签没有独立表，同名判定只能靠名字：忽略大小写与空白后相同就算
+         同一个标签，直接复用已有写法，别让「工作 / 工作  / Work」在侧栏
+         长成三个。归一规则与分类共用内核（cat-core.js 的 normTag）。 */
+      const norm = (t) => (window.SJCats ? window.SJCats.normTag(t) : String(t).trim().toLowerCase());
+      const dup = tags.find((t) => norm(t) === norm(value));
+      if (dup) {
+        toast(`已经有标签「${dup}」`);
+      } else if (tags.length >= 10) {
+        toast('每条笔记最多 10 个标签');
+      } else {
+        note.tags = [...tags, value];
+        note.updatedAt = Date.now();
+        markDirty();
+        renderNoteTags();
+        renderTags();
+        renderList();
       }
     }
     closeTagInput();
@@ -1271,7 +1528,7 @@
     renderTags();
     renderList();
     if (state.selCat === 'tag:' + tag) {
-      state.selCat = 'all';
+      setState({ selCat: 'all' });
       renderTree();
       renderList();
     }
@@ -1308,10 +1565,21 @@
     return state.notes.filter((n) => (n.tags || []).includes(tag));
   }
 
-  /* 只发 tags 字段，绝不覆盖正文（避免刚编辑但未保存的内容被服务端的旧值冲掉） */
+  /* 只发 tags 字段，绝不覆盖正文（避免刚编辑但未保存的内容被服务端的旧值冲掉）。
+     顺便按内核规整一遍：忽略大小写与空白去重、去空、最多 10 个 ——
+     所有标签写入口（含批量合并）都走这里，规则只有一份。 */
   async function patchNoteTags(note, tags) {
-    const next = [...new Set(tags.map((t) => String(t).trim()).filter(Boolean))].slice(0, 10);
-    note.tags = next;
+    const seen = new Set();
+    const next = [];
+    for (const raw of tags) {
+      const t = String(raw).trim();
+      if (!t) continue;
+      const k = window.SJCats ? window.SJCats.normTag(t) : t.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      next.push(t);
+    }
+    note.tags = next.slice(0, 10);
     note.updatedAt = Date.now();
     try {
       const r = await api(`/api/notes/${note.id}`, { method: 'PATCH', body: { tags: next } });
@@ -1332,7 +1600,7 @@
     }
     const sel = String(state.selCat || '');
     if (sel.startsWith('tag:') && src.has(sel.slice(4)) && sel.slice(4) !== target) {
-      state.selCat = 'tag:' + target;
+      setState({ selCat: 'tag:' + target });
     }
     return hit.length;
   }
@@ -1342,7 +1610,7 @@
     for (const n of hit) {
       await patchNoteTags(n, (n.tags || []).filter((t) => t !== tag));
     }
-    if (state.selCat === 'tag:' + tag) state.selCat = 'all';
+    if (state.selCat === 'tag:' + tag) setState({ selCat: 'all' });
     return hit.length;
   }
 
@@ -1447,10 +1715,10 @@
 
     row.querySelector('.tm-name').addEventListener('click', () => {
       closeModal();
-      state.search = '';
+      setState({ search: '' });
       const si = $('#searchInput');
       if (si) si.value = '';
-      state.selCat = 'tag:' + t.name;
+      setState({ selCat: 'tag:' + t.name });
       renderTree();
       renderList();
       renderTags();
@@ -1766,7 +2034,11 @@
       document.body.classList.remove(NOTE_READ);
       document.body.classList.add(NOTE_EDIT);
       const rp = $('#richPane');
-      if (rp) rp.setAttribute('contenteditable', 'true');
+      if (rp) {
+        rp.setAttribute('contenteditable', 'true');
+        /* 进编辑态以当前正文为干净起点重建撤销栈 */
+        richHistReset(rp.innerHTML);
+      }
       /* 标题框在编辑态才可写；阅读态是只读的展示 */
       const ti = $('#titleInput');
       if (ti) { ti.readOnly = false; ti.style.opacity = ''; }
@@ -1788,6 +2060,13 @@
          留着会浮在正文上，再点图还会跟大图预览撞在一起 */
       closeImgSizer();
       placeReadTitle();
+    }
+    /* 附件面板跟着形态走：编辑态不留窄条，阅读态默认整块摊开。
+       与手机端同一约定（用户要求阅读态能看到附件、点 ⌄ 才折成窄条）。 */
+    if (edit) {
+      if (attachStateOf() === 'collapsed') setAttachState('open');
+    } else {
+      setAttachState(attachHasAny() ? 'open' : 'hidden');
     }
   }
 
@@ -1840,7 +2119,7 @@
     /* -70：草稿只存在于内存，按哨兵取，别去 state.notes 里找。 */
     const note = id === DRAFT_ID ? draftNote : noteById(id);
     if (!note) return;
-    state.selNote = id;
+    setState({ selNote: id });
     /* 打开笔记时让左侧分类树定位到该笔记所在分类：展开其分类与祖先链，
        高亮由 renderTree 内的 treeActiveCat() 统一驱动（笔记只在自己的分类下高亮，
        而不在「全部笔记」伪节点下）。未分类笔记则展开「未分类」容器。 */
@@ -1848,7 +2127,7 @@
       if (note.categoryId) expandChain(note.categoryId);
       else setOpen('uncat', true);
     }
-    state.dirty = false;
+    setDirty(false);
     savedSnapshot = snapshot(note);
 
     $('#emptyState').classList.add('hidden');
@@ -1860,6 +2139,7 @@
     $('#richPane').innerHTML = noteHtml(note);
     decorate($('#richPane'));
     $('#richPane').classList.remove('hidden');
+    richHistReset($('#richPane').innerHTML);
 
     $('#metaInfo').innerHTML = metaInfoHTML(note);
     setSaveState('', `已保存 ${new Date(note.updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`);
@@ -1874,7 +2154,8 @@
     updateAttachBadge();
     wordCount();
 
-    $('#attachPanel').classList.toggle('hidden', !(note.attachments && note.attachments.length));
+    /* 换笔记：附件面板回到整块摊开，折叠状态不带到下一篇 */
+    setAttachState(note.attachments && note.attachments.length ? 'open' : 'hidden');
 
     /* 形态同步：已有笔记进阅读态（先读后写），新建草稿直接进编辑态。
        正文只有富文本一个编辑面，Markdown 笔记进来时已经是渲染好的 HTML。 */
@@ -1936,13 +2217,13 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') aaClose(); });
   const AA_FS = $('#readAaFs'), AA_LH = $('#readAaLh');
   if (AA_FS) AA_FS.addEventListener('input', () => {
-    state.richFs = clampFs(AA_FS.value);
+    setState({ richFs: clampFs(AA_FS.value) });
     applyRichFs();
     try { localStorage.setItem('sj_rich_fs', String(state.richFs)); } catch (_) {}
     aaSync();
   });
   if (AA_LH) AA_LH.addEventListener('input', () => {
-    state.richLh = clampLh(AA_LH.value);
+    setState({ richLh: clampLh(AA_LH.value) });
     applyRichLh();
     try { localStorage.setItem('sj_rich_lh', String(state.richLh)); } catch (_) {}
     syncLhPicker();
@@ -1950,10 +2231,10 @@
   });
   const AA_RESET = $('#readAaReset');
   if (AA_RESET) AA_RESET.addEventListener('click', () => {
-    state.richFs = 0;
+    setState({ richFs: 0 });
     try { localStorage.removeItem('sj_rich_fs'); } catch (_) {}
     applyRichFs();
-    state.richLh = 28;
+    setState({ richLh: 28 });
     try { localStorage.setItem('sj_rich_lh', '28'); } catch (_) {}
     applyRichLh();
     syncLhPicker();
@@ -2041,13 +2322,13 @@
     const note = currentNote();
     if (!note) return;
     if (snapshot(note) === savedSnapshot) {
-      state.dirty = false;
+      setDirty(false);
       /* 改回原样 = 没有未保存内容，草稿副本也该清掉，别下次启动误报。 */
       clearEditDraft(state.selNote === DRAFT_ID ? DRAFT_ID : note.id);
       setSaveState('saved');
       return;
     }
-    state.dirty = true;
+    setDirty(true);
     saveEditDraft(note);
     setSaveState('dirty', '未保存 · 离开时保存');
   }
@@ -2064,7 +2345,7 @@
     const note = currentNote();
     if (!note || !state.dirty) return;
     const savingId = note.id;
-    state.dirty = false;
+    setDirty(false);
     setSaveState('saving');
     try {
       const updated = await api(`/api/notes/${note.id}`, {
@@ -2083,7 +2364,7 @@
       clearEditDraft(savingId);
       renderList();
     } catch (e) {
-      state.dirty = true;
+      setDirty(true);
       setSaveState('error', '保存失败，请重试');
       toast(e.message);
     }
@@ -2093,14 +2374,101 @@
   function onRichInput() {
     const note = currentNote();
     if (!note) return;
-    note.content = $('#richPane').innerHTML;
+    const html = $('#richPane').innerHTML;
+    note.content = html;
     note.format = 'rich';
     note.updatedAt = Date.now();
     wordCount();
     markDirty();
     /* 字体 / 字号下拉跟着更新（命令执行完光标处的样式已经变了） */
     scheduleSyncFontPickers();
+    richHistRecord(html);
   }
+
+  let richHist = [], richHistIdx = -1, richHistTyping = false, richHistActive = false, richHistTimer = null;
+  const RICH_HIST_MAX = 80;
+
+  function richHistReset(html) {
+    richHist = [html == null ? '' : html];
+    richHistIdx = 0;
+    richHistTyping = false;
+    richHistActive = false;
+    clearTimeout(richHistTimer);
+    richHistTimer = null;
+    richHistSyncBtns();
+  }
+
+  function richHistCommit(html) {
+    /* 丢掉 redo 分支，压入新状态 */
+    richHist = richHist.slice(0, richHistIdx + 1);
+    richHist.push(html);
+    if (richHist.length > RICH_HIST_MAX) richHist.shift();
+    richHistIdx = richHist.length - 1;
+    richHistSyncBtns();
+  }
+
+  function richHistRecord(html) {
+    if (!richHist.length) return;
+    if (html === richHist[richHistIdx]) return;
+    const fromTyping = richHistTyping;
+    richHistTyping = false;   // 本次已消费；每次 input 事件会重新置位
+    if (fromTyping && richHistActive) {
+      /* 同一打字段的后续字节：只把栈顶更新成最新内容，不新增历史项。
+         撤销一次退回整段输入之前，而不是退一个字。 */
+      richHist[richHistIdx] = html;
+      clearTimeout(richHistTimer);
+      richHistTimer = setTimeout(() => { richHistActive = false; }, 500);
+      return;
+    }
+    clearTimeout(richHistTimer);
+    if (fromTyping) {
+      /* 打字段第一条：压入新栈，并开启 500ms 合并窗口 */
+      richHistCommit(html);
+      richHistActive = true;
+      richHistTimer = setTimeout(() => { richHistActive = false; }, 500);
+    } else {
+      /* 离散操作（裁剪/格式/宽度/插图）：关掉可能未结束的打字段，独立记一步 */
+      richHistActive = false;
+      richHistCommit(html);
+    }
+  }
+
+  function richHistSyncBtns() {
+    const canU = richHistIdx > 0;
+    const canR = richHistIdx >= 0 && richHistIdx < richHist.length - 1;
+    document.querySelectorAll('[data-act="nh-undo"]').forEach((b) => { b.disabled = !canU; });
+    document.querySelectorAll('[data-act="nh-redo"]').forEach((b) => { b.disabled = !canR; });
+    document.querySelectorAll('#sjUndoBtn').forEach((b) => { b.disabled = !canU; });
+    document.querySelectorAll('#sjRedoBtn').forEach((b) => { b.disabled = !canR; });
+  }
+
+  function richHistRestore(idx) {
+    const pane = $('#richPane');
+    if (!pane || idx < 0 || idx >= richHist.length) return false;
+    richHistIdx = idx;
+    richHistTyping = false;
+    richHistActive = false;
+    clearTimeout(richHistTimer);
+    richHistTimer = null;
+    const html = richHist[idx];
+    pane.innerHTML = html;
+    decorate(pane);
+    const note = currentNote();
+    if (note) { note.content = html; note.format = 'rich'; note.updatedAt = Date.now(); }
+    wordCount();
+    markDirty();
+    richHistSyncBtns();
+    /* 撤销/重做会把整块 innerHTML 换掉，工具条上的块名、对齐、颜色都停在
+       撤销前那一段上。这里补一次刷新 —— 正是「改了没刷新」那类毛病。 */
+    syncUI();
+    return true;
+  }
+
+  function richUndo() { return richHistIdx > 0 ? richHistRestore(richHistIdx - 1) : false; }
+  function richRedo() {
+    return richHistIdx >= 0 && richHistIdx < richHist.length - 1 ? richHistRestore(richHistIdx + 1) : false;
+  }
+
 
   /* 富文本里的图片保持原生，无需额外处理。 */
 
@@ -2110,6 +2478,7 @@
     const bar = $('#toolbar');
     /* 换笔记会重建工具条：色板跟着收掉，别浮在下一篇笔记上 */
     closeColorPop();
+    closeBlockPop();
     bar.innerHTML = '';
     if (!note) return;
 
@@ -2188,24 +2557,38 @@
       '<span class="tb-color"><b>A</b><i id="tbColorMark"></i></span>',
       '文字颜色', () => toggleColorPop(colorBtn)
     );
-    paintColorMark();
+    /* 文字背景色：和文字颜色并排，方框里那个 A 的底色就是光标处的背景色 */
+    const bgBtn = btn(
+      '<span class="tb-color tb-color-bg"><b class="tb-bg-box" id="tbBgMark">A</b></span>',
+      '文字背景色', () => toggleColorPop(bgBtn, 'bg')
+    );
     sep();
-    btn('<span class="tb-text">H1</span>', '一级标题', () => exec('formatBlock', '<h1>'));
-    btn('<span class="tb-text">H2</span>', '二级标题', () => exec('formatBlock', '<h2>'));
-    btn('<span class="tb-text">H3</span>', '三级标题', () => exec('formatBlock', '<h3>'));
-    btn('<span class="tb-text">¶</span>', '正文', () => exec('formatBlock', '<p>'));
+    /* 2026-11-25：H1/H2/H3/¶ 四个按钮合并成一个下拉 —— 省一排位置，
+       顺带把 H4/H5 也放出来（原来没有入口）。按钮上显示光标所在的块名。 */
+    tbBlockBtn = btn(
+      '<span class="tb-block-label">正文</span><span class="tb-caret"></span>',
+      '段落格式', () => toggleBlockPop(tbBlockBtn), 'tb-block'
+    );
     sep();
     btn(I.list, '无序列表', () => exec('insertUnorderedList'));
     btn(I.listOrdered, '有序列表', () => exec('insertOrderedList'));
     btn(I.quote, '引用', () => exec('formatBlock', '<blockquote>'));
     sep();
-    /* 对齐用 cssCmd（styleWithCSS=true），否则浏览器写 align 属性，
-       过一遍净化就白调了。 */
-    btn(I.alignLeft, '左对齐', () => cssCmd('justifyLeft'));
-    btn(I.alignCenter, '居中', () => cssCmd('justifyCenter'));
-    btn(I.alignRight, '右对齐', () => cssCmd('justifyRight'));
+    /* 对齐四种合并成一个下拉（左 / 右 / 居中 / 两端），旁边再补一个缩进下拉。
+       原来三个对齐按钮平铺，加上缩进就太挤；按钮上显示光标当前的对齐方式。 */
+    tbAlignBtn = btn(
+      `<span class="tb-align-ico">${I.alignLeft}</span><span class="tb-caret"></span>`,
+      '对齐方式', () => toggleAlignPop(tbAlignBtn), 'tb-align'
+    );
+    tbIndentBtn = btn(
+      `<span class="tb-align-ico">${I.indentInc}</span><span class="tb-caret"></span>`,
+      '缩进', () => toggleIndentPop(tbIndentBtn), 'tb-indent'
+    );
     sep();
     btn(I.code, '代码块', richCodeBlock);
+    /* 行内代码：选中文字一键套 <code>，再按一次脱掉；快捷键见 keydown */
+    const inlineCodeBtn = btn(I.codeInline, '行内代码 (Ctrl+E)', toggleInlineCode, 'tb-inline-code');
+    inlineCodeBtn.dataset.act = 'inline-code';
     btn(I.link, '插入链接', () => {
       const url = prompt('请输入链接地址', 'https://');
       if (url) exec('createLink', url);
@@ -2220,7 +2603,7 @@
     tbLhSel = sel('正文行距（像素）', LH_PX.map((v) => [String(v), String(v)]), (v) => {
       const px = parseFloat(v);
       if (!isFinite(px)) return;
-      state.richLh = px;
+      setState({ richLh: px });
       applyRichLh();
       try { localStorage.setItem('sj_rich_lh', String(px)); } catch (_) {}
       syncLhPicker();
@@ -2229,10 +2612,28 @@
     const clearBtn = btn('<span class="tb-text" style="font-weight:600">Tx</span>', '清除格式', clearFormat, '');
     clearBtn.style.marginLeft = 'auto';
     syncFontPickers();
+    /* 工具条折行时不要再把「清除格式」顶到最右：第二行常常只剩行距下拉，
+       最右边却单独飘一个 Tx，看着像排坏了。只在一行时保留靠右。
+       窗口宽度一变（侧栏拖宽拖窄）行数会变，所以盯高度而不是只判一次。 */
+    watchBarWrap(bar);
   }
 
-  /* ---- 字体 / 字号下拉的「当前值」 ----
-     光标的字体和字号从 startContainer 的计算样式里算：内联 span 上写的、
+  /* 工具条一折行（第二行只剩行距下拉），就把「清除格式」的靠右取消掉，
+     免得 Tx 孤零零悬在最右边；回到一行时再顶回去。 */
+  let barWrapRO = null;
+  function watchBarWrap(bar) {
+    if (!bar || typeof ResizeObserver !== 'function') return;
+    if (barWrapRO) barWrapRO.disconnect();
+    barWrapRO = new ResizeObserver(() => {
+      const b = bar.querySelector('button[title="清除格式"]');
+      if (!b) return;
+      const want = bar.offsetHeight > 46 ? '' : 'auto';
+      if (b.style.marginLeft !== want) b.style.marginLeft = want;
+    });
+    barWrapRO.observe(bar);
+  }
+
+  /* ---- 字体 / 字号下拉的「当前值」 ----     光标的字体和字号从 startContainer 的计算样式里算：内联 span 上写的、
      标题自带的都如实反映。字号不在预设那几档里（手机端拖出来的 21px）
      就临时补一档 -- 否则下拉只能停在占位文字上，等于没信息。 */
   let tbFontSel = null;
@@ -2381,10 +2782,22 @@
     return v;
   }
 
+  /* 工具条状态的唯一刷新入口：文字颜色、文字底色、块名、对齐、行内代码
+     五处高亮都跟着光标走。以前各调用点只刷自己认得的那一处，别处就停在
+     旧状态（换了标题级别对齐图标不动、套了行内代码颜色横线不动）。
+     五个 paint 内部都有空值保护，没有工具条时（阅读态、无笔记）直接返回。 */
+  function syncUI() {
+    paintColorMark();
+    paintBgMark();
+    paintBlockLabel();
+    paintAlignIcon();
+    paintInlineCodeMark();
+  }
+
   function syncFontPickers() {
     /* 颜色横线和字体/字号下拉一伙的：都跟着光标走，所以一起刷
        （放在最前面，下面两个 early return 也照样能刷到） */
-    paintColorMark();
+    syncUI();
     if (!tbFontSel || !tbSizeSel) return;
     const el = caretStyleHost();
     if (!el) {
@@ -2405,8 +2818,16 @@
     ['#d13b32', '红色'], ['#f2c53d', '黄色'], ['#63a95c', '绿色'],
     ['#61b0d9', '蓝色'], ['#4b46d8', '靛蓝'], ['#a554cd', '紫色'],
   ];
+  /* 文字背景色（荧光笔）：用半透明调子，而不是实色浅底。
+     实色浅底在深色主题下会变成「浅底 + 浅字」，字直接糊掉；
+     半透明叠在什么底色上都跟着那层底色走，两套主题都能读。 */
+  const BG_COLORS = [
+    ['rgba(209,59,50,.20)', '红色'], ['rgba(242,197,61,.34)', '黄色'], ['rgba(99,169,92,.24)', '绿色'],
+    ['rgba(97,176,217,.28)', '蓝色'], ['rgba(75,70,216,.18)', '靛蓝'], ['rgba(165,84,205,.22)', '紫色'],
+  ];
   let colorPop = null;
   let colorPopAnchor = null;
+  let colorPopMode = 'text';
 
   /* 按钮 A 下面那道小横线 = 光标左边那个字真正是什么颜色。
      不是「上次用过的颜色」：光标移到一行红字里，横线就该是红的；
@@ -2453,24 +2874,8 @@
     closeColorPop();
   }
 
-  function toggleColorPop(anchor) {
-    if (colorPop) { closeColorPop(); return; }
-    const pop = document.createElement('div');
-    pop.className = 'tb-color-pop';
-    pop.innerHTML = TEXT_COLORS.map(([c, name]) =>
-      `<button type="button" class="tb-color-dot" data-color="${c}" title="${name}" style="--c:${c}"></button>`
-    ).join('') + '<button type="button" class="tb-color-dot ring" data-color="default" title="默认颜色"></button>';
-    /* 色板在正文外面：mousedown 不拦下来的话，点一下焦点就从正文跑走，
-       选区变灰，颜色落不到刚选中的字上。 */
-    pop.addEventListener('mousedown', (e) => e.preventDefault());
-    pop.addEventListener('click', (e) => {
-      const dot = e.target.closest('[data-color]');
-      if (!dot) return;
-      applyTextColor(dot.dataset.color);
-      closeColorPop();
-    });
-    document.body.appendChild(pop);
-    /* 贴在按钮下沿；贴到窗口右边或底边就往回收 */
+  /* 浮层贴在按钮下沿；右边或下边放不下就往回收（色板、段落菜单共用） */
+  function placeFixedPop(pop, anchor) {
     const r = anchor.getBoundingClientRect();
     const w = pop.offsetWidth;
     const h = pop.offsetHeight;
@@ -2479,14 +2884,376 @@
     if (top + h > window.innerHeight - 10) top = r.top - h - 6;
     pop.style.left = Math.max(8, left) + 'px';
     pop.style.top = Math.max(8, top) + 'px';
+  }
+
+  function toggleColorPop(anchor, mode) {
+    if (colorPop) { closeColorPop(); return; }
+    const m = mode === 'bg' ? 'bg' : 'text';
+    const list = m === 'bg' ? BG_COLORS : TEXT_COLORS;
+    const pop = document.createElement('div');
+    pop.className = 'tb-color-pop' + (m === 'bg' ? ' is-bg' : '');
+    pop.innerHTML = list.map(([c, name]) =>
+      `<button type="button" class="tb-color-dot" data-color="${c}" title="${name}" style="--c:${c}"></button>`
+    ).join('') + `<button type="button" class="tb-color-dot ring" data-color="default" title="${m === 'bg' ? '无背景' : '默认颜色'}"></button>`;
+    /* 色板在正文外面：mousedown 不拦下来的话，点一下焦点就从正文跑走，
+       选区变灰，颜色落不到刚选中的字上。 */
+    pop.addEventListener('mousedown', (e) => e.preventDefault());
+    pop.addEventListener('click', (e) => {
+      const dot = e.target.closest('[data-color]');
+      if (!dot) return;
+      if (m === 'bg') applyBgColor(dot.dataset.color);
+      else applyTextColor(dot.dataset.color);
+      closeColorPop();
+    });
+    document.body.appendChild(pop);
+    placeFixedPop(pop, anchor);
     colorPop = pop;
     colorPopAnchor = anchor;
+    colorPopMode = m;
     anchor.classList.add('active');
     /* 下一拍再挂全局监听，否则这次点击自己就把色板关了 */
     setTimeout(() => {
       document.addEventListener('mousedown', onDocDownColorPop, true);
       document.addEventListener('keydown', onKeyColorPop);
     }, 0);
+  }
+
+  /* ---- 文字背景色（高亮） ----
+     和文字颜色同一套交互，只是落到 background-color 上。
+     「无背景」不是盖一块白底，而是把内联 background 抹掉：深色主题下
+     白底会把那一行糊成白条，抹掉才能回到主题底色。 */
+  function applyBgColor(color) {
+    const pane = $('#richPane');
+    if (!pane) return;
+    prepareRange();
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const collapsed = sel.getRangeAt(0).collapsed;
+    const block = collapsed ? selectBlockAtCaret() : null;
+    const range = sel.getRangeAt(0);
+    if (color === 'default') {
+      stripCharStyles(range, ['background-color', 'background']);
+      /* 抹完只剩一个没属性的空 span（越用越深），拆掉 */
+      dropBareSpans();
+    } else {
+      try { document.execCommand('styleWithCSS', false, true); } catch (_) {}
+      let ok = false;
+      try { ok = document.execCommand('hiliteColor', false, color); } catch (_) { ok = false; }
+      /* 个别实现不认 rgba 的 hiliteColor，退到同一个命令的旧名字 */
+      if (!ok) { try { document.execCommand('backColor', false, color); } catch (_) {} }
+    }
+    if (collapsed) caretToBlockEnd(block);
+    syncUI();
+    onRichInput();
+  }
+
+  function caretBgColor() {    const el = caretStyleHost();
+    if (!el) return '';
+    const bg = getComputedStyle(el).backgroundColor || '';
+    if (!bg || bg === 'transparent' || /^rgba\(0,\s*0,\s*0,\s*0\)$/.test(bg)) return '';
+    return bg;
+  }
+
+  /* 方框里的 A 用底色当底：光标停在带背景的字里，框就跟着变色 */
+  function paintBgMark() {
+    const box = document.getElementById('tbBgMark');
+    if (!box) return;
+    const c = caretBgColor();
+    box.style.background = c || 'transparent';
+    box.classList.toggle('has-bg', !!c);
+  }
+
+  /* ---- 段落格式：正文 / H1~H5 ----
+     原来 H1、H2、H3、¶ 是四个并排按钮，既占位置又只到 H3。收成一个
+     「当前块名 ▾」的下拉：按钮上直接写着光标现在是什么（正文 / H2…），
+     点开才是菜单，当前那一条带 ✓。 */
+  let tbBlockBtn = null;
+  let blockPop = null;
+  let blockPopAnchor = null;
+  const BLOCK_OPTS = [['h1', 'H1'], ['h2', 'H2'], ['h3', 'H3'], ['h4', 'H4'], ['h5', 'H5'], ['p', '正文']];
+
+  /* 光标落在哪个块上：标题直接回报 h1~h5，其余（段落、列表、引用）
+     都算正文 —— 菜单里没有列表/引用，按钮上就不该冒出它们。 */
+  function blockTagAtCaret() {
+    const pane = $('#richPane');
+    if (!pane) return 'p';
+    const sel = window.getSelection();
+    let node = null;
+    if (sel && sel.rangeCount && pane.contains(sel.getRangeAt(0).startContainer)) node = sel.getRangeAt(0).startContainer;
+    else if (savedRange && pane.contains(savedRange.startContainer)) node = savedRange.startContainer;
+    if (!node) return 'p';
+    let el = node.nodeType === 1 ? node : node.parentElement;
+    while (el && el !== pane) {
+      const t = el.tagName;
+      if (/^H[1-5]$/.test(t)) return t.toLowerCase();
+      if (/^(P|LI|BLOCKQUOTE|PRE|DIV)$/.test(t)) return 'p';
+      el = el.parentElement;
+    }
+    return 'p';
+  }
+
+  function paintBlockLabel() {
+    const lab = tbBlockBtn && tbBlockBtn.querySelector('.tb-block-label');
+    if (!lab) return;
+    const tag = blockTagAtCaret();
+    const opt = BLOCK_OPTS.find(([v]) => v === tag) || BLOCK_OPTS[5];
+    if (lab.textContent !== opt[1]) lab.textContent = opt[1];
+  }
+
+  function closeBlockPop() {
+    if (!blockPop) return;
+    blockPop.remove();
+    blockPop = null;
+    document.removeEventListener('mousedown', onDocDownBlockPop, true);
+    document.removeEventListener('keydown', onKeyBlockPop);
+    if (blockPopAnchor) {
+      blockPopAnchor.classList.remove('active');
+      blockPopAnchor = null;
+    }
+  }
+
+  function onKeyBlockPop(e) {
+    if (e.key === 'Escape') closeBlockPop();
+  }
+
+  function onDocDownBlockPop(e) {
+    if (!blockPop) return;
+    if (blockPop.contains(e.target)) return;
+    if (blockPopAnchor && blockPopAnchor.contains(e.target)) return;
+    closeBlockPop();
+  }
+
+  function toggleBlockPop(anchor) {
+    if (blockPop) { closeBlockPop(); return; }
+    const cur = blockTagAtCaret();
+    const pop = document.createElement('div');
+    pop.className = 'tb-block-pop';
+    pop.innerHTML = BLOCK_OPTS.map(([tag, label]) => {
+      const on = tag === cur;
+      if (tag === 'p') return '<div class="tb-block-sep"></div>';
+      return `<button type="button" class="tb-block-item${on ? ' on' : ''}" data-block="${tag}">`
+        + `<span class="tb-block-chk">${on ? '✓' : ''}</span>`
+        + `<span class="tb-block-h tb-block-${tag}">${label}</span></button>`;
+    }).join('') + `<button type="button" class="tb-block-item tb-block-p${cur === 'p' ? ' on' : ''}" data-block="p">`
+      + `<span class="tb-block-chk">${cur === 'p' ? '✓' : ''}</span>`
+      + '<span class="tb-block-h">正文</span></button>';
+    /* 菜单在正文外面，mousedown 必须拦下：否则点一下就丢焦点、选区变灰，
+       格式落不到刚才选中的那段字上。 */
+    pop.addEventListener('mousedown', (e) => e.preventDefault());
+    pop.addEventListener('click', (e) => {
+      const it = e.target.closest('[data-block]');
+      if (!it) return;
+      applyBlockTag(it.dataset.block);
+      closeBlockPop();
+    });
+    document.body.appendChild(pop);
+    placeFixedPop(pop, anchor);
+    blockPop = pop;
+    blockPopAnchor = anchor;
+    anchor.classList.add('active');
+    setTimeout(() => {
+      document.addEventListener('mousedown', onDocDownBlockPop, true);
+      document.addEventListener('keydown', onKeyBlockPop);
+    }, 0);
+  }
+
+  /* ---------- 对齐方式 / 缩进：两个「图标 + 文字」的小菜单 ---------- */
+  let tbAlignBtn = null;
+  let tbIndentBtn = null;
+  let tbMenuPop = null;
+  let tbMenuAnchor = null;
+
+  const ALIGN_OPTS = [
+    ['left', '左对齐', 'justifyLeft', 'alignLeft'],
+    ['right', '右对齐', 'justifyRight', 'alignRight'],
+    ['center', '居中', 'justifyCenter', 'alignCenter'],
+    ['justify', '两端对齐', 'justifyFull', 'alignJustify'],
+  ];
+  const INDENT_STEP_EM = 2;
+  const INDENT_MAX_EM = 8;
+
+  /* 光标所在块的对齐方式。getComputedStyle 而不是 queryCommandState：
+     后者对「没显式设过」的段落回 false，四个里挑不出一个，按钮图标会乱跳。 */
+  function alignAtCaret() {
+    const host = caretStyleHost();
+    const blk = host ? closestBlock(host) : null;
+    if (!blk) return 'left';
+    const ta = getComputedStyle(blk).textAlign;
+    if (ta === 'center') return 'center';
+    if (ta === 'right' || ta === 'end') return 'right';
+    if (ta === 'justify') return 'justify';
+    return 'left';
+  }
+
+  function paintAlignIcon() {
+    if (!tbAlignBtn) return;
+    const box = tbAlignBtn.querySelector('.tb-align-ico');
+    if (!box) return;
+    const cur = alignAtCaret();
+    if (box.dataset.cur === cur) return;
+    const opt = ALIGN_OPTS.find(([v]) => v === cur) || ALIGN_OPTS[0];
+    box.innerHTML = I[opt[3]];
+    box.dataset.cur = cur;
+  }
+
+  function closeTbMenu() {
+    if (!tbMenuPop) return;
+    tbMenuPop.remove();
+    tbMenuPop = null;
+    document.removeEventListener('mousedown', onDocDownTbMenu, true);
+    document.removeEventListener('keydown', onKeyTbMenu);
+    if (tbMenuAnchor) { tbMenuAnchor.classList.remove('active'); tbMenuAnchor = null; }
+  }
+  function onKeyTbMenu(e) { if (e.key === 'Escape') closeTbMenu(); }
+  function onDocDownTbMenu(e) {
+    if (!tbMenuPop) return;
+    if (tbMenuPop.contains(e.target)) return;
+    if (tbMenuAnchor && tbMenuAnchor.contains(e.target)) return;
+    closeTbMenu();
+  }
+
+  /* items: [{ icon, label, on, run }] */
+  function openTbMenu(anchor, items) {
+    closeTbMenu();
+    closeBlockPop();
+    const pop = document.createElement('div');
+    pop.className = 'tb-block-pop tb-menu-pop';
+    pop.innerHTML = items.map((it, i) => {
+      if (it.sep) return '<div class="tb-block-sep"></div>';
+      return `<button type="button" class="tb-block-item${it.on ? ' on' : ''}" data-i="${i}">`
+        + `<span class="tb-menu-ico">${it.icon || ''}</span><span>${it.label}</span></button>`;
+    }).join('');
+    /* 菜单在正文外面，mousedown 必须拦下，否则焦点一走选区就没了 */
+    pop.addEventListener('mousedown', (e) => e.preventDefault());
+    pop.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-i]');
+      if (!b) return;
+      const it = items[Number(b.dataset.i)];
+      closeTbMenu();
+      if (it && it.run) it.run();
+    });
+    document.body.appendChild(pop);
+    placeFixedPop(pop, anchor);
+    tbMenuPop = pop;
+    tbMenuAnchor = anchor;
+    anchor.classList.add('active');
+    setTimeout(() => {
+      document.addEventListener('mousedown', onDocDownTbMenu, true);
+      document.addEventListener('keydown', onKeyTbMenu);
+    }, 0);
+  }
+
+  function toggleAlignPop(anchor) {
+    if (tbMenuPop && tbMenuAnchor === anchor) { closeTbMenu(); return; }
+    const cur = alignAtCaret();
+    openTbMenu(anchor, ALIGN_OPTS.map(([v, label, cmd, ico]) => ({
+      icon: I[ico], label, on: v === cur, run: () => cssCmd(cmd),
+    })));
+  }
+
+  /* 缩进作用在块上（margin-left），不是 execCommand('indent')：
+     后者在 Chrome 里会把段落包进 <blockquote>，看着跟「引用」一模一样。 */
+  function blocksForRange(range) {
+    const pane = $('#richPane');
+    const out = [];
+    if (!pane || !range) return out;
+    if (range.collapsed) {
+      const blk = closestBlock(range.startContainer);
+      if (blk) out.push(blk);
+      return out;
+    }
+    const hits = [];
+    pane.querySelectorAll('p,h1,h2,h3,h4,h5,li,blockquote,pre').forEach((el) => {
+      let hit = false;
+      try { hit = range.intersectsNode(el); } catch (_) { hit = false; }
+      if (hit) hits.push(el);
+    });
+    /* 容器的子块都在命中列表里时只留最外层，避免嵌套块叠加两份缩进 */
+    return hits.filter((el) => !hits.some((o) => o !== el && el.contains(o)));
+  }
+
+  function stepIndent(dir) {
+    const pane = $('#richPane');
+    if (!pane) return;
+    prepareRange();
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const blocks = blocksForRange(sel.getRangeAt(0));
+    blocks.forEach((el) => {
+      const em = parseFloat(getComputedStyle(el).fontSize) || 16;
+      const cur = parseFloat(getComputedStyle(el).marginLeft) || 0;
+      /* 归到整档：粘贴或手改过的 37px 之类不该成为新的基准 */
+      let lv = Math.round(cur / em / INDENT_STEP_EM) + dir;
+      lv = Math.max(0, Math.min(INDENT_MAX_EM / INDENT_STEP_EM, lv));
+      if (lv <= 0) el.style.removeProperty('margin-left');
+      else el.style.marginLeft = (lv * INDENT_STEP_EM) + 'em';
+      if (!(el.getAttribute('style') || '').replace(/[;\s]/g, '')) el.removeAttribute('style');
+    });
+    /* 直接改 style 不会触发 input 事件，不手动走一遍的话这篇笔记不会被标脏，
+       自动保存也不会跑 —— 切走或重开，缩进就白调了。 */
+    if (blocks.length) onRichInput();
+  }
+
+  function toggleIndentPop(anchor) {
+    if (tbMenuPop && tbMenuAnchor === anchor) { closeTbMenu(); return; }
+    openTbMenu(anchor, [
+      { icon: I.indentInc, label: '增加缩进', run: () => stepIndent(1) },
+      { icon: I.indentDec, label: '减少缩进', run: () => stepIndent(-1) },
+    ]);
+  }
+
+  /* 换块后必须摘掉块内的内联 font-size：字号下拉落的是
+     <span style="font-size:18px">，它比 h1~h6 的 em 更硬 —— 块已经是 H1 了，
+     里面那截字还卡在 18px，换级别看着毫无变化。粘贴来的内容几乎都带这个。 */
+  function dropBlockFontSize(range) {
+    const pane = $('#richPane');
+    if (!pane || !range) return;
+    const blocks = new Set();
+    if (range.collapsed) {
+      const blk = closestBlock(range.startContainer);
+      if (blk) blocks.add(blk);
+    } else {
+      /* 有选区时 formatBlock 会连中间几块一起改，交集的都要清 */
+      pane.querySelectorAll('[style]').forEach((el) => {
+        let hit = false;
+        try { hit = range.intersectsNode(el); } catch (_) { hit = false; }
+        if (!hit) return;
+        const blk = closestBlock(el);
+        if (blk) blocks.add(blk);
+      });
+      [range.startContainer, range.endContainer].forEach((n) => {
+        const blk = closestBlock(n);
+        if (blk) blocks.add(blk);
+      });
+    }
+    blocks.forEach((blk) => {
+      [blk, ...blk.querySelectorAll('[style]')].forEach((el) => {
+        if (!el.style || !el.style.getPropertyValue('font-size')) return;
+        el.style.removeProperty('font-size');
+        if (!(el.getAttribute('style') || '').replace(/[;\s]/g, '')) el.removeAttribute('style');
+      });
+    });
+  }
+
+  function applyBlockTag(tag) {
+    const pane = $('#richPane');
+    if (!pane) return;
+    prepareRange();
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const collapsed = sel.getRangeAt(0).collapsed;
+    try { document.execCommand('styleWithCSS', false, false); } catch (_) {}
+    document.execCommand('formatBlock', false, '<' + tag + '>');
+    /* 换块会把原来的 p 整个换掉：光标要重新落到「新的那个块」的末尾，
+       还拿着旧节点的话 caretToBlockEnd 直接什么都不做。 */
+    const now = window.getSelection();
+    if (now && now.rangeCount) {
+      const r = now.getRangeAt(0);
+      dropBlockFontSize(r);
+      if (collapsed) caretToBlockEnd(closestBlock(r.startContainer));
+    }
+    syncUI();
+    onRichInput();
   }
 
   /* 只有光标没有选区时，先选中光标所在那一段再上色 —— 和手机端、
@@ -2505,6 +3272,7 @@
       /* 「默认」不是写死一个颜色：直接把内联 color 抹掉，回到主题色，
          深色主题下才不会留下一行黑字。 */
       stripCharStyles(range, ['color']);
+      dropBareSpans();
     } else {
       try { document.execCommand('styleWithCSS', false, true); } catch (_) {}
       try { document.execCommand('foreColor', false, color); } catch (_) {}
@@ -2513,7 +3281,7 @@
        留着整段选中，用户接着打字就会把这一行整段覆盖掉。 */
     if (collapsed) caretToBlockEnd(block);
     /* 光标摆好之后再取色，横线读的就是刚落下的这个颜色 */
-    paintColorMark();
+    syncUI();
     onRichInput();
   }
 
@@ -2523,6 +3291,16 @@
        ② 它只认自己那几个命令，内联 style 里的 color / font-size
           / caret-color 会原样留着，看起来像「清了个寂寞」。 */
   const CHAR_STYLE_PROPS = ['color', 'background-color', 'background', 'font-size', 'font-family', 'caret-color', 'text-shadow'];
+
+  /* 抹完样式常常剩下一个没有任何属性的 span：不动它，以后每上一次色
+     就往里套一层，越攒越深。直接拆掉，文字回到父节点里。 */
+  function dropBareSpans() {
+    const pane = $('#richPane');
+    if (!pane) return;
+    Array.from(pane.querySelectorAll('span:not([class]):not([id])')).forEach((sp) => {
+      if (!sp.attributes.length) sp.replaceWith(...Array.from(sp.childNodes));
+    });
+  }
 
   function stripCharStyles(range, props = CHAR_STYLE_PROPS) {
     const pane = $('#richPane');
@@ -2732,6 +3510,161 @@
     sel.removeAllRanges();
     sel.addRange(r);
     onRichInput();
+  }
+
+  /* ---- 行内代码（2026-11-25） ----
+     选中文字一键套 <code>，再点一次脱掉；没选中就插一对并全选占位字。
+     execCommand 没有「行内代码」这个命令，所以自己包：按选区里的文本节点
+     逐个包，而不是 range.surroundContents 整段套 —— 后者在跨段（p→p）或跨
+     加粗时不是抛错，就是把块级元素塞进 code 里，转 Markdown 立刻变形。
+     pre 里的 code 不算：那是代码块，归「代码块」按钮管。 */
+  function inlineCodeAt(node) {
+    const pane = $('#richPane');
+    if (!pane || !node) return null;
+    let el = node.nodeType === 1 ? node : node.parentElement;
+    while (el && el !== pane) {
+      if (el.tagName === 'CODE') return el.closest('pre') ? null : el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  /* 选区覆盖到的非空文本节点（部分相交也算） */
+  function rangeTextNodes(range, pane) {
+    const root = range.commonAncestorContainer;
+    const host = root.nodeType === 3 ? root.parentNode : root;
+    if (!host || !pane.contains(host)) return [];
+    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+    const out = [];
+    while (walker.nextNode()) {
+      const t = walker.currentNode;
+      if (!t.nodeValue || !/\S/.test(t.nodeValue)) continue;  // 纯空白不包，免得 md 里多出 ` `
+      if (range.intersectsNode(t)) out.push(t);
+    }
+    return out;
+  }
+
+  /* 相邻的 <code> 合并成一个：选「abc」跨了加粗时会被拆成两段，
+     留着两个挨着的胶囊看着像两个词。 */
+  function mergeInlineCodes(pane) {
+    pane.querySelectorAll('code').forEach((c) => {
+      if (c.closest('pre')) return;
+      const prev = c.previousSibling;
+      if (prev && prev.nodeType === 1 && prev.tagName === 'CODE') {
+        while (c.firstChild) prev.appendChild(c.firstChild);
+        c.remove();
+      }
+    });
+  }
+
+  function unwrapInlineCode(code) {
+    const parent = code && code.parentNode;
+    if (!parent) return;
+    const frag = document.createDocumentFragment();
+    while (code.firstChild) frag.appendChild(code.firstChild);
+    parent.replaceChild(frag, code);
+    parent.normalize();
+  }
+
+  function wrapInlineCode(range) {
+    const pane = $('#richPane');
+    const targets = rangeTextNodes(range, pane).filter((t) => !inlineCodeAt(t));
+    const made = [];
+    targets.forEach((t) => {
+      const r = document.createRange();
+      r.selectNodeContents(t);
+      if (t === range.startContainer) r.setStart(t, range.startOffset);
+      if (t === range.endContainer) r.setEnd(t, range.endOffset);
+      if (r.collapsed) return;
+      const code = document.createElement('code');
+      code.appendChild(r.extractContents());
+      if (!/\S/.test(code.textContent)) return;
+      r.insertNode(code);
+      made.push(code);
+    });
+    if (!made.length) return false;
+    mergeInlineCodes(pane);
+    /* 合并会把后面的 code 吃掉，选区只认还活着的那些 */
+    const alive = made.filter((c) => c.isConnected);
+    const sel = window.getSelection();
+    if (sel && alive.length) {
+      const r = document.createRange();
+      r.setStartBefore(alive[0]);
+      r.setEndAfter(alive[alive.length - 1]);
+      sel.removeAllRanges();
+      sel.addRange(r);
+      savedRange = r.cloneRange();
+    }
+    return true;
+  }
+
+  function toggleInlineCode() {
+    const pane = $('#richPane');
+    if (!pane) return;
+    prepareRange();
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    let changed = false;
+
+    if (range.collapsed) {
+      const code = inlineCodeAt(range.startContainer);
+      if (code) {
+        unwrapInlineCode(code);
+        changed = true;
+      } else {
+        const fresh = document.createElement('code');
+        fresh.textContent = '代码';
+        range.insertNode(fresh);
+        const r = document.createRange();
+        r.selectNodeContents(fresh);
+        sel.removeAllRanges();
+        sel.addRange(r);
+        savedRange = r.cloneRange();
+        changed = true;
+      }
+    } else {
+      const nodes = rangeTextNodes(range, pane);
+      const allInside = nodes.length > 0 && nodes.every((t) => inlineCodeAt(t));
+      if (allInside) {
+        /* 整段都在行内代码里 → 脱掉（选区碰到的每个胶囊都拆） */
+        const codes = Array.from(pane.querySelectorAll('code'))
+          .filter((c) => !c.closest('pre') && range.intersectsNode(c));
+        codes.forEach(unwrapInlineCode);
+        changed = codes.length > 0;
+      } else {
+        changed = wrapInlineCode(range);
+      }
+    }
+    if (changed) onRichInput();
+    syncUI();
+  }
+
+  /* 光标在行内代码里时按钮亮着（能不能再点一次脱掉，看一眼就知道） */
+  function caretTextNodeOf(range) {
+    let n = range.startContainer;
+    if (n.nodeType === 3) return n;
+    const kids = n.childNodes;
+    return kids[Math.max(0, Math.min(kids.length - 1, range.startOffset - 1))] || n;
+  }
+
+  function paintInlineCodeMark() {
+    const b = document.querySelector('#toolbar .tb-btn[data-act="inline-code"]');
+    if (!b) return;
+    const pane = $('#richPane');
+    const sel = window.getSelection();
+    let on = false;
+    if (pane && sel && sel.rangeCount) {
+      const r = sel.getRangeAt(0);
+      if (r.collapsed) {
+        on = !!inlineCodeAt(caretTextNodeOf(r));
+      } else {
+        /* 选区起点常常落在元素节点里（setStartBefore 之类），拿文本节点更准 */
+        const nodes = rangeTextNodes(r, pane);
+        on = nodes.length > 0 && nodes.every((t) => inlineCodeAt(t));
+      }
+    }
+    b.classList.toggle('active', on);
   }
 
   /* 代码块内回车 —— 跳出与换行
@@ -3379,7 +4312,7 @@
       renderAttachments();
       updateAttachBadge();
       renderList();
-      $('#attachPanel').classList.remove('hidden');
+      setAttachState('open');
       toast(`已添加 ${ok} 个附件`);
       inserted.forEach((att) => insertAttachment(att));
     }
@@ -3452,7 +4385,7 @@
     m.querySelector('[data-act="ok"]').focus();
   }
 
-  function openPrompt({ title, message = '', value = '', placeholder = '', confirmText = '确定', onConfirm }) {
+  function openPrompt({ title, message = '', value = '', placeholder = '', confirmText = '确定', validate, onConfirm }) {
     const m = openModal(`
       <h3>${escapeHtml(title)}</h3>
       ${message ? `<p>${message}</p>` : ''}
@@ -3465,6 +4398,12 @@
     const submit = async () => {
       const v = input.value.trim();
       if (!v) { input.focus(); return; }
+      /* validate 返回错误时不关弹窗：用户填的名字还在，改一下就能重试，
+         不用重新点一遍「新建」再从头输入。 */
+      if (typeof validate === 'function') {
+        const bad = validate(v);
+        if (bad) { toast(bad.message || String(bad)); input.focus(); input.select(); return; }
+      }
       closeModal();
       try { await onConfirm(v); } catch (e) { toast(e.message); }
     };
@@ -3477,7 +4416,16 @@
   }
 
   /* 类别操作 */
+  /* 重名不让建：同一级下已经有一模一样的名字就当场提示，不必等一次请求。
+     服务端也有同一道校验（并且是最终裁判），这里只是让反馈快一点。 */
+  function dupCatError(name, parentId, excludeId) {
+    const hit = window.SJCats ? window.SJCats.siblingOf(state.categories, name, parentId || null, excludeId) : null;
+    return hit ? new Error(`同一级下已有同名类别「${hit.name}」，换个名字吧`) : null;
+  }
+
   function createCategory(parentId, name) {
+    const dup = dupCatError(name, parentId, null);
+    if (dup) return Promise.reject(dup);
     return api('/api/categories', { method: 'POST', body: { name, parentId: parentId || null } })
       .then((cat) => {
         state.categories.push(cat);
@@ -3498,6 +4446,7 @@
       message: '类别可以无限层级嵌套，之后随时可改名或移动。',
       placeholder: '例如：业务学习 / 党纪法规',
       confirmText: '创建',
+      validate: (v) => dupCatError(v, parentId, null),
       onConfirm: (v) => createCategory(parentId, v),
     });
   }
@@ -3507,7 +4456,10 @@
       title: '重命名类别',
       value: cat.name,
       confirmText: '保存',
+      validate: (v) => dupCatError(v, cat.parentId, cat.id),
       onConfirm: async (v) => {
+        const dup = dupCatError(v, cat.parentId, cat.id);
+        if (dup) throw dup;
         const updated = await api(`/api/categories/${cat.id}`, { method: 'PATCH', body: { name: v } });
         Object.assign(cat, updated);
         renderTree();
@@ -3562,11 +4514,11 @@
           state.notes.forEach((n) => { if (ids.has(n.categoryId)) n.categoryId = cat.parentId || null; });
           state.categories.forEach((c) => { if (c.parentId === cat.id) c.parentId = cat.parentId || null; });
         } else {
-          state.notes = state.notes.filter((n) => !ids.has(n.categoryId));
+          setState({ notes: state.notes.filter((n) => !ids.has(n.categoryId)) });
         }
-        state.categories = state.categories.filter((c) => !ids.has(c.id));
+        setState({ categories: state.categories.filter((c) => !ids.has(c.id)) });
         if (!noteById(state.selNote)) closeEditor();
-        if (ids.has(state.selCat)) state.selCat = 'all';
+        if (ids.has(state.selCat)) setState({ selCat: 'all' });
         renderTree();
         renderList();
         toast('类别已删除');
@@ -3632,7 +4584,7 @@
     if (state.selCat !== 'all' && state.selCat !== 'starred' && state.selCat !== 'uncat') {
       // 保持当前类别视图
     } else {
-      state.selCat = 'all';
+      setState({ selCat: 'all' });
     }
     renderTree();
     openNote(DRAFT_ID, { focusTitle: true });
@@ -3644,8 +4596,8 @@
     /* 收起编辑器也是「离开」：先落盘。删除笔记时该篇已从 state 移除，
        saveNow 会因找不到当前笔记直接返回，不会对已删记录发 PATCH。 */
     void saveNow();
-    state.selNote = null;
-    state.dirty = false;
+    setState({ selNote: null });
+    setDirty(false);
     savedSnapshot = '';
     closeTagInput();
     const tl = $('#tagList');
@@ -3669,7 +4621,7 @@
       danger: true,
       onConfirm: async () => {
         await api(`/api/notes/${note.id}`, { method: 'DELETE' });
-        state.notes = state.notes.filter((n) => n.id !== note.id);
+        setState({ notes: state.notes.filter((n) => n.id !== note.id) });
         closeEditor();
         renderTree();
         renderList();
@@ -4017,8 +4969,8 @@
       const k = row.dataset.pseudo;
       setOpen(k, true);
       accordion(k);
-      state.selCat = k;
-      state.search = '';
+      setState({ selCat: k });
+      setState({ search: '' });
       $('#searchInput').value = '';
       renderTree();
       renderList();
@@ -4030,7 +4982,7 @@
       const cat = state.categories.find((c) => c.id === id);
       /* 单击分类：只展开这一层——露出它的子分类与本级笔记，子分类不自动展开 */
       if (cat) openOnly(id, true);
-      state.selCat = id;
+      setState({ selCat: id });
       renderTree();
       renderList();
       afterPickCategory();
@@ -4232,7 +5184,7 @@
   });
 
   $('#searchInput').addEventListener('input', (e) => {
-    state.search = e.target.value;
+    setState({ search: e.target.value });
     renderTree();
     renderList();
   });
@@ -4324,8 +5276,8 @@
       if (!card) return;
       if (card.dataset.cid) {
         const id = card.dataset.cid;
-        state.selCat = id;
-        state.search = '';
+        setState({ selCat: id });
+        setState({ search: '' });
         const si = $('#searchInput'); if (si) si.value = '';
         openOnly(id, true);
         renderTree(); renderList(); afterPickCategory();
@@ -4369,7 +5321,7 @@
     }
   });
 
-  $('#richPane').addEventListener('input', onRichInput);
+  $('#richPane').addEventListener('input', () => { richHistTyping = true; onRichInput(); });
 
   $('#starBtn').addEventListener('click', () => {
     const note = currentNote();
@@ -4398,20 +5350,19 @@
     if (note) openCategoryPicker(note);
   });
 
-  /* 华为风编辑态顶栏：撤销 / 重做 / 完成 */
+  /* 华为风编辑态顶栏：撤销 / 重做 / 完成
+     走自建 HTML 快照栈，覆盖裁剪 / 宽度 / 格式等程序化改动（原生 undo 不认） */
   $('#sjUndoBtn').addEventListener('click', () => {
     const pane = $('#richPane');
     if (!pane) return;
     pane.focus();
-    try { document.execCommand('undo'); } catch (_) {}
-    onRichInput();
+    richUndo();
   });
   $('#sjRedoBtn').addEventListener('click', () => {
     const pane = $('#richPane');
     if (!pane) return;
     pane.focus();
-    try { document.execCommand('redo'); } catch (_) {}
-    onRichInput();
+    richRedo();
   });
   $('#sjDoneBtn').addEventListener('click', () => {
     setNoteMode(false);
@@ -4443,11 +5394,35 @@
   });
   /* 点正文里的图片 → 弹尺寸工具条 */
   bindImgResize($('#richPane'), 'rich');
+
+  /* ---- 附件面板三态：open / collapsed / hidden（与手机端一致）----
+     · open      整块摊开
+     · collapsed 阅读态专用：压成一条窄条，只留一个向上箭头
+     · hidden    整块收起
+     阅读态点 ⌄ 走 collapsed（腾出正文空间又留抓手，点一下就展开）；
+     编辑态仍是整块 hidden。三个入口（顶栏附件键 / 表头 ⌄ / 窄条）共用这套状态。 */
+  function attachHasAny() {
+    const note = currentNote();
+    return !!(note && note.attachments && note.attachments.length);
+  }
+  function attachStateOf() {
+    const el = $('#attachPanel');
+    if (!el || el.classList.contains('hidden')) return 'hidden';
+    return el.classList.contains('is-collapsed') ? 'collapsed' : 'open';
+  }
+  function setAttachState(state) {
+    const el = $('#attachPanel');
+    if (!el) return;
+    if (state !== 'hidden' && !attachHasAny()) state = 'hidden';
+    el.classList.toggle('hidden', state === 'hidden');
+    el.classList.toggle('is-collapsed', state === 'collapsed');
+  }
+
   $('#attachBtn').addEventListener('click', () => {
     const note = currentNote();
     if (!note) return;
     if (note.attachments && note.attachments.length) {
-      $('#attachPanel').classList.toggle('hidden');
+      setAttachState(attachStateOf() === 'hidden' ? 'open' : 'hidden');
     } else {
       const fi = $('#fileInput');
       fi.accept = '';
@@ -4455,7 +5430,25 @@
       fi.click();
     }
   });
-  $('#closeAttachBtn').addEventListener('click', () => $('#attachPanel').classList.add('hidden'));
+  /* 阅读态：⌄ 压成窄条、箭头翻上来；再点窄条（含箭头）展开。
+     编辑态：维持原样，点了整块收起。 */
+  $('#closeAttachBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (noteMode === 'read') {
+      const el = $('#attachPanel');
+      if (!el) return;
+      el.classList.toggle('is-collapsed');
+      return;
+    }
+    setAttachState('hidden');
+  });
+  /* 窄条整条都是抓手（按钮铺满，这里兜住内边距那几像素） */
+  $('#attachPanel').addEventListener('click', (e) => {
+    const el = $('#attachPanel');
+    if (!el || !el.classList.contains('is-collapsed')) return;
+    if (e.target.closest && e.target.closest('#closeAttachBtn')) return;
+    el.classList.remove('is-collapsed');
+  });
   $('#attachAddBtn').addEventListener('click', () => {
     const fi = $('#fileInput');
     fi.accept = '';
@@ -4563,10 +5556,10 @@
           try { data = JSON.parse(await file.text()); } catch (_) { return toast('不是有效的 JSON 备份文件'); }
           const r = await api('/api/import', { method: 'POST', body: data });
           const s2 = await api('/api/state');
-          state.categories = s2.categories;
-          state.notes = s2.notes;
-          state.selCat = 'all';
-          state.selNote = null;
+          setState({ categories: s2.categories });
+          setState({ notes: s2.notes });
+          setState({ selCat: 'all' });
+          setState({ selNote: null });
           closeEditor();
           renderTree();
           renderList();
@@ -4611,7 +5604,7 @@
   function applyRichLh() {
     /* 手机端存下来的 16/18/20 拿到电脑上用，一律夹回档内，
        不然下拉框显示一个渲染不出来的值，等于骗人。 */
-    state.richLh = clampLh(state.richLh);
+    setState({ richLh: clampLh(state.richLh) });
     document.documentElement.style.setProperty('--sj-rich-lh', state.richLh + 'px');
   }
   function applyRichFs() {
@@ -4623,7 +5616,7 @@
 
   /* 主题 */
   function applyTheme(t) {
-    state.theme = t;
+    setState({ theme: t });
     document.documentElement.dataset.theme = t;
     localStorage.setItem('sj_theme', t);
   }
@@ -4674,6 +5667,16 @@
       }
       return;
     }
+    /* Ctrl/⌘ + E：行内代码。和上面一组一样，只在编辑态接管。 */
+    if (mod && e.key.toLowerCase() === 'e' && !e.shiftKey) {
+      const note = currentNote();
+      if (!note) return;
+      if (noteMode === 'edit') {
+        e.preventDefault();
+        toggleInlineCode();
+      }
+      return;
+    }
     if (e.key === 'Escape') {
       hideCtx();
       if (!$('#modalRoot').classList.contains('hidden')) closeModal();
@@ -4706,7 +5709,7 @@
       ok = state.notes.some((n) => (n.tags || []).includes(v.slice(4)));
     }
     if (!ok) ok = state.categories.some((c) => c.id === v);
-    if (ok) state.selCat = v;
+    if (ok) setState({ selCat: v });
   }
 
   async function boot() {
@@ -4716,8 +5719,8 @@
     try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (_) {}
     try {
       const data = await api('/api/state');
-      state.categories = data.categories || [];
-      state.notes = data.notes || [];
+      setState({ categories: data.categories || [] });
+      setState({ notes: data.notes || [] });
     } catch (e) {
       toast('加载数据失败：' + e.message);
     }
@@ -4768,10 +5771,10 @@
     async importBackup(backup) {
       await api('/api/import', { method: 'POST', body: backup });
       const s2 = await api('/api/state');
-      state.categories = s2.categories || [];
-      state.notes = s2.notes || [];
-      state.selCat = 'all';
-      state.selNote = null;
+      setState({ categories: s2.categories || [] });
+      setState({ notes: s2.notes || [] });
+      setState({ selCat: 'all' });
+      setState({ selNote: null });
       closeEditor();
       renderTree(); renderList(); renderTags();
     },
@@ -4865,21 +5868,23 @@
     sb.after(d1); lp.after(d2);
     bindDrag(d1, 'sb', c); bindDrag(d2, 'list', c);
   }
-  function svgChevron() {
-    return '<svg viewBox="0 0 24 24" class="ico"><path d="M14 6l-6 6 6 6"/></svg>';
+  /* 收起侧栏/列表用「面板折叠」图标（方框 + 竖线 + 左箭头），
+     和编辑区返回的单箭头区分开，避免两个箭头长得一样。 */
+  function svgCollapse() {
+    return '<svg viewBox="0 0 24 24" class="ico"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9 4.5v15"/><path d="M16.5 9.5l-3 2.5 3 2.5"/></svg>';
   }
   function initNavUI(c) {
     const sbBtn = document.createElement('button');
     sbBtn.className = 'icon-btn nav-collapse-sb';
     sbBtn.title = '收起侧栏'; sbBtn.setAttribute('aria-label', '收起侧栏');
-    sbBtn.innerHTML = svgChevron();
+    sbBtn.innerHTML = svgCollapse();
     sbBtn.addEventListener('click', () => toggleNav('sb', c));
     const brand = document.querySelector('.brand'); if (brand) brand.appendChild(sbBtn);
 
     const listBtn = document.createElement('button');
     listBtn.className = 'icon-btn nav-collapse-list';
     listBtn.title = '收起列表'; listBtn.setAttribute('aria-label', '收起列表');
-    listBtn.innerHTML = svgChevron();
+    listBtn.innerHTML = svgCollapse();
     listBtn.addEventListener('click', () => toggleNav('list', c));
     const lh = document.querySelector('.list-head'); if (lh) lh.appendChild(listBtn);
 
@@ -4894,28 +5899,64 @@
       }
     });
   }
-  /* 悬停信息条：合并掉列表栏后树里的笔记行只剩标题。把日期与标签放到侧栏
-     中段底部一行，悬停哪行显示哪行——等于把卡片上最有用的两样补回来，又因为
-     是绝对定位贴在底部，不占布局高度、不推挤目录。仅桌面端挂载（触屏无 hover）。 */
+  /* 悬停信息浮层：合并掉列表栏后树里的笔记行只剩标题。悬停哪行，就在那行下方
+     弹一张小卡片补回日期与标签——不写死贴在侧栏底部（早年那版把文字压在目录
+     最后几行上，读不清也没法判断属于哪一篇）。浮层不占布局高度、不推挤目录，
+     空间不够时自动翻到行的上方，坐标夹在目录滚动区内。仅桌面端挂载（触屏无 hover）。 */
   function showTreeMeta(row) {
     const meta = $('#treeMeta');
     if (!meta) return;
     const n = row ? state.notes.find((x) => x.id === row.dataset.nid) : null;
     if (!n) { meta.classList.remove('on'); return; }
     const tags = (n.tags || []).slice(0, 3).map((t) => '#' + t).join(' ');
-    meta.innerHTML = `<span class="tree-meta-date">${fmtDate(n.updatedAt)}</span>`
-      + (tags ? `<span class="tree-meta-tags">${escapeHtml(tags)}</span>` : '');
+    /* 标题在行里被省略号截断时，卡片第一行补全——原生 title 已经摘掉了，
+       这里得接住「看不全标题」的需求。 */
+    const nameEl = row.querySelector('.tree-note-name');
+    const cut = !!nameEl && nameEl.scrollWidth > nameEl.clientWidth + 1;
+    meta.innerHTML = (cut ? `<span class="tree-meta-title">${escapeHtml(n.title || '无标题笔记')}</span>` : '')
+      + '<span class="tree-meta-line">'
+      + `<span class="tree-meta-date">${fmtDate(n.updatedAt)}</span>`
+      + (tags ? `<span class="tree-meta-tags">${escapeHtml(tags)}</span>` : '')
+      + '</span>';
+    /* 夹在目录自己的滚动区里，而不是整个视口：挨着底部的行宁可翻到上方，
+       也不要盖住下面的「标签」区或顶上的搜索框。 */
+    const scEl = $('#sideScroll');
+    const c = scEl ? scEl.getBoundingClientRect()
+      : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+    /* 侧栏被拖窄时卡片跟着收，别越过分隔条压到列表上 */
+    meta.style.maxWidth = Math.max(120, Math.min(300, c.width - 16)) + 'px';
+    /* 先归零再量：浮层是 fixed，尺寸不依赖位置，量完才能算夹取后的坐标 */
+    meta.style.left = '0px';
+    meta.style.top = '0px';
     meta.classList.add('on');
+    const r = row.getBoundingClientRect();
+    const w = meta.offsetWidth, h = meta.offsetHeight;
+    const maxLeft = Math.max(c.left + 8, c.right - w - 8);
+    const left = Math.max(c.left + 8, Math.min(r.left + 10, maxLeft));
+    let top = r.bottom + 5;
+    if (top + h > c.bottom - 4) top = r.top - h - 5;      // 下面放不下就翻到行上方
+    top = Math.max(c.top + 4, Math.min(top, c.bottom - h - 4));
+    meta.style.left = left + 'px';
+    meta.style.top = top + 'px';
   }
   function bindTreeMeta() {
     const tree = $('#tree');
     if (!tree || tree.dataset.meta) return;
     tree.dataset.meta = '1';
-    tree.addEventListener('pointerover', (e) => showTreeMeta(e.target.closest('.tree-note')));
-    tree.addEventListener('pointerleave', () => showTreeMeta(null));
+    /* 稍等一下再弹：鼠标扫过目录时不该每行都闪一张卡片，停住不动才给它看详情 */
+    let metaTimer = null;
+    const hideSoon = () => { clearTimeout(metaTimer); showTreeMeta(null); };
+    tree.addEventListener('pointerover', (e) => {
+      const row = e.target.closest('.tree-note');
+      clearTimeout(metaTimer);
+      if (!row) return showTreeMeta(null);
+      metaTimer = setTimeout(() => showTreeMeta(row), 120);
+    });
+    tree.addEventListener('pointerleave', hideSoon);
     /* 滚动发生在 .side-scroll 上（最近笔记与目录共用一个滚动区），不是 #tree */
     const sc = $('#sideScroll');
-    if (sc) sc.addEventListener('scroll', () => showTreeMeta(null), { passive: true });
+    if (sc) sc.addEventListener('scroll', hideSoon, { passive: true });
+    window.addEventListener('resize', hideSoon);
   }
   function initNavLayout() {
     if (NARROW()) return;            // 窄屏走抽屉，不注入分隔条 / 不收起
