@@ -3580,7 +3580,9 @@ html[data-theme="dark"] .pwd-tip button { color: #1c1a17; }
   }
   .sj-cat-row .ico { width: 23px; height: 23px; color: var(--text-2); flex: none; stroke-width: 1.7; }
   .sj-cat-row .sj-cat-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sj-cat-row .sj-cat-n { font-size: 15px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .sj-cat-row .sj-cat-n { font-size: 15px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; flex: none; }
+  /* 「1 + 3」后面紧跟展开箭头时，两段 14px 的 gap 会显得断开，收一点 */
+  .sj-cat-row .sj-cat-n + .sj-cat-toggle { margin-left: -8px; }
   .sj-cat-row.on { color: var(--accent); background: transparent; }
   .sj-cat-row.on .ico { color: var(--accent); }
   .sj-cat-row.on .sj-cat-n { color: var(--accent); }

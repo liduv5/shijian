@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-28-192 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-28-193 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-28-192';
+const BUILD = '2026-11-28-193';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -294,6 +294,19 @@ ok('分类面板按截图分卡排列、子分类缩进、带展开箭头',
   appSrc.indexOf('sj-cat-card') >= 0 &&
   appSrc.indexOf('sj-cat-toggle') >= 0 &&
   appSrc.indexOf('24 + depth * 20') >= 0);
+/* 手机端真机反馈（构建 193）：分类页只给汇总数（学习素材干脆一个数都没有），
+   和电脑端目录树的「本层 + 子分类」对不上。两边现在同一口径。 */
+ok('手机分类页的计数也拆成「本层 + 子分类」，与电脑端目录树一致',
+  /const total = folderCount\(cat\.id\);/.test(appSrc) &&
+  /const own = state\.notes\.filter\(\(n\) => n\.categoryId === cat\.id\)\.length;/.test(appSrc) &&
+  /const countText = sub > 0 \? `\$\{own\} \+ \$\{sub\}` : String\(total\);/.test(appSrc) &&
+  /title="本层 \$\{own\} 篇、子分类 \$\{sub\} 篇"/.test(appSrc));
+ok('根文件夹既有数字又有展开箭头（以前一颗 ⌄ 顶掉了数字）',
+  /countHtml \+ `<button type="button" class="sj-cat-toggle/.test(appSrc));
+ok('数字与箭头之间的间距收窄，长名字仍可省略',
+  styleSrc.indexOf('.sj-cat-row .sj-cat-n {') >= 0 &&
+  /\.sj-cat-row \.sj-cat-n \{[^}]*white-space: nowrap/.test(styleSrc) &&
+  /\.sj-cat-row \.sj-cat-n \+ \.sj-cat-toggle \{ margin-left: -8px; \}/.test(styleSrc));
 ok('分类管理页 DOM 节点存在：#sjManageMenu', indexSrc.indexOf('id="sjManageMenu"') >= 0);
 ok('点「管理」先弹「新建文件夹 / 编辑」两步菜单（不直接进编辑页）',
   appSrc.indexOf('showManageMenu(r.right - 180, r.bottom + 6)') >= 0 &&

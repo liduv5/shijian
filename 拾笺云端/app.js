@@ -3271,7 +3271,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-28-192';
+  const APP_BUILD = '2026-11-28-193';
   /* 暴露给 index.html 的内联版本守卫：HTML 每次都是新的、脚本可能还是缓存里的旧版，
      内联脚本拿这个值一比就知道要不要弹「发现新版本」，不用等用户去点某个功能。 */
   window.__SJ_APP_BUILD__ = APP_BUILD;
@@ -6553,9 +6553,18 @@
       const lead = isRoot
         ? ICON_FOLDER
         : `<span class="sj-cat-chip c${chipIndex(cat)}"></span>`;
-      const tail = isRoot && kids.length
-        ? `<button type="button" class="sj-cat-toggle${sheetCollapsed.has(cat.id) ? ' closed' : ''}" data-act="cat-toggle" data-id="${id}" aria-label="展开或收起">⌄</button>`
-        : `<span class="sj-cat-n">${folderCount(cat.id)}</span>`;
+      /* 计数拆成「本层 + 子分类」，与电脑端目录树同一口径（构建 193）。
+         手机上以前：根文件夹只给一个 ⌄ 没有数字，「前端开发」这种中间层只给
+         汇总数 3 —— 用户数分类树时同样对不上账（「学习素材 4 篇怎么来的」）。
+         根行现在「1 + 3 ⌄」并排：数字是可以对账的明细，箭头只管展开。 */
+      const total = folderCount(cat.id);
+      const own = state.notes.filter((n) => n.categoryId === cat.id).length;
+      const sub = total - own;
+      const countText = sub > 0 ? `${own} + ${sub}` : String(total);
+      const countHtml = `<span class="sj-cat-n"${sub > 0 ? ` title="本层 ${own} 篇、子分类 ${sub} 篇"` : ''}>${countText}</span>`;
+      const tail = (isRoot && kids.length)
+        ? countHtml + `<button type="button" class="sj-cat-toggle${sheetCollapsed.has(cat.id) ? ' closed' : ''}" data-act="cat-toggle" data-id="${id}" aria-label="展开或收起">⌄</button>`
+        : countHtml;
       /* 截图里子分类比根节点明显右移：根节点 12px，一级 44px，每深一层再 +20px。 */
       const pad = isRoot ? 12 : 24 + depth * 20;
       const dl = isRoot ? 52 : pad + 26;
