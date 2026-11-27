@@ -11,7 +11,7 @@
            所有 js/css 全部 403 —— 表现为「界面在、进度条卡住、按钮点不动」。
            所以每个同源请求都由 SW 主动补上访问码，不依赖 cookie。
    ============================================================ */
-const VERSION = 'sj-2026-11-27-182';
+const VERSION = 'sj-2026-11-27-183';
 const CACHE = 'shijian-' + VERSION;
 
 const SC_KEY = 'sharecode';
@@ -109,10 +109,19 @@ function ensureSC(raw) {
   } catch (_) { return raw; }
 }
 
-/* 用带访问码的 URL 发请求，但缓存键仍用原始 req，避免污染缓存命名空间 */
-function netRequest(req) {
+/* 用带访问码的 URL 发请求，但缓存键仍用原始 req，避免污染缓存命名空间。
+   forceNoStore：绕开浏览器 HTTP 缓存。站点的 HTML / JS 响应没有任何 Cache-Control
+   （网关不发），浏览器会按「启发式新鲜度」自己留一份 —— 旧副本可能留几天。
+   手机端「改了没反应」「每次打开都提示新版本、点了也换不过来」很大一部分就是
+   这条旧副本：网络请求根本没发出去，拿回来的一直是上一次的 HTML。
+   导航请求要特别注意：构造新 Request 时不能再传 mode:'navigate'（会抛错），
+   所以这里只带最小字段，让浏览器自己补导航相关头。 */
+function netRequest(req, forceNoStore) {
   const url = ensureSC(req.url);
-  if (url === req.url) return req;
+  if (url === req.url && !forceNoStore) return req;
+  if (req.mode === 'navigate') {
+    return new Request(url, { credentials: 'same-origin', cache: 'no-store' });
+  }
   return new Request(url, {
     method: req.method,
     headers: req.headers,
@@ -191,11 +200,17 @@ async function handleDownload(req) {
   });
 }
 
-/* 页面导航：网络优先；裸链接也会自动补访问码 */
+/* 页面导航：网络优先；裸链接也会自动补访问码。
+   两个「必须」：
+   ① 一定拿 no-store 去请求。站点 HTML 没有 Cache-Control，不绕开的话浏览器会
+      直接把上一次的页面还回来 —— 用户看到的就是「版本永远换不过来」。
+   ② 恢复性导航（点「点此更新」/ 自动自愈带着 sjfix、sjup 参数进来的那次）等更久、
+      而且绝不用缓存顶替：那一次的目的就是把页面换成新版，宁可慢也不能给旧页。 */
 async function handleNavigate(req) {
   const cache = await caches.open(CACHE);
+  const recovery = /[?&](?:sjfix|sjup)=/.test(req.url);
   try {
-    const res = await withTimeout(fetch(netRequest(req)), 2500);
+    const res = await withTimeout(fetch(netRequest(req, true)), recovery ? 15000 : 6000);
     if (res && res.ok) {
       /* 只有首页导航才写首页缓存；否则 share_target 打开 quick.html 会把
          速记页覆盖进 /index.html 的离线缓存里。 */
@@ -207,10 +222,23 @@ async function handleNavigate(req) {
     }
     throw new Error('bad status');
   } catch (_) {
+    if (recovery) return offlinePage();
     const cached = (await cache.match(indexKey()))
       || (await cache.match(req))
       || (await cache.match('/index.html'));
-    return cached || offlinePage();
+    /* 先给缓存顶着，后台再要一份新的写回缓存：慢网络下这次先用旧的，下次就是新的。 */
+    if (cached) {
+      fetch(netRequest(req, true)).then((res) => {
+        if (res && res.ok) {
+          try {
+            const p = new URL(req.url).pathname;
+            if (p === '/' || p === '/index.html') cache.put(indexKey(), res.clone());
+          } catch (_) {}
+        }
+      }).catch(() => {});
+      return cached;
+    }
+    return offlinePage();
   }
 }
 
@@ -226,8 +254,10 @@ async function handleAsset(req) {
   if (CODE_RE.test(path)) {
     /* 代码类网络优先，但慢网络绝不能返回空响应（脚本缺失会让界面组件全无）：
        2 秒内回 → 用网络；超时有缓存 → 先给缓存并后台补写；
-       无缓存 → 一直等网络，只有网络真失败才 504。 */
-    const netP = fetch(netRequest(req)).catch(() => null);
+       无缓存 → 一直等网络，只有网络真失败才 504。
+       请求一律 no-store：脚本 / 样式同样没有 Cache-Control，靠浏览器启发式缓存
+       会把旧 app.js 一直留着 —— 那就是「页面是新的、脚本是旧的」。 */
+    const netP = fetch(netRequest(req, true)).catch(() => null);
     const fast = await Promise.race([
       netP,
       new Promise((r) => setTimeout(() => r(null), 2000)),

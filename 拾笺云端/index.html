@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-27-182';
+  var SWV = '2026-11-27-183';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -98,11 +98,28 @@
      每次都有发现新版本」。放 localStorage 后同一个版本最多提示一次。 */
   var UPDATE_SEEN = 'sj_update_seen_';
   var HEAL_KEY = 'sj_autoheal_';
+  var HARD_KEY = 'sj_hard_';
   var BOOT_AT = Date.now();
   var updateShown = false;
+  /* 光标是不是正停在可输入的地方。自动重开前必须问一句 —— 宁可晚一次，
+     也不能把用户正在写的字刷掉。 */
+  function typingNow() {
+    try {
+      var a = document.activeElement;
+      return !!(a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName || '')));
+    } catch (_) { return false; }
+  }
   function showUpdateTip() {
     if (updateShown || document.getElementById('sjUpdateTip')) return;
-    try { if (localStorage.getItem(UPDATE_SEEN + SWV) === '1') return; } catch (_) {}
+    var seen = false;
+    try { seen = localStorage.getItem(UPDATE_SEEN + SWV) === '1'; } catch (_) {}
+    /* 同一个版本上次已经提示过、这次还在报「有新版」：说明上次点更新没换过来
+       （多半是网络慢，页面又被浏览器缓存的旧副本顶替了）。这时再给一次更彻底的
+       重来 —— 只给一次，之后彻底闭嘴，不再反复弹。 */
+    if (seen) {
+      if (!typingNow() && hardReset()) return;
+      return;
+    }
     if (document.readyState === 'loading' || !document.body) {
       document.addEventListener('DOMContentLoaded', function () { showUpdateTip(); }, false);
       return;
@@ -180,10 +197,20 @@
       if (!target) return false;
       if (Date.now() - BOOT_AT > 60000) return false;
       if (document.visibilityState !== 'visible') return false;
-      var a = document.activeElement;
-      if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName || ''))) return false;
+      if (typingNow()) return false;
       if (localStorage.getItem(HEAL_KEY + target) === '1') return false;
       localStorage.setItem(HEAL_KEY + target, '1');
+    } catch (_) { return false; }
+    refreshNow('sjfix');
+    return true;
+  }
+  /* 兜底的彻底重来：同一个版本第二次报「有新版」才用，一辈子只用一次。
+     比 autoHeal 更狠 —— 不再限定启动后一分钟内，因为它就是在「上次明明修过
+     却没用」的场合出场。 */
+  function hardReset() {
+    try {
+      if (localStorage.getItem(HARD_KEY + SWV) === '1') return false;
+      localStorage.setItem(HARD_KEY + SWV, '1');
     } catch (_) { return false; }
     refreshNow('sjfix');
     return true;

@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-182 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-183 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-27-182';
+const BUILD = '2026-11-27-183';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -1271,6 +1271,27 @@ ok('清缓存时保留下载中转缓存 sjdl-v1',
    说明正在换，静默等它。否则每次发版后的第一次冷启动都会误报一条提示。 */
 ok('新 SW 正在安装/等待接管时不误报',
   /if \(r && \(r\.installing \|\| r\.waiting\)\) return;/.test(indexSrc));
+
+/* 同一个版本第二次报「有新版」，说明上次更新没换过来（多半是网络慢、页面又被
+   浏览器缓存的旧副本顶替）。这时再彻底重来一次，之后彻底闭嘴，不再反复弹。 */
+ok('同一版本第二次仍报新版：再彻底重来一次，之后闭嘴',
+  /var HARD_KEY = 'sj_hard_';/.test(indexSrc)
+  && /function hardReset\(\)/.test(indexSrc)
+  && /if \(seen\) \{\s*if \(!typingNow\(\) && hardReset\(\)\) return;/.test(indexSrc.replace(/\n/g, ' '))
+  && /localStorage\.getItem\(HARD_KEY \+ SWV\) === '1'/.test(indexSrc)
+  && /refreshNow\('sjfix'\)/.test(indexSrc));
+
+/* 站点 HTML / JS 的响应没有 Cache-Control（网关不发），不主动绕开的话浏览器会
+   按启发式新鲜度自己留一份旧副本 —— 那就是「手机上永远换不过来」的根源：
+   网络请求压根没发出去。SW 里所有代码类请求都必须带 no-store。 */
+ok('导航与代码资源一律绕开浏览器 HTTP 缓存（no-store）',
+  /function netRequest\(req, forceNoStore\)/.test(swSrc)
+  && /fetch\(netRequest\(req, true\)\)/.test(swSrc)
+  && /fetch\(netRequest\(req, true\)\)\.catch\(\(\) => null\)/.test(swSrc)
+  && /const recovery = \/\[\?&\]\(\?:sjfix\|sjup\)=\/\.test\(req\.url\)/.test(swSrc)
+  && /recovery \? 15000 : 6000/.test(swSrc)
+  /* 恢复性导航这一次宁可等，也不能拿旧页面顶替 */
+  && /if \(recovery\) return offlinePage\(\);/.test(swSrc));
 
 /* 点「点此更新」后按钮文案变成「正在更新…」，比原来长。flex 默认允许收缩，
    窄屏上会被挤成两行、文字顶出圆角墨灰底。三块都锁 nowrap + 不收缩，
