@@ -3255,7 +3255,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-27-186';
+  const APP_BUILD = '2026-11-27-187';
   /* 暴露给 index.html 的内联版本守卫：HTML 每次都是新的、脚本可能还是缓存里的旧版，
      内联脚本拿这个值一比就知道要不要弹「发现新版本」，不用等用户去点某个功能。 */
   window.__SJ_APP_BUILD__ = APP_BUILD;
@@ -4412,7 +4412,12 @@
        分类只是容器，笔记才是内容；子分类则是结构本身。这两样还在时，
        静默删掉等于替用户做了一次不可见的整理，所以一律拦下，只给一句提示。 */
     if (count > 0) {
-      toast(`此分类下有 ${count} 篇笔记，无法删除。请先把笔记移到别处再试。`, 3200);
+      /* 数字要能对上账：用户数分类树时看到的是「本层几篇 + 子分类几篇」，
+         只报一个总数会让人以为算错了（真机上就这样问过一次）。 */
+      const own = state.notes.filter((n) => n.categoryId === cat.id).length;
+      const sub = count - own;
+      const detail = sub > 0 ? `（本层 ${own} 篇、子分类 ${sub} 篇）` : '';
+      toast(`此分类下有 ${count} 篇笔记${detail}，无法删除。请先把笔记移到别处再试。`, 3600);
       return;
     }
     const subs = state.categories.filter((c) => c.parentId === cat.id);

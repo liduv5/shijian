@@ -301,9 +301,12 @@
 
   /* 重复笔记合并：同一篇在两台设备 / 老备份里各存了一份，id 不同、标题一样，
      界面上就是两条。以前只能人工比对删一条，现在进出库时自动认。
-     判定保守到只碰「几乎肯定是同一篇」的：
-       · 标题归一后相同、分类相同，且都不是「无标题笔记」这种默认名
-       · 正文纯文本重合度 ≥ 0.85，或 ≥ 0.6 且标签完全一致
+     两种辨认方式：
+       · 有标题：标题归一后相同 + 分类相同，正文纯文本重合度 ≥ 0.85，
+         或 ≥ 0.6 且标签完全一致；同标题不同分类多半是刻意复制，不动
+       · 无标题（含默认名「无标题笔记」）：没有名字可认，只能按内容判 ——
+         正文纯文本完全相同 + 附件清单完全相同才算同一篇（分类不同也认）；
+         空稿本来就不该落库，是旧版本「点了新建没写」留下的残留
      保留 updatedAt 最新的一份（用户最后一次改的那份），其余的软删进回收站
      （30 天内可恢复），标签 / 星标 / 附件并到保留的那份。绝不硬删。 */
   function dedupeNotes(notes, nowTs) {
@@ -313,14 +316,30 @@
     for (const n of list) {
       if (!n || !n.id || n.deletedAt) continue;
       const title = String(n.title == null ? '' : n.title).trim();
-      if (title.length < 2) continue;
-      if (/^(无标题笔记|无标题|untitled)$/i.test(title)) continue;
-      const k = normName(title) + SEP + (n.categoryId || '');
+      const untitled = title.length < 2 || /^(无标题笔记|无标题|untitled)$/i.test(title);
+      let k;
+      if (untitled) {
+        /* 没有名字可认，只能按「内容」判：正文纯文本 + 附件清单。
+           两篇的内容完全一样，才认作同一篇；分类不同也认（真机上同一份草稿
+           就被两台设备分别存进了两个文件夹） */
+        const text = plainText(n.content);
+        const raw = Array.isArray(n.attachments) ? n.attachments : [];
+        const attKeys = raw
+          .map((a) => (a && (a.id || a.disk || a.path || a.name)) || '')
+          .filter(Boolean)
+          .sort();
+        /* 有附件却说不出身份的，宁可不判 —— 合错了就是把别人的图弄丢。 */
+        if (attKeys.length !== raw.length) continue;
+        k = 'U' + SEP + (text ? 't:' + text : '') + '|' + attKeys.join(',');
+      } else {
+        k = normName(title) + SEP + (n.categoryId || '');
+      }
       const g = groups.get(k);
-      if (g) g.push(n); else groups.set(k, [n]);
+      if (g) g.items.push(n); else groups.set(k, { untitled, items: [n] });
     }
     const pairs = [];
-    for (const g of groups.values()) {
+    for (const grp of groups.values()) {
+      const g = grp.items;
       if (g.length < 2) continue;
       g.sort((a, b) => {
         const d = (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0);
@@ -329,14 +348,19 @@
       });
       const keep = g[0];
       const keepText = plainText(keep.content);
-      if (!keepText) continue;
+      /* 无标题的分组是「按正文分组」出来的，组内本来就是同一段文字，
+         不必再算相似度；有标题的才需要比重合度。 */
+      if (!grp.untitled && !keepText) continue;
       for (let i = 1; i < g.length; i++) {
         const drop = g[i];
         if (drop.mergedInto) continue;
-        const dropText = plainText(drop.content);
-        if (!dropText) continue;
-        const sim = diceSim(keepText, dropText);
-        if (!(sim >= 0.85 || (sim >= 0.6 && sameTagSet(keep.tags, drop.tags)))) continue;
+        let sim = 1;
+        if (!grp.untitled) {
+          const dropText = plainText(drop.content);
+          if (!dropText) continue;
+          sim = diceSim(keepText, dropText);
+          if (!(sim >= 0.85 || (sim >= 0.6 && sameTagSet(keep.tags, drop.tags)))) continue;
+        }
 
         /* 合并到保留项：标签并集（最多 10 个）、星标取或、附件并集、创建时间取更早。 */
         const tags = [];
@@ -365,7 +389,12 @@
         drop.deletedAt = now;
         drop.updatedAt = now;
         drop.mergedInto = keep.id;
-        pairs.push({ keep: keep.id, drop: drop.id, title: String(keep.title || ''), sim: Math.round(sim * 100) / 100 });
+        pairs.push({
+          keep: keep.id,
+          drop: drop.id,
+          title: String(keep.title || '无标题笔记'),
+          sim: Math.round(sim * 100) / 100,
+        });
       }
     }
     return { count: pairs.length, pairs };

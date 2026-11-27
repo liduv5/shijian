@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-186 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-187 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-27-186';
+const BUILD = '2026-11-27-187';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -351,9 +351,12 @@ ok('编辑弹窗删除复用 deleteCategory、取消关闭弹窗',
 /* 用户 2026-11-27 定：只有「空的叶子分类」能删。子树里有笔记、或者自己还有
    子分类，都只给一句提示 —— 静默删掉等于替用户做了一次看不见的整理。 */
 ok('分类下有笔记就拒绝删除：只提示，不再提供「连同笔记一起删」',
-  /if \(count > 0\) \{\s*toast\(`此分类下有 \$\{count\} 篇笔记，无法删除/.test(appSrc) &&
+  /if \(count > 0\) \{[\s\S]{0,320}?toast\(`此分类下有 \$\{count\} 篇笔记\$\{detail\}，无法删除/.test(appSrc) &&
   appSrc.indexOf('连同笔记一起删除') < 0 &&
   appSrc.indexOf('modal-choices') < 0);
+ok('提示里带明细：本层几篇、子分类几篇（只报总数会被当成算错）',
+  /const own = state\.notes\.filter\(\(n\) => n\.categoryId === cat\.id\)\.length/.test(appSrc) &&
+  /const detail = sub > 0 \? `（本层 \$\{own\} 篇、子分类 \$\{sub\} 篇）` : ''/.test(appSrc));
 ok('分类下有子分类也拒绝删除，同样只提示',
   /if \(subs\.length\) \{\s*toast\(`此分类下还有 \$\{subs\.length\} 个子分类，无法删除/.test(appSrc) &&
   /state\.categories\.filter\(\(c\) => c\.parentId === cat\.id\)/.test(appSrc) &&
@@ -1614,6 +1617,25 @@ ok('被合并的一份进回收站（软删，30 天内可恢复），不硬删'
 ok('分类不同不算同一篇（同题模板放在不同文件夹是两份独立的）',
   !cDup.find((n) => n.id === 'm3').deletedAt);
 ok('合并后标签并集去重，最多 10 个', cKeep.tags.join(',') === '工作,模板');
+
+/* 手机端真机反馈：学习素材下「前端开发」和「页面布局」各有一篇
+   「无标题笔记」，内容一摸一样，却从来合不掉 —— 无标题以前整类被排除在判重外。 */
+const cUn = [
+  { id: 'u1', title: '无标题笔记', categoryId: 'c1', tags: [], content: '<p>同一段字</p>', createdAt: 1, updatedAt: 20 },
+  { id: 'u2', title: '', categoryId: 'c2', tags: [], content: '<p>同一段字</p>', createdAt: 2, updatedAt: 10 },
+  { id: 'u3', title: '无标题笔记', categoryId: 'c2', tags: [], content: '<p>完全不同的字</p>', createdAt: 3, updatedAt: 30 },
+  { id: 'u4', title: '无标题笔记', categoryId: null, tags: [], content: '<p><br></p>', createdAt: 4, updatedAt: 40 },
+  { id: 'u5', title: '', categoryId: 'c1', tags: [], content: '', createdAt: 5, updatedAt: 50 },
+  { id: 'u6', title: '无标题笔记', categoryId: 'c1', tags: [], content: '', attachments: [{ id: 'p' }], createdAt: 6, updatedAt: 60 },
+];
+const cUnStat = cloudCat.dedupeNotes(cUn, 9100);
+ok('无标题笔记按正文判同一篇：文字相同就合并（分类不同也认）',
+  cUnStat.count === 2 && !!cUn.find((n) => n.id === 'u2').deletedAt
+  && cUn.find((n) => n.id === 'u2').mergedInto === 'u1'
+  && !cUn.find((n) => n.id === 'u3').deletedAt);
+ok('空稿只留一份；有附件的空稿不当空稿合并（附件就是内容）',
+  !!cUn.find((n) => n.id === 'u4' || n.id === 'u5').deletedAt
+  && !cUn.find((n) => n.id === 'u6').deletedAt);
 ok('手机端进库时同样会自动合并（setState 走 healCategories）',
   /healCategories\(\);\s*\n\s*db\.notes\.forEach\(indexNote\);/.test(localSrc));
 ok('合并结果只在界面提示一次（meta.heal + reported），不写成库里的状态',

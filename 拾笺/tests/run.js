@@ -605,8 +605,12 @@ console.log('只有空的叶子分类能删（2026-11-27）');
 /* 用户定：分类只是容器，笔记才是内容，子分类是结构本身。
    两样还在时静默删掉，等于替用户做了一次看不见的整理，所以只给提示。 */
 ok('子树里有笔记就拒绝删除，只弹提示',
-  /if \(count > 0\) \{\s*toast\(`此分类下有 \$\{count\} 篇笔记，无法删除/.test(js) &&
+  /if \(count > 0\) \{[\s\S]{0,320}?toast\(`此分类下有 \$\{count\} 篇笔记\$\{detail\}，无法删除/.test(js) &&
   js.indexOf('连同笔记一起删除') < 0);
+/* 只报一个总数，用户拿分类树一数就对不上账（真机上问过「4 是怎么算的」）。 */
+ok('提示里带明细：本层几篇、子分类几篇，数字能对上',
+  /const own = state\.notes\.filter\(\(n\) => n\.categoryId === cat\.id\)\.length/.test(js) &&
+  /const detail = sub > 0 \? `（本层 \$\{own\} 篇、子分类 \$\{sub\} 篇）` : ''/.test(js));
 ok('有子分类也拒绝删除，同样只提示',
   /if \(subs\.length\) \{\s*toast\(`此分类下还有 \$\{subs\.length\} 个子分类，无法删除/.test(js) &&
   js.indexOf('modal-choices') < 0 &&
@@ -734,27 +738,64 @@ const dNotes = [
     content: '<p>完全不同的另一份内容：预算评审、采购流程、人员调动</p>', createdAt: 30, updatedAt: 40,
   },
   {
-    id: 'un1', title: '无标题笔记', categoryId: null, tags: [], content: '<p>同样的字</p>', createdAt: 1, updatedAt: 2,
+    /* 无标题笔记没有名字可认，只能按正文判：两篇正文完全一样就是同一篇
+       （真机上就是同一份草稿被两台设备各存一次，分类还各不相同） */
+    id: 'un1', title: '无标题笔记', categoryId: 'c1', tags: [], content: '<p>同样的字</p>', createdAt: 1, updatedAt: 20,
   },
   {
-    id: 'un2', title: '无标题笔记', categoryId: null, tags: [], content: '<p>同样的字</p>', createdAt: 3, updatedAt: 4,
+    id: 'un2', title: '', categoryId: 'c2', tags: [], content: '<p>同样的字</p>', createdAt: 3, updatedAt: 10,
+  },
+  {
+    id: 'un3', title: '无标题笔记', categoryId: 'c1', tags: [], content: '<p>另外一段完全不同的字</p>', createdAt: 5, updatedAt: 30,
+  },
+  {
+    /* 空稿（正文为空、没有附件）：彼此等价，旧版本「点了新建没写」的残留 */
+    id: 'bl1', title: '无标题笔记', categoryId: null, tags: [], content: '<p><br></p>', createdAt: 7, updatedAt: 40,
+  },
+  {
+    id: 'bl2', title: '', categoryId: 'c2', tags: [], content: '', createdAt: 8, updatedAt: 50,
+  },
+  {
+    /* 有附件没正文：附件就是内容 —— 附件清单一不一样决定合不合 */
+    id: 'bl3', title: '无标题笔记', categoryId: 'c2', tags: [], content: '',
+    attachments: [{ id: 'p1' }], createdAt: 9, updatedAt: 60,
+  },
+  {
+    id: 'bl4', title: '', categoryId: 'c1', tags: [], content: '',
+    attachments: [{ id: 'p1' }], createdAt: 11, updatedAt: 30,
+  },
+  {
+    id: 'bl5', title: '无标题笔记', categoryId: 'c1', tags: [], content: '',
+    attachments: [{ id: 'q9' }], createdAt: 12, updatedAt: 25,
   },
 ];
 const dStat = SJCats.dedupeNotes(dNotes, 1000);
 const keepNote = dNotes.find((n) => n.id === 'keep1');
 const dropNote = dNotes.find((n) => n.id === 'drop1');
 ok('同标题 + 同分类 + 正文几乎一样的两份合并成一份（留最新那份）',
-  dStat.count === 1 && dStat.pairs[0].keep === 'keep1' && dStat.pairs[0].drop === 'drop1');
+  dStat.count === 4
+  && !!dStat.pairs.find((p) => p.keep === 'keep1' && p.drop === 'drop1'));
 ok('被合并的那份软删进回收站，不硬删；并留下 mergedInto 指向保留项',
   Number(dropNote.deletedAt) === 1000 && dropNote.mergedInto === 'keep1');
 ok('合并时标签取并集、星标取或、附件跟着过来、创建时间取更早',
   keepNote.tags.join(',') === '前端,CSS,速查' && keepNote.starred === true
   && keepNote.attachments.length === 1 && keepNote.createdAt === 50);
-ok('标题只差空格 / 大小写也认作同一篇', dStat.pairs[0].title === 'CSS 布局速查');
+ok('标题只差空格 / 大小写也认作同一篇',
+  (dStat.pairs.find((p) => p.keep === 'keep1') || {}).title === 'CSS 布局速查');
 ok('同标题但内容不同（相似度低）不合并，避免误删另一篇同题笔记',
   !dNotes.find((n) => n.id === 'other2').deletedAt);
-ok('「无标题笔记」这种默认名不参与合并（内容相同的两篇也可能是不同草稿）',
-  !dNotes.find((n) => n.id === 'un1').deletedAt && !dNotes.find((n) => n.id === 'un2').deletedAt);
+/* 真机反馈（学习素材 / 前端开发 + 页面布局各一篇，一摸一样）：无标题笔记以前
+   被整类排除在判重之外，于是同一份草稿在两个分类里各留一份，永远合不掉。 */
+ok('无标题笔记按正文判重：同样文字的两篇（哪怕分类不同）合并成一篇',
+  !!dNotes.find((n) => n.id === 'un2').deletedAt
+  && dNotes.find((n) => n.id === 'un2').mergedInto === 'un1'
+  && !dNotes.find((n) => n.id === 'un1').deletedAt
+  && !dNotes.find((n) => n.id === 'un3').deletedAt);
+ok('空稿（无正文无附件）只留最新一份；附件清单不同则不合并、绝不丢图',
+  dNotes.filter((n) => n.id === 'bl1' || n.id === 'bl2').filter((n) => n.deletedAt).length === 1
+  && !dNotes.find((n) => n.id === 'bl3').deletedAt
+  && dNotes.filter((n) => n.id === 'bl3' || n.id === 'bl4').filter((n) => n.deletedAt).length === 1
+  && !dNotes.find((n) => n.id === 'bl5').deletedAt);
 ok('合并是幂等的：再跑一次不会重复处理',
   SJCats.dedupeNotes(dNotes, 2000).count === 0 && Number(dropNote.deletedAt) === 1000);
 ok('体检入口也带上了重复笔记合并（一个入口管所有脏数据）',
