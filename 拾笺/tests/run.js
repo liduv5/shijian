@@ -698,10 +698,63 @@ ok('标签按「忽略大小写与空白」归一：篇内去重、去空、跨�
 const hAgain = SJCats.healIntegrity(hCats, hNotes);
 ok('体检是幂等的：再跑一次没有任何改动',
   hAgain.orphanCats === 0 && hAgain.cycleCats === 0 && hAgain.orphanNotes === 0
-  && hAgain.orderFixed === 0 && hAgain.tagFixed === 0);
+  && hAgain.orderFixed === 0 && hAgain.tagFixed === 0 && hAgain.notesMerged === 0);
+
+/* 重复笔记：同一篇在两台设备 / 老备份里各存一份，id 不同标题一样。
+   以前只能人工比对删一条；现在进库自动合并，旧稿进回收站（可恢复）。 */
+const dNotes = [
+  {
+    id: 'keep1', title: 'CSS 布局速查', categoryId: 'c1', starred: false, tags: ['前端', 'CSS'],
+    content: '<h2>Flex 常用组合</h2><p>display:flex 居中</p><p>min-width:0 解决溢出</p>',
+    createdAt: 100, updatedAt: 900,
+  },
+  {
+    id: 'drop1', title: ' CSS   布局速查 ', categoryId: 'c1', starred: true, tags: ['前端', 'CSS', '速查'],
+    content: '<h2>Flex 常用组合</h2><p>display:flex 居中</p><p>min-width: 0 解决溢出</p><p>旧稿多一段</p>',
+    attachments: [{ id: 'a1', disk: 'f1.png' }],
+    createdAt: 50, updatedAt: 400,
+  },
+  {
+    id: 'other1', title: '会议纪要模板', categoryId: 'c1', tags: ['工作'],
+    content: '<p>本周例会：进度同步、排期确认</p>', createdAt: 10, updatedAt: 20,
+  },
+  {
+    id: 'other2', title: '会议纪要模板', categoryId: 'c1', tags: ['工作'],
+    content: '<p>完全不同的另一份内容：预算评审、采购流程、人员调动</p>', createdAt: 30, updatedAt: 40,
+  },
+  {
+    id: 'un1', title: '无标题笔记', categoryId: null, tags: [], content: '<p>同样的字</p>', createdAt: 1, updatedAt: 2,
+  },
+  {
+    id: 'un2', title: '无标题笔记', categoryId: null, tags: [], content: '<p>同样的字</p>', createdAt: 3, updatedAt: 4,
+  },
+];
+const dStat = SJCats.dedupeNotes(dNotes, 1000);
+const keepNote = dNotes.find((n) => n.id === 'keep1');
+const dropNote = dNotes.find((n) => n.id === 'drop1');
+ok('同标题 + 同分类 + 正文几乎一样的两份合并成一份（留最新那份）',
+  dStat.count === 1 && dStat.pairs[0].keep === 'keep1' && dStat.pairs[0].drop === 'drop1');
+ok('被合并的那份软删进回收站，不硬删；并留下 mergedInto 指向保留项',
+  Number(dropNote.deletedAt) === 1000 && dropNote.mergedInto === 'keep1');
+ok('合并时标签取并集、星标取或、附件跟着过来、创建时间取更早',
+  keepNote.tags.join(',') === '前端,CSS,速查' && keepNote.starred === true
+  && keepNote.attachments.length === 1 && keepNote.createdAt === 50);
+ok('标题只差空格 / 大小写也认作同一篇', dStat.pairs[0].title === 'CSS 布局速查');
+ok('同标题但内容不同（相似度低）不合并，避免误删另一篇同题笔记',
+  !dNotes.find((n) => n.id === 'other2').deletedAt);
+ok('「无标题笔记」这种默认名不参与合并（内容相同的两篇也可能是不同草稿）',
+  !dNotes.find((n) => n.id === 'un1').deletedAt && !dNotes.find((n) => n.id === 'un2').deletedAt);
+ok('合并是幂等的：再跑一次不会重复处理',
+  SJCats.dedupeNotes(dNotes, 2000).count === 0 && Number(dropNote.deletedAt) === 1000);
+ok('体检入口也带上了重复笔记合并（一个入口管所有脏数据）',
+  /const dd = dedupeNotes\(notes\);/.test(fs.readFileSync(path.join(ROOT, 'cat-core.js'), 'utf8')));
+ok('桌面端把合并结果告诉前端，且只提示一次（meta.heal + reported 标记）',
+  /const heal = hr && hr\.notesMerged && !hr\.reported/.test(serverSrc)
+  && /if \(heal\.notesMerged\) hr\.reported = true;/.test(serverSrc)
+  && /已自动合并 \$\{heal\.notesMerged\} 篇重复笔记/.test(js));
 ok('服务端启动 / 导入都走同一套体检（去重 + 体检合并在 healCategories 里）',
   /const st = SJCats\.healIntegrity\(db\.categories, db\.notes\)/.test(serverSrc)
-  && /changed \+= st\.orphanCats \+ st\.cycleCats \+ st\.orphanNotes \+ st\.orderFixed \+ st\.tagFixed/.test(serverSrc));
+  && /changed \+= st\.orphanCats \+ st\.cycleCats \+ st\.orphanNotes \+ st\.orderFixed \+ st\.tagFixed \+ st\.notesMerged/.test(serverSrc));
 
 /* 维护不再只挂在启动上：开机自启的机器可能连跑几周 */
 ok('常驻进程每 6 小时跑一次维护（回收站 / 孤儿附件 / 备份裁剪 / 当日备份）',

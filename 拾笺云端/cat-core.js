@@ -237,12 +237,146 @@
     return changed;
   }
 
+  /* 正文取纯文本：判重只看「写了什么」，不看加粗、高亮、代码块这些外壳。
+     两端存的是 HTML，同一段话在两次保存里标记可能不同（比如代码高亮），
+     直接比 HTML 会把同一篇算成两篇。 */
+  function plainText(html) {
+    return String(html == null ? '' : html)
+      .replace(/<(style|script)[\s\S]*?<\/\1>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&')
+      .replace(/[\s\u3000]+/g, '')
+      .toLowerCase();
+  }
+
+  /* 6-gram 重合度（Dice）。比编辑距离稳：多打一段废话不会让整篇判成不同，
+     也不会因为顺序调换就归零。短文本退化成「互相包含」。 */
+  function diceSim(a, b) {
+    if (!a || !b) return 0;
+    if (a === b) return 1;
+    const N = 6;
+    if (a.length < N || b.length < N) return (a.includes(b) || b.includes(a)) ? 0.9 : 0;
+    const grams = (s) => {
+      const m = new Map();
+      for (let i = 0; i + N <= s.length; i++) {
+        const g = s.slice(i, i + N);
+        m.set(g, (m.get(g) || 0) + 1);
+      }
+      return m;
+    };
+    const A = grams(a);
+    const B = grams(b);
+    let inter = 0;
+    let total = 0;
+    for (const [g, c] of A) {
+      total += c;
+      const d = B.get(g);
+      if (d) inter += Math.min(c, d);
+    }
+    for (const c of B.values()) total += c;
+    return total ? (2 * inter) / total : 0;
+  }
+
+  function tagKeySet(tags) {
+    const set = new Set();
+    for (const t of (tags || [])) {
+      const k = normTag(t);
+      if (k) set.add(k);
+    }
+    return set;
+  }
+
+  function sameTagSet(a, b) {
+    const A = tagKeySet(a);
+    const B = tagKeySet(b);
+    if (!A.size || A.size !== B.size) return false;
+    for (const x of A) if (!B.has(x)) return false;
+    return true;
+  }
+
+  /* 重复笔记合并：同一篇在两台设备 / 老备份里各存了一份，id 不同、标题一样，
+     界面上就是两条。以前只能人工比对删一条，现在进出库时自动认。
+     判定保守到只碰「几乎肯定是同一篇」的：
+       · 标题归一后相同、分类相同，且都不是「无标题笔记」这种默认名
+       · 正文纯文本重合度 ≥ 0.85，或 ≥ 0.6 且标签完全一致
+     保留 updatedAt 最新的一份（用户最后一次改的那份），其余的软删进回收站
+     （30 天内可恢复），标签 / 星标 / 附件并到保留的那份。绝不硬删。 */
+  function dedupeNotes(notes, nowTs) {
+    const list = Array.isArray(notes) ? notes : [];
+    const now = Number(nowTs) || Date.now();
+    const groups = new Map();
+    for (const n of list) {
+      if (!n || !n.id || n.deletedAt) continue;
+      const title = String(n.title == null ? '' : n.title).trim();
+      if (title.length < 2) continue;
+      if (/^(无标题笔记|无标题|untitled)$/i.test(title)) continue;
+      const k = normName(title) + SEP + (n.categoryId || '');
+      const g = groups.get(k);
+      if (g) g.push(n); else groups.set(k, [n]);
+    }
+    const pairs = [];
+    for (const g of groups.values()) {
+      if (g.length < 2) continue;
+      g.sort((a, b) => {
+        const d = (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0);
+        if (d) return d;
+        return cmpText(String(a.id), String(b.id));
+      });
+      const keep = g[0];
+      const keepText = plainText(keep.content);
+      if (!keepText) continue;
+      for (let i = 1; i < g.length; i++) {
+        const drop = g[i];
+        if (drop.mergedInto) continue;
+        const dropText = plainText(drop.content);
+        if (!dropText) continue;
+        const sim = diceSim(keepText, dropText);
+        if (!(sim >= 0.85 || (sim >= 0.6 && sameTagSet(keep.tags, drop.tags)))) continue;
+
+        /* 合并到保留项：标签并集（最多 10 个）、星标取或、附件并集、创建时间取更早。 */
+        const tags = [];
+        const seen = new Set();
+        for (const t of [].concat(keep.tags || [], drop.tags || [])) {
+          const k = normTag(t);
+          if (!k || seen.has(k) || tags.length >= 10) continue;
+          seen.add(k);
+          tags.push(cleanName(t));
+        }
+        keep.tags = tags;
+        if (drop.starred) keep.starred = true;
+        const atts = Array.isArray(keep.attachments) ? keep.attachments.slice() : [];
+        const attKeys = new Set(atts.map((a) => (a && (a.id || a.disk || a.path || a.name)) || ''));
+        for (const a of (drop.attachments || [])) {
+          const key = (a && (a.id || a.disk || a.path || a.name)) || '';
+          if (!key || attKeys.has(key)) continue;
+          attKeys.add(key);
+          atts.push(a);
+        }
+        keep.attachments = atts;
+        const a1 = Number(keep.createdAt) || 0;
+        const a2 = Number(drop.createdAt) || 0;
+        if (a2 && (!a1 || a2 < a1)) keep.createdAt = a2;
+
+        drop.deletedAt = now;
+        drop.updatedAt = now;
+        drop.mergedInto = keep.id;
+        pairs.push({ keep: keep.id, drop: drop.id, title: String(keep.title || ''), sim: Math.round(sim * 100) / 100 });
+      }
+    }
+    return { count: pairs.length, pairs };
+  }
+
   /* 数据体检：把「指向已不存在的对象」和「排序 / 标签的重复写法」一次理顺。
      只做安全修正 —— 悬空分类提升为根、悬空笔记归未分类，绝不删用户数据。
      这些脏数据是「删文件夹不删后代」「同步只认 id」等历史问题留下的，
      与其等它们以「笔记莫名消失」的形式暴露，不如每次进出库时顺手理掉。 */
   function healIntegrity(cats, notes) {
-    const stats = { orphanCats: 0, cycleCats: 0, orphanNotes: 0, orderFixed: 0, tagFixed: 0 };
+    const stats = { orphanCats: 0, cycleCats: 0, orphanNotes: 0, orderFixed: 0, tagFixed: 0, notesMerged: 0, mergedPairs: [] };
     const list = Array.isArray(cats) ? cats : [];
     const byId = new Map();
     for (const c of list) if (c && c.id) byId.set(c.id, c);
@@ -303,7 +437,13 @@
       });
     }
 
-    /* 5. 标签归一（跨篇统一写法 + 篇内去重 + 去空）。 */
+    /* 5. 重复笔记合并：同标题 + 同分类 + 正文几乎一样的两份，留最新那份，
+       旧的那份软删进回收站（30 天后由维护任务清掉，期间随时可恢复）。 */
+    const dd = dedupeNotes(notes);
+    stats.notesMerged = dd.count;
+    stats.mergedPairs = dd.pairs;
+
+    /* 6. 标签归一（跨篇统一写法 + 篇内去重 + 去空）。合并后的并集也在这里理顺。 */
     stats.tagFixed = healTags(notes);
     return stats;
   }
@@ -370,6 +510,6 @@
   return {
     normName, cleanName, catKey, siblingOf, uniqueName,
     subtreeIds, mergeCats, dedupeCats, resolveId, remapAll, pickDuplicateCatIds,
-    normTag, healTags, healIntegrity,
+    normTag, healTags, healIntegrity, dedupeNotes, plainText, diceSim,
   };
 }));

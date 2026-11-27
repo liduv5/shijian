@@ -18,6 +18,9 @@
   /* ---------------------------------------------------------- 内存库 */
   let db = { categories: [], notes: [], versions: {} };
 
+  /* 最近一次体检结果，只用于「刚合并了重复笔记」的一次性提示。 */
+  let lastHeal = { notesMerged: 0, mergedPairs: [] };
+
   /* 分类自愈：同父同名只留一份，笔记与子分类跟着改指向。
      与桌面 server.js 的 healCategories 是同一套判定（SJCats 内核）。
      启动、导入、同步落地后都会跑，用户不需要任何「去重」入口。 */
@@ -35,7 +38,8 @@
        手机上没有控制台可看，脏数据只会以「笔记不见了」的形式出现，
        所以每次进库都体检一次，比事后排查便宜得多。 */
     const st = window.SJCats.healIntegrity(db.categories, db.notes);
-    changed += st.orphanCats + st.cycleCats + st.orphanNotes + st.orderFixed + st.tagFixed;
+    lastHeal = st;
+    changed += st.orphanCats + st.cycleCats + st.orphanNotes + st.orderFixed + st.tagFixed + st.notesMerged;
     return changed;
   }
 
@@ -445,10 +449,15 @@
     /* ---------- 全量状态 ---------- */
     if (method === 'GET' && seg[0] === 'state') {
       const live = db.notes.filter((n) => !n.deletedAt);
+      /* 合并提示只报一次，刷新页面不重复弹。 */
+      const heal = lastHeal && lastHeal.notesMerged && !lastHeal.reported
+        ? { notesMerged: lastHeal.notesMerged, titles: (lastHeal.mergedPairs || []).map((p) => p.title).slice(0, 3) }
+        : { notesMerged: 0 };
+      if (heal.notesMerged) lastHeal.reported = true;
       return {
         categories: clone(db.categories),
         notes: clone(live),
-        meta: { version: 1, count: live.length },
+        meta: { version: 1, count: live.length, heal },
       };
     }
 

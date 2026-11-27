@@ -5721,6 +5721,14 @@
       const data = await api('/api/state');
       setState({ categories: data.categories || [] });
       setState({ notes: data.notes || [] });
+      /* 启动时体检合并了重复笔记：说一声，别让笔记「凭空少一条」让人以为丢了。 */
+      const heal = data.meta && data.meta.heal;
+      if (heal && heal.notesMerged) {
+        const first = (heal.titles || []).filter(Boolean)[0];
+        setTimeout(() => toast(
+          `已自动合并 ${heal.notesMerged} 篇重复笔记${first ? `（如「${first}」）` : ''}，旧稿在回收站 30 天内可恢复`,
+        ), 900);
+      }
     } catch (e) {
       toast('加载数据失败：' + e.message);
     }

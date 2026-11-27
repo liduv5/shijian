@@ -3255,7 +3255,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-27-178';
+  const APP_BUILD = '2026-11-27-179';
   /* 暴露给 index.html 的内联版本守卫：HTML 每次都是新的、脚本可能还是缓存里的旧版，
      内联脚本拿这个值一比就知道要不要弹「发现新版本」，不用等用户去点某个功能。 */
   window.__SJ_APP_BUILD__ = APP_BUILD;
@@ -6200,6 +6200,13 @@
       const data = await api('/api/state');
       state.categories = data.categories || [];
       state.notes = data.notes || [];
+      const heal = data.meta && data.meta.heal;
+      if (heal && heal.notesMerged) {
+        const first = (heal.titles || []).filter(Boolean)[0];
+        setTimeout(() => toast(
+          `已自动合并 ${heal.notesMerged} 篇重复笔记${first ? `（如「${first}」）` : ''}，旧稿在回收站 30 天内可恢复`,
+        ), 900);
+      }
     } catch (e) {
       toast('加载数据失败：' + e.message);
     }

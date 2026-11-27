@@ -73,6 +73,10 @@ const APP_CSP = [
 
 // ---------------------------------------------------------------- 数据层
 let db = { categories: [], notes: [] };
+
+/* 最近一次数据体检的结果。只给前端做一次「刚合并了 N 篇重复笔记」的提示，
+   不落盘、不参与同步 —— 提示完就该消失，不该变成库里的状态。 */
+let healReport = null;
 let saveTimer = null;
 let saving = false;
 
@@ -211,11 +215,13 @@ function healCategories() {
     changed += r.remap.size;
   }
   const st = SJCats.healIntegrity(db.categories, db.notes);
-  changed += st.orphanCats + st.cycleCats + st.orphanNotes + st.orderFixed + st.tagFixed;
-  if (st.orphanCats || st.cycleCats || st.orphanNotes || st.orderFixed || st.tagFixed) {
+  healReport = st;
+  changed += st.orphanCats + st.cycleCats + st.orphanNotes + st.orderFixed + st.tagFixed + st.notesMerged;
+  if (st.orphanCats || st.cycleCats || st.orphanNotes || st.orderFixed || st.tagFixed || st.notesMerged) {
     console.log('  数据体检：'
       + `悬空分类 ${st.orphanCats}，环 ${st.cycleCats}，悬空笔记 ${st.orphanNotes}，`
-      + `order 重排 ${st.orderFixed}，标签归一 ${st.tagFixed} 篇`);
+      + `order 重排 ${st.orderFixed}，标签归一 ${st.tagFixed} 篇，`
+      + `重复笔记合并 ${st.notesMerged} 篇`);
   }
   return changed;
 }
@@ -570,10 +576,16 @@ async function handleApi(req, res, pathname, query) {
   // GET /api/state —— 只返回未删除的笔记，回收站里的走 /api/trash
   if (req.method === 'GET' && seg[0] === 'state') {
     const live = db.notes.filter((n) => !n.deletedAt);
+    /* 合并提示只报一次：页面刷新 / 第二个标签页不该反复弹「已合并」。 */
+    const hr = healReport;
+    const heal = hr && hr.notesMerged && !hr.reported
+      ? { notesMerged: hr.notesMerged, titles: (hr.mergedPairs || []).map((p) => p.title).slice(0, 3) }
+      : { notesMerged: 0 };
+    if (heal.notesMerged) hr.reported = true;
     return sendJSON(res, 200, {
       categories: db.categories,
       notes: live,
-      meta: { version: 1, count: live.length, bootId: BOOT_ID },
+      meta: { version: 1, count: live.length, bootId: BOOT_ID, heal },
     });
   }
 

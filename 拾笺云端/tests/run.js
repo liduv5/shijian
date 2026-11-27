@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-178 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-179 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-27-178';
+const BUILD = '2026-11-27-179';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -1485,9 +1485,47 @@ ok('「移到父级」策略仍然只删自身（子分类改挂，不能连带�
 /* 数据体检：悬空引用 / 环 / order / 标签，进库时统一修 */
 ok('云端每次进库都做体检，不只去重',
   /const st = window\.SJCats\.healIntegrity\(db\.categories, db\.notes\)/.test(localSrc)
-  && /changed \+= st\.orphanCats \+ st\.cycleCats \+ st\.orphanNotes \+ st\.orderFixed \+ st\.tagFixed/.test(localSrc));
+  && /changed \+= st\.orphanCats \+ st\.cycleCats \+ st\.orphanNotes \+ st\.orderFixed \+ st\.tagFixed \+ st\.notesMerged/.test(localSrc));
 ok('新建分类用「同级最大 order + 1」，删一个再建不会撞号',
   /order: siblings\.length \? Math\.max\(\.\.\.siblings\.map\(\(c\) => Number\(c\.order\) \|\| 0\)\) \+ 1 : 0/.test(localSrc));
+
+/* 重复笔记合并：手机端与电脑端共用同一份判定，否则「算不算重复」两端各算一套。 */
+const cDup = [
+  {
+    id: 'm1', title: '会议纪要模板', categoryId: 'c1', tags: ['工作', '模板'],
+    content: '<h2>本周例会</h2><p>时间：周一 14:00，参会：全体成员</p>',
+    createdAt: 10, updatedAt: 500,
+  },
+  {
+    id: 'm2', title: '会议纪要模板', categoryId: 'c1', tags: ['工作', '模板'],
+    content: '<h2>本周例会</h2><p>时间：周一 14:00，参会：全体成员！</p><p>旧稿残留的一段测试文字</p>',
+    createdAt: 5, updatedAt: 300,
+  },
+  {
+    id: 'm3', title: '会议纪要模板', categoryId: 'c2', tags: ['工作'],
+    content: '<h2>本周例会</h2><p>时间：周一 14:00，参会：全体成员</p>',
+    createdAt: 6, updatedAt: 400,
+  },
+];
+const cDupStat = cloudCat.dedupeNotes(cDup, 9000);
+const cKeep = cDup.find((n) => n.id === 'm1');
+ok('同标题 + 同分类 + 正文高度相似的两份合并，留 updatedAt 最新那份',
+  cDupStat.count === 1 && cDupStat.pairs[0].keep === 'm1' && cDupStat.pairs[0].drop === 'm2');
+ok('被合并的一份进回收站（软删，30 天内可恢复），不硬删',
+  Number(cDup.find((n) => n.id === 'm2').deletedAt) === 9000
+  && cDup.find((n) => n.id === 'm2').mergedInto === 'm1');
+ok('分类不同不算同一篇（同题模板放在不同文件夹是两份独立的）',
+  !cDup.find((n) => n.id === 'm3').deletedAt);
+ok('合并后标签并集去重，最多 10 个', cKeep.tags.join(',') === '工作,模板');
+ok('手机端进库时同样会自动合并（setState 走 healCategories）',
+  /healCategories\(\);\s*\n\s*db\.notes\.forEach\(indexNote\);/.test(localSrc));
+ok('合并结果只在界面提示一次（meta.heal + reported），不写成库里的状态',
+  /const heal = lastHeal && lastHeal\.notesMerged && !lastHeal\.reported/.test(localSrc)
+  && /if \(heal\.notesMerged\) lastHeal\.reported = true;/.test(localSrc)
+  && /已自动合并 \$\{heal\.notesMerged\} 篇重复笔记/.test(appSrc));
+ok('合并内核与桌面端逐字相同（共享文件校验会兜底）',
+  crypto.createHash('md5').update(fs.readFileSync(path.join(CLOUD, 'cat-core.js'))).digest('hex')
+  === crypto.createHash('md5').update(fs.readFileSync(path.join(DESKTOP, 'public', 'cat-core.js'))).digest('hex'));
 ok('标签写入口按内核归一（忽略大小写与空白去重、去空、最多 10 个）',
   /const k = window\.SJCats \? window\.SJCats\.normTag\(t\) : t\.toLowerCase\(\)/.test(appSrc)
   && /const next = clean\.slice\(0, 10\);/.test(appSrc));
