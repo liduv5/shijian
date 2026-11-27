@@ -3846,16 +3846,16 @@ html[data-theme="dark"] .pwd-tip button { color: #1c1a17; }
   .sj-nh-aa:active { background: var(--surface-3); color: var(--text); }
   body.sj-note-open:not(.sj-note-edit) .sj-nh-aa { display: flex; }
   /* 阅读态的「编辑」：进编辑的唯一入口（点正文不再跳进编辑态）。
-     放在 header 里靠 padding-right 让开四点的位置，比绝对定位稳。 */
+     形状与同排的返回 / 撤销 / 完成一致（40px 圆形幽灵按钮），
+     图标沿用电脑端那枚铅笔 —— 同一个动作在两端是同一个符号，
+     不再一端写字、一端画图标。 */
   .sj-nh-edit {
     display: none; flex: none; align-items: center; justify-content: center;
-    height: 32px; padding: 0 11px; margin-left: 2px;
-    border: 0; border-radius: 16px;
-    background: var(--accent-soft); color: var(--accent);
-    font-family: var(--font-ui); font-size: 13px; font-weight: 600; letter-spacing: .02em;
+    width: 40px; height: 40px;
+    border: 0; border-radius: 50%; background: transparent; color: var(--text);
     touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
-  .sj-nh-edit:active { background: var(--accent); color: #fff; }
+  .sj-nh-edit:active { background: var(--surface-2); }
   body.sj-note-open:not(.sj-note-edit) .sj-nh-edit { display: flex; }
   /* 编辑态右上角是撤销/重做/完成，四点按钮会压住「完成」，收起 */
   body.sj-note-edit .sj-more-btn { display: none; }

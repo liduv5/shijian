@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-27-179';
+  var SWV = '2026-11-27-180';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -490,8 +490,11 @@
              所以纯阅读态也能开 —— 觉得字小了不必先切进编辑（用户 2026-11-22 要求）。 -->
         <button type="button" class="sj-nh-aa" data-act="nh-aa" aria-label="字体与行距">Aa</button>
         <!-- 阅读态唯一的「进编辑」入口（用户 2026-11-22 定：阅读就只是阅读，
-             点正文不再跳进编辑态）。放在 acts 之后，靠 flex 顺序落在最右。 -->
-        <button type="button" class="sj-nh-edit" data-act="nh-edit">编辑</button>
+             点正文不再跳进编辑态）。放在 acts 之后，靠 flex 顺序落在最右。
+             图标与电脑端阅读态那颗铅笔同一枚 —— 两端同一个动作是同一个符号。 -->
+        <button type="button" class="sj-nh-edit" data-act="nh-edit" aria-label="编辑" title="编辑这篇笔记">
+          <svg viewBox="0 0 24 24" class="ico"><path d="M4 20h4L18.5 9.5l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>
+        </button>
       </header>
       <header class="editor-head">
         <input id="titleInput" class="title-input" placeholder="无标题笔记" spellcheck="false">

@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-179 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-180 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-27-179';
+const BUILD = '2026-11-27-180';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -479,13 +479,26 @@ ok('手机端不再有 Markdown / 富文本切换，标题与返回箭头同一�
    原来「点正文进编辑」没拦 a[href]，点正文里的链接会一边跳转一边切形态；
    而且轻触就进可写状态、退出时还会 saveNow() 白落一次盘。 */
 ok('阅读态进编辑只有顶栏一颗按钮，点正文不再跳进编辑',
-  /data-act="nh-edit">编辑</.test(indexSrc)
+  /data-act="nh-edit" aria-label="编辑"/.test(indexSrc)
   && /if \(a === 'nh-edit'\) \{ setNoteMode\('edit'\); return; \}/.test(appSrc)
   && !/setNoteMode\('edit', \{ x: e\.clientX, y: e\.clientY \}\)/.test(appSrc)
   && !/阅读态点图片：同样进编辑/.test(appSrc)
   && /\.sj-nh-edit \{[\s\S]{0,500}body\.sj-note-open:not\(\.sj-note-edit\) \.sj-nh-edit \{ display: flex; \}/.test(styleSrc)
   /* 阅读态顶栏右侧要让开固定的四点按钮（52 + 12 间隙）；110px 会把标题挤掉近 50px */
   && /body\.sj-note-open:not\(\.sj-note-edit\) \.sj-note-head \{ padding-right: 64px; \}/.test(styleSrc));
+
+/* 同一个动作两端必须是同一个符号：以前手机端是一颗写着「编辑」的胶囊，
+   电脑端是一枚铅笔，同一件事给人两种视觉信号。现在统一成铅笔。 */
+ok('手机端「编辑」用与电脑端同一枚铅笔图标，不再是文字胶囊', (() => {
+  const mine = (indexSrc.match(/data-act="nh-edit"[\s\S]{0,260}?<\/button>/) || [''])[0];
+  const deskSrc = fs.readFileSync(path.join(DESKTOP, 'public', 'index.html'), 'utf8');
+  const desk = (deskSrc.match(/id="readEditBtn"[\s\S]{0,260}?<\/button>/) || [''])[0];
+  const paths = (s) => (s.match(/<path d="[^"]+"/g) || []).join('|');
+  return paths(mine).length > 20 && paths(mine) === paths(desk) && !/编辑</.test(mine);
+})());
+ok('手机端「编辑」按钮形状与同排图标一致（40px 圆形幽灵按钮）',
+  /\.sj-nh-edit \{[\s\S]{0,400}width: 40px; height: 40px;[\s\S]{0,120}border-radius: 50%/.test(styleSrc)
+  && !/\.sj-nh-edit \{[\s\S]{0,400}font-size: 13px/.test(styleSrc));
 
 ok('标题下面只留一份分类且可点：分类胶囊可点换类、右边不再重复一颗',
   indexSrc.indexOf('id="sjMetaDate"') >= 0 &&
