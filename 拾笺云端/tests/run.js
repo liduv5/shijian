@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-180 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-181 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-27-180';
+const BUILD = '2026-11-27-181';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -1241,6 +1241,15 @@ ok('发现新版本：三层探测 + 顶部更新按钮 + 清缓存重开（手�
   && /setInterval\(checkUpdate, 60000\)/.test(indexSrc)
   && /visibilitychange/.test(indexSrc)
   && /setTimeout\(finish, 4000\)/.test(indexSrc));
+
+/* 点「点此更新」后按钮文案变成「正在更新…」，比原来长。flex 默认允许收缩，
+   窄屏上会被挤成两行、文字顶出圆角墨灰底。三块都锁 nowrap + 不收缩，
+   按钮再给固定最小宽度，两种文案切换时外框不忽宽忽窄。 */
+ok('更新提示在窄屏不换行、不收缩：点完变「正在更新…」也撑不破外框',
+  /max-width:calc\(100vw - 24px\);flex-wrap:nowrap;/.test(indexSrc)
+  && /white-space:nowrap;flex:none;min-width:100px/.test(indexSrc)
+  && (indexSrc.match(/white-space:nowrap;flex:none/g) || []).length >= 3
+  && /<span style="white-space:nowrap;flex:none">发现新版本<\/span>/.test(indexSrc));
 ok('版本探测正则能从 sw.js 提取当前构建号',
   (() => {
     const m = /const\s+VERSION\s*=\s*'sj-([^']+)'/.exec(swSrc);

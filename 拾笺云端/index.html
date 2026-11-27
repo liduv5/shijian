@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-27-180';
+  var SWV = '2026-11-27-181';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -108,7 +108,7 @@
     box.id = 'sjUpdateTip';
     box.setAttribute('role', 'status');
     box.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:99998;'
-      + 'display:flex;align-items:center;gap:10px;max-width:calc(100% - 24px);'
+      + 'display:flex;align-items:center;gap:10px;max-width:calc(100vw - 24px);flex-wrap:nowrap;'
       /* 兜底 UI 不能依赖 style.css（要覆盖的场景之一就是 CSS 挂了），但也不该
          写死旧墨绿：界面在宽屏是石墨灰 #43403a、窄屏是华为蓝 #0a59f7，墨绿只在
          两者之间的灰色地带出现，于是这个按钮看着像上一代遗留。这里统一用中性
@@ -116,11 +116,15 @@
       + 'padding:9px 10px 9px 14px;border-radius:14px;background:#43403a;color:#fff;'
       + 'box-shadow:0 6px 24px rgba(0,0,0,.22);'
       + 'font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif';
-    box.innerHTML = '<span style="white-space:nowrap">发现新版本</span>'
+    /* 三块都锁成不换行、不收缩：点「点此更新」后按钮文字变成「正在更新…」，
+       flex 默认允许收缩，窄屏上会被挤成两行、撑破墨灰背景。按钮再给一个固定
+       最小宽度，两种文案切换时外框不会忽宽忽窄。 */
+    box.innerHTML = '<span style="white-space:nowrap;flex:none">发现新版本</span>'
       + '<button id="sjUpdateGo" style="border:0;border-radius:9px;background:#fff;color:#43403a;'
-      + 'padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer">点此更新</button>'
+      + 'padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;'
+      + 'white-space:nowrap;flex:none;min-width:100px;box-sizing:border-box">点此更新</button>'
       + '<button id="sjUpdateNo" aria-label="稍后再说" style="border:0;background:transparent;color:#fff;'
-      + 'font-size:18px;line-height:1;padding:2px 4px;cursor:pointer">×</button>';
+      + 'font-size:18px;line-height:1;padding:2px 4px;cursor:pointer;white-space:nowrap;flex:none">×</button>';
     document.body.appendChild(box);
     var no = document.getElementById('sjUpdateNo');
     if (no) no.onclick = function () {
