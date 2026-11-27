@@ -873,10 +873,17 @@
     row.dataset.id = cat.id;
     row.dataset.depth = depth;
     row.style.paddingLeft = 4 + depth * 18 + 'px';
+    /* 计数拆成「本层 + 子分类」：父分类允许直接放笔记，只显示一个总数，
+       用户拿树一数会以为算错了（真机问过「4 是怎么算的」）。 */
+    const total = subtreeCount(cat.id, state.notes);
+    const ownCnt = state.notes.filter((n) => n.categoryId === cat.id).length;
+    const subCnt = total - ownCnt;
+    const countText = subCnt > 0 ? `${ownCnt} + ${subCnt}` : String(total);
+    const countTip = subCnt > 0 ? `本层 ${ownCnt} 篇、子分类 ${subCnt} 篇` : `${total} 篇笔记`;
     row.innerHTML = `
       <span class="caret${kids.length ? '' : ' leaf'}" data-act="toggle">${I.chevron}</span>
       <span class="tree-label">${I.folder.replace('class="ico"', 'class="ico tree-folder"')}${escapeHtml(cat.name)}</span>
-      <span class="tree-count">${subtreeCount(cat.id, state.notes)}</span>
+      <span class="tree-count" title="${countTip}">${countText}</span>
       <span class="tree-acts">
         <button class="tree-act" data-act="add" title="新建子类别">${I.plus}</button>
         <button class="tree-act" data-act="more" title="更多">${I.dots}</button>
@@ -3264,7 +3271,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-27-191';
+  const APP_BUILD = '2026-11-28-192';
   /* 暴露给 index.html 的内联版本守卫：HTML 每次都是新的、脚本可能还是缓存里的旧版，
      内联脚本拿这个值一比就知道要不要弹「发现新版本」，不用等用户去点某个功能。 */
   window.__SJ_APP_BUILD__ = APP_BUILD;
@@ -4415,38 +4422,175 @@
     });
   }
 
+  /* 单选弹层：给「必须由用户明确选一条路」的操作（如删除有内容的分类）用。
+     每项一行、带一句后果说明，比一串 toast 更容易看清代价。 */
+  function openChoice({ title, message, options = [] }) {
+    const m = openModal(`
+      <h3>${escapeHtml(title)}</h3>
+      ${message ? `<p>${message}</p>` : ''}
+      <div class="modal-choice-list">
+        ${options.map((o, i) => `<button type="button" class="modal-choice${o.danger ? ' danger' : ''}" data-i="${i}">
+          <span class="modal-choice-label">${escapeHtml(o.label)}</span>
+          ${o.hint ? `<span class="modal-choice-hint">${escapeHtml(o.hint)}</span>` : ''}
+        </button>`).join('')}
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" data-act="cancel">取消</button>
+      </div>`);
+    m.querySelector('[data-act="cancel"]').onclick = closeModal;
+    m.querySelectorAll('.modal-choice').forEach((btn) => {
+      btn.onclick = () => {
+        const o = options[Number(btn.dataset.i)];
+        closeModal();
+        if (o && o.onClick) o.onClick();
+      };
+    });
+  }
+
+  /* 分类建错层后只能重建、重建又被「有笔记不能删」卡死。
+     本地接口本来就支持 parentId（含环检测），补一个选择框就通了。 */
+  function moveCategory(cat) {
+    const block = new Set([cat.id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const c of state.categories) {
+        if (c.parentId && block.has(c.parentId) && !block.has(c.id)) { block.add(c.id); grew = true; }
+      }
+    }
+    const targets = state.categories
+      .filter((c) => !block.has(c.id))
+      .map((c) => ({ id: c.id, path: catPath(c.id) }))
+      .sort((a, b) => a.path.localeCompare(b.path, 'zh-Hans-CN'));
+    const m = openModal(`
+      <h3>移动类别</h3>
+      <p>把「${escapeHtml(cat.name)}」连同它的子分类和笔记一起移到：</p>
+      <select class="modal-select">
+        <option value="">（顶层）</option>
+        ${targets.map((t) => `<option value="${t.id}"${t.id === (cat.parentId || '') ? ' selected' : ''}>${escapeHtml(t.path)}</option>`).join('')}
+      </select>
+      <div class="modal-actions">
+        <button class="btn ghost" data-act="cancel">取消</button>
+        <button class="btn primary" data-act="ok">移动</button>
+      </div>`);
+    const sel = m.querySelector('select');
+    m.querySelector('[data-act="cancel"]').onclick = closeModal;
+    m.querySelector('[data-act="ok"]').onclick = async () => {
+      const parentId = sel.value || null;
+      if (parentId === (cat.parentId || null)) { closeModal(); return; }
+      try {
+        const updated = await api(`/api/categories/${cat.id}`, { method: 'PATCH', body: { parentId } });
+        Object.assign(cat, updated);
+        const p = parentId ? state.categories.find((c) => c.id === parentId) : null;
+        if (p) p.expanded = true;
+        closeModal();
+        renderTree();
+        renderList();
+        toast(parentId ? `已移到「${catPath(parentId)}」` : '已移到顶层');
+      } catch (e) { toast(e.message); }
+    };
+  }
+
+  /* 分类与归属的说明：这套口径不写出来，用户只能靠试。 */
+  function openHelp() {
+    openModal(`
+      <h3>分类与归属</h3>
+      <p>这几条决定了「一篇笔记会出现在哪里」：</p>
+      <ul class="help-list">
+        <li><b>一篇笔记只属于一个分类。</b>选中父分类时，列表会把子分类的笔记一起列出来，那是汇总视图，不是复制了一份。</li>
+        <li><b>行尾的灰字是真实位置。</b>例如「学习素材 / 前端开发 / 页面布局」，说明这篇挂在这一层，而不是当前选中的那层。</li>
+        <li><b>树上的数字是「本层 + 子分类」。</b>例如 1 + 3：本层 1 篇、子分类 3 篇。</li>
+        <li><b>删除有内容的分类时，由你决定内容去哪：</b>整枝移到回收站（30 天内可恢复），或只拆这一层、把笔记并入上一级。</li>
+        <li><b>想让同一份内容出现在多个地方，用标签。</b>复制成两篇就会变成两份互相独立的笔记。</li>
+      </ul>
+      <div class="modal-actions">
+        <button class="btn primary" data-act="ok">知道了</button>
+      </div>`).querySelector('[data-act="ok"]').onclick = closeModal;
+  }
+
   async function deleteCategory(cat) {
-    const count = subtreeCount(cat.id, state.notes);
-    /* 只有「空的叶子分类」才允许删（用户 2026-11-27 定）。
-       分类只是容器，笔记才是内容；子分类则是结构本身。这两样还在时，
-       静默删掉等于替用户做了一次不可见的整理，所以一律拦下，只给一句提示。 */
-    if (count > 0) {
-      /* 数字要能对上账：用户数分类树时看到的是「本层几篇 + 子分类几篇」，
-         只报一个总数会让人以为算错了（真机上就这样问过一次）。 */
-      const own = state.notes.filter((n) => n.categoryId === cat.id).length;
-      const sub = count - own;
-      const detail = sub > 0 ? `（本层 ${own} 篇、子分类 ${sub} 篇）` : '';
-      toast(`此分类下有 ${count} 篇笔记${detail}，无法删除。请先把笔记移到别处再试。`, 3600);
+    /* 先算出整棵子树：计数、提示、删除范围都用这一份，不会出现「提示 3 篇、删掉 5 篇」。 */
+    const ids = new Set([cat.id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const c of state.categories) {
+        if (c.parentId && ids.has(c.parentId) && !ids.has(c.id)) { ids.add(c.id); grew = true; }
+      }
+    }
+    const affected = state.notes.filter((n) => ids.has(n.categoryId));
+    const subs = state.categories.filter((c) => ids.has(c.id) && c.id !== cat.id).length;
+
+    /* 空叶子：没有内容可牵连，直接删，不再多问一遍。 */
+    if (!affected.length && !subs) {
+      try {
+        await api(`/api/categories/${cat.id}`, { method: 'DELETE' });
+        state.categories = state.categories.filter((c) => c.id !== cat.id);
+        if (cat.id === state.selCat) state.selCat = 'all';
+        renderTree();
+        renderList();
+        /* 云端那份也要删。只删本机的话，下次「从云端拉取」会原样并回来，
+           表现就是删了又出现（用户反馈的「每次同步都有重复分类」）。 */
+        if (window.SJSync && window.SJSync.catDeleted) {
+          window.SJSync.catDeleted([cat.id], cat.parentId || null).catch(() => {});
+        }
+        toast('类别已删除');
+        window.dispatchEvent(new Event('sj-categories-changed'));
+      } catch (e) { toast(e.message); }
       return;
     }
-    const subs = state.categories.filter((c) => c.parentId === cat.id);
-    if (subs.length) {
-      toast(`此分类下还有 ${subs.length} 个子分类，无法删除。请先处理子分类。`, 3200);
-      return;
-    }
+
+    /* 有内容就由用户明确选一条路 —— 「静默删」依然不存在，
+       但也不再只给一句「无法删除」把路堵死。 */
+    const own = affected.filter((n) => n.categoryId === cat.id).length;
+    const subNotes = affected.length - own;
+    const detail = subNotes > 0 ? `（本层 ${own} 篇、子分类 ${subNotes} 篇）` : '';
+    const parent = cat.parentId ? state.categories.find((c) => c.id === cat.parentId) : null;
+    const destName = parent ? parent.name : '未分类';
+    const options = [{
+      label: `把 ${affected.length} 篇笔记移到回收站，删除整个类别`,
+      hint: subs
+        ? `连同 ${subs} 个子分类一起删；回收站保留 30 天，可以恢复`
+        : '回收站保留 30 天，可以恢复',
+      danger: true,
+      onClick: () => applyDeleteCat(cat, 'delete', affected.length, ids),
+    }];
+    options.push({
+      label: `笔记并入「${destName}」，只删这一层`,
+      hint: subs
+        ? `子分类挂到「${destName}」下面，笔记一条不丢`
+        : `笔记全部移到「${destName}」，一条不丢`,
+      onClick: () => applyDeleteCat(cat, 'move', affected.length, ids),
+    });
+    openChoice({
+      title: `删除类别「${cat.name}」`,
+      message: `此分类下有 ${affected.length} 篇笔记${detail}${subs ? `、${subs} 个子分类` : ''}。请选择这些内容怎么处理：`,
+      options,
+    });
+  }
+
+  /* strategy=delete：整枝进回收站；strategy=move：只拆这一层，内容挂到父级。 */
+  async function applyDeleteCat(cat, strategy, count, ids) {
     try {
-      await api(`/api/categories/${cat.id}`, { method: 'DELETE' });
-      state.categories = state.categories.filter((c) => c.id !== cat.id);
+      await api(`/api/categories/${cat.id}?strategy=${strategy}`, { method: 'DELETE' });
+      const s2 = await api('/api/state');
+      state.categories = s2.categories || [];
+      state.notes = s2.notes || [];
+      if (state.selNote && !state.notes.some((n) => n.id === state.selNote)) {
+        state.selNote = null;
+        closeEditor();
+      }
       if (cat.id === state.selCat) state.selCat = 'all';
       renderTree();
       renderList();
-      /* 云端那份也要删。只删本机的话，下次「从云端拉取」会原样并回来，
-         表现就是删了又出现（用户反馈的「每次同步都有重复分类」）。 */
+      if (typeof renderTags === 'function') renderTags();
       if (window.SJSync && window.SJSync.catDeleted) {
-        window.SJSync.catDeleted([cat.id], cat.parentId || null).catch(() => {});
+        window.SJSync.catDeleted([...ids], cat.parentId || null).catch(() => {});
       }
-      toast('类别已删除');
       window.dispatchEvent(new Event('sj-categories-changed'));
+      toast(strategy === 'delete'
+        ? `已删除，${count} 篇笔记在回收站（30 天内可恢复）`
+        : '已删掉这一层，笔记一条没少', 3200);
     } catch (e) { toast(e.message); }
   }
 
@@ -4957,6 +5101,7 @@
       { label: '在此新建笔记', icon: I.doc, onClick: () => createNote(cat.id) },
       { sep: true },
       { label: '重命名', icon: I.pencil, onClick: () => renameCategory(cat) },
+      { label: '移动到…', icon: I.folder, onClick: () => moveCategory(cat) },
       { label: '删除类别', icon: I.trash, danger: true, onClick: () => deleteCategory(cat) },
     ]);
   });
@@ -4991,6 +5136,7 @@
         const r = act.getBoundingClientRect();
         return showCtx(r.left, r.bottom + 4, [
           { label: '重命名', icon: I.pencil, onClick: () => renameCategory(cat) },
+          { label: '移动到…', icon: I.folder, onClick: () => moveCategory(cat) },
           { label: '新建子类别', icon: I.plus, onClick: () => askCreateCategory(cat.id) },
           { sep: true },
           { label: '删除类别', icon: I.trash, danger: true, onClick: () => deleteCategory(cat) },
@@ -5430,6 +5576,8 @@
   if ($('#editorBack')) $('#editorBack').addEventListener('click', () => closeEditor());
   $('#newNoteBtn2').addEventListener('click', () => createNote());
   $('#addRootCatBtn').addEventListener('click', () => askCreateCategory(null));
+  const helpBtn = $('#helpBtn');
+  if (helpBtn) helpBtn.addEventListener('click', openHelp);
   $('#collapseAllBtn').addEventListener('click', async () => {
     const anyOpen = state.categories.some((c) => c.expanded);
     state.categories.forEach((c) => (c.expanded = !anyOpen));

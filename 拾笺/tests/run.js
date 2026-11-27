@@ -601,20 +601,40 @@ ok('内核支持 Node 与浏览器两种加载方式',
   && /root\.SJMDConvCore = factory\(\)/.test(mdconvCore)
   && /root\.SJCats = factory\(\)/.test(read('cat-core.js')));
 
-console.log('只有空的叶子分类能删（2026-11-27）');
-/* 用户定：分类只是容器，笔记才是内容，子分类是结构本身。
-   两样还在时静默删掉，等于替用户做了一次看不见的整理，所以只给提示。 */
-ok('子树里有笔记就拒绝删除，只弹提示',
-  /if \(count > 0\) \{[\s\S]{0,320}?toast\(`此分类下有 \$\{count\} 篇笔记\$\{detail\}，无法删除/.test(js) &&
-  js.indexOf('连同笔记一起删除') < 0);
-/* 只报一个总数，用户拿分类树一数就对不上账（真机上问过「4 是怎么算的」）。 */
-ok('提示里带明细：本层几篇、子分类几篇，数字能对上',
-  /const own = state\.notes\.filter\(\(n\) => n\.categoryId === cat\.id\)\.length/.test(js) &&
-  /const detail = sub > 0 \? `（本层 \$\{own\} 篇、子分类 \$\{sub\} 篇）` : ''/.test(js));
-ok('有子分类也拒绝删除，同样只提示',
-  /if \(subs\.length\) \{\s*toast\(`此分类下还有 \$\{subs\.length\} 个子分类，无法删除/.test(js) &&
-  js.indexOf('modal-choices') < 0 &&
-  !/strategy=\$\{mode\}/.test(js));
+console.log('有内容的分类：删除时给出明确出口（2026-11-28）');
+/* 186 定的是「不能静默删」，不是「只能拒绝」。28 日补了两条明确的路：
+   整枝进回收站、或只拆这一层把内容并到上级。两条都由用户点选。 */
+ok('非空分类不再只弹一句「无法删除」，而是列出两条路让用户选',
+  /function openChoice\(/.test(js)
+  && /openChoice\(\{\s*\n\s*title: `删除类别/.test(js)
+  && /onClick: \(\) => applyDeleteCat\(cat, 'delete'/.test(js)
+  && /onClick: \(\) => applyDeleteCat\(cat, 'move'/.test(js));
+ok('整枝删除走 strategy=delete，笔记进回收站而不是硬删',
+  /api\(`\/api\/categories\/\$\{cat\.id\}\?strategy=\$\{strategy\}`/.test(js)
+  && /toast\(strategy === 'delete'/.test(js));
+ok('只拆一层走 strategy=move，笔记并入父级（根分类则并入未分类）',
+  /const destName = parent \? parent\.name : '未分类'/.test(js));
+ok('空叶子仍然直接删，不再多问一遍',
+  /if \(!affected\.length && !subs\) \{/.test(js) && /toast\('类别已删除'\)/.test(js));
+/* 树上的数字拆成「本层 + 子分类」：父分类允许直接放笔记，只给总数会被当成算错。 */
+ok('树上计数显示「本层 + 子分类」，并带明细 title',
+  /const countText = subCnt > 0 \? `\$\{ownCnt\} \+ \$\{subCnt\}` : String\(total\)/.test(js)
+  && /title="\$\{countTip\}"/.test(js));
+ok('删除范围按整棵子树算，提示里的数字和实际动作同一份',
+  /state\.notes\.filter\(\(n\) => ids\.has\(n\.categoryId\)\)/.test(js)
+  && /本层 \$\{own\} 篇、子分类 \$\{subNotes\} 篇/.test(js));
+/* 分类建错层以前无法改父级：后端早支持 parentId，界面只差一个入口。 */
+ok('分类可以「移动到…」：候选里排除自身与后代，避免成环',
+  /function moveCategory\(cat\)/.test(js)
+  && /block\.has\(c\.parentId\)/.test(js)
+  && /parentId = sel\.value \|\| null/.test(js));
+ok('移动后在树上就地更新，并把新父级展开',
+  /if \(p\) p\.expanded = true;/.test(js) && /toast\(parentId \? `已移到/.test(js));
+/* 口径不写出来，用户只能靠试：目录标题旁放一个「?」，把归属规则讲清楚。 */
+ok('目录旁有「分类与归属说明」入口，讲清单归属与汇总视图',
+  /id="helpBtn"/.test(html) && /function openHelp\(/.test(js)
+  && /一篇笔记只属于一个分类/.test(js) && /想让同一份内容出现在多个地方，用标签/.test(js)
+  && /\.help-list \{/.test(css));
 /* 真机复盘：父分类的列表本来就会汇总子分类的笔记，同一篇在两层各出现一次。
    2026-11-27 用户定：一份列表里要么都标、要么都不标 —— 直接属于当前分类的
    那篇也要标，否则同一屏里有的带路径有的不带，看不出这篇到底在哪一层。 */

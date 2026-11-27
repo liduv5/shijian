@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-191 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-28-192 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-27-191';
+const BUILD = '2026-11-28-192';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -348,19 +348,32 @@ ok('编辑弹窗删除复用 deleteCategory、取消关闭弹窗',
   appSrc.indexOf('deleteCategory(cat);') >= 0 &&
   appSrc.indexOf('function closeCatEditor()') >= 0 &&
   indexSrc.indexOf('data-act="editor-close"') >= 0);
-/* 用户 2026-11-27 定：只有「空的叶子分类」能删。子树里有笔记、或者自己还有
-   子分类，都只给一句提示 —— 静默删掉等于替用户做了一次看不见的整理。 */
-ok('分类下有笔记就拒绝删除：只提示，不再提供「连同笔记一起删」',
-  /if \(count > 0\) \{[\s\S]{0,320}?toast\(`此分类下有 \$\{count\} 篇笔记\$\{detail\}，无法删除/.test(appSrc) &&
-  appSrc.indexOf('连同笔记一起删除') < 0 &&
-  appSrc.indexOf('modal-choices') < 0);
-ok('提示里带明细：本层几篇、子分类几篇（只报总数会被当成算错）',
-  /const own = state\.notes\.filter\(\(n\) => n\.categoryId === cat\.id\)\.length/.test(appSrc) &&
-  /const detail = sub > 0 \? `（本层 \$\{own\} 篇、子分类 \$\{sub\} 篇）` : ''/.test(appSrc));
-ok('分类下有子分类也拒绝删除，同样只提示',
-  /if \(subs\.length\) \{\s*toast\(`此分类下还有 \$\{subs\.length\} 个子分类，无法删除/.test(appSrc) &&
-  /state\.categories\.filter\(\(c\) => c\.parentId === cat\.id\)/.test(appSrc) &&
-  !/strategy=\$\{mode\}/.test(appSrc));
+/* 2026-11-28：从「只拒绝」升级为「给出明确出口」——
+   整枝进回收站，或只拆这一层把内容并到父级；两条都要用户点选。 */
+ok('分类下有内容时给出两条明确的删除路径，而不是只弹一句拒绝',
+  /function openChoice\(/.test(appSrc)
+  && /onClick: \(\) => applyDeleteCat\(cat, 'delete'/.test(appSrc)
+  && /onClick: \(\) => applyDeleteCat\(cat, 'move'/.test(appSrc));
+ok('整枝删除走 strategy=delete（笔记进回收站），只拆一层走 strategy=move',
+  /api\(`\/api\/categories\/\$\{cat\.id\}\?strategy=\$\{strategy\}`/.test(appSrc)
+  && /const destName = parent \? parent\.name : '未分类'/.test(appSrc));
+ok('提示里的数字和实际删除范围同源（整棵子树）',
+  /state\.notes\.filter\(\(n\) => ids\.has\(n\.categoryId\)\)/.test(appSrc)
+  && /本层 \$\{own\} 篇、子分类 \$\{subNotes\} 篇/.test(appSrc));
+ok('空分类仍然直接删，不多问一遍',
+  /if \(!affected\.length && !subs\) \{/.test(appSrc) && /toast\('类别已删除'\)/.test(appSrc));
+/* 树上的数字拆成「本层 + 子分类」，只给总数会被当成算错。 */
+ok('树上计数显示「本层 + 子分类」',
+  /const countText = subCnt > 0 \? `\$\{ownCnt\} \+ \$\{subCnt\}` : String\(total\)/.test(appSrc));
+/* 分类改父级：本地接口早支持 parentId，界面现在补上了入口。 */
+ok('分类可以「移动到…」，候选排除自身与后代',
+  /function moveCategory\(cat\)/.test(appSrc)
+  && /block\.has\(c\.parentId\)/.test(appSrc)
+  && /parentId = sel\.value \|\| null/.test(appSrc));
+/* 口径写进应用内说明，手机端也能随手查。 */
+ok('目录旁有「分类与归属说明」入口（手机端同样）',
+  /id="helpBtn"/.test(indexSrc) && /function openHelp\(/.test(appSrc)
+  && /一篇笔记只属于一个分类/.test(appSrc) && /\.help-list \{/.test(styleSrc));
 /* 父分类列表汇总子分类的笔记。2026-11-27 用户定：一份列表里要统一，
    直接属于当前分类的那篇也要标层级路径（学习素材 / 前端开发），
    否则同一屏有的带路径有的不带，看不出这篇在哪一层。 */
