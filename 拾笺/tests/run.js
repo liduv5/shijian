@@ -615,6 +615,18 @@ ok('有子分类也拒绝删除，同样只提示',
   /if \(subs\.length\) \{\s*toast\(`此分类下还有 \$\{subs\.length\} 个子分类，无法删除/.test(js) &&
   js.indexOf('modal-choices') < 0 &&
   !/strategy=\$\{mode\}/.test(js));
+/* 真机复盘：父分类的列表本来就会汇总子分类的笔记，同一篇在两层各出现一次。
+   行上标出它真正归属的子分类，不用再靠猜「这算不算重复」。 */
+ok('父分类列表里来自子分类的笔记，行上标出所属分类',
+  /const scopeCat = state\.selCat && state\.selCat !== 'all'/.test(js)
+  && /const fromCat = \(n\) =>/.test(js)
+  && /<span class="sj-from"/.test(js)
+  && /\$\{fromCat\(n\)\}/.test(js) && js.indexOf('fromCat') >= 0);
+ok('只在选中具体分类时标注（全部 / 收藏 / 未分类 / 标签伪类别不标）',
+  /state\.selCat !== 'starred' && state\.selCat !== 'uncat'/.test(js)
+  && /!String\(state\.selCat\)\.startsWith\('tag:'\)/.test(js));
+ok('标注样式细描边不填色，和标签区分开',
+  /\.note-card-foot \.sj-from \{/.test(css) && /border-radius: 999px/.test(css));
 
 console.log('分类自动去重（2026-11-26）');
 /* 重复分类的根治：建类时就不许重名 + 启动 / 导入 / 同步时自动合并。
@@ -738,22 +750,27 @@ const dNotes = [
     content: '<p>完全不同的另一份内容：预算评审、采购流程、人员调动</p>', createdAt: 30, updatedAt: 40,
   },
   {
-    /* 无标题笔记没有名字可认，只能按正文判：两篇正文完全一样就是同一篇
-       （真机上就是同一份草稿被两台设备各存一次，分类还各不相同） */
+    /* 无标题笔记没有名字可认，只能按正文判：同一个文件夹里两篇正文完全一样
+       就是同一篇（同一份草稿被两台设备各存一次）。 */
     id: 'un1', title: '无标题笔记', categoryId: 'c1', tags: [], content: '<p>同样的字</p>', createdAt: 1, updatedAt: 20,
   },
   {
-    id: 'un2', title: '', categoryId: 'c2', tags: [], content: '<p>同样的字</p>', createdAt: 3, updatedAt: 10,
+    id: 'un2', title: '', categoryId: 'c1', tags: [], content: '<p>同样的字</p>', createdAt: 3, updatedAt: 10,
+  },
+  {
+    /* 文本一样但落在另一个文件夹：父分类列表里本来就看得见子分类那篇，
+       这不是重复，绝不能合。 */
+    id: 'un4', title: '', categoryId: 'c2', tags: [], content: '<p>同样的字</p>', createdAt: 4, updatedAt: 8,
   },
   {
     id: 'un3', title: '无标题笔记', categoryId: 'c1', tags: [], content: '<p>另外一段完全不同的字</p>', createdAt: 5, updatedAt: 30,
   },
   {
     /* 空稿（正文为空、没有附件）：彼此等价，旧版本「点了新建没写」的残留 */
-    id: 'bl1', title: '无标题笔记', categoryId: null, tags: [], content: '<p><br></p>', createdAt: 7, updatedAt: 40,
+    id: 'bl1', title: '无标题笔记', categoryId: 'c1', tags: [], content: '<p><br></p>', createdAt: 7, updatedAt: 40,
   },
   {
-    id: 'bl2', title: '', categoryId: 'c2', tags: [], content: '', createdAt: 8, updatedAt: 50,
+    id: 'bl2', title: '', categoryId: 'c1', tags: [], content: '', createdAt: 8, updatedAt: 50,
   },
   {
     /* 有附件没正文：附件就是内容 —— 附件清单一不一样决定合不合 */
@@ -761,11 +778,11 @@ const dNotes = [
     attachments: [{ id: 'p1' }], createdAt: 9, updatedAt: 60,
   },
   {
-    id: 'bl4', title: '', categoryId: 'c1', tags: [], content: '',
+    id: 'bl4', title: '', categoryId: 'c2', tags: [], content: '',
     attachments: [{ id: 'p1' }], createdAt: 11, updatedAt: 30,
   },
   {
-    id: 'bl5', title: '无标题笔记', categoryId: 'c1', tags: [], content: '',
+    id: 'bl5', title: '无标题笔记', categoryId: 'c2', tags: [], content: '',
     attachments: [{ id: 'q9' }], createdAt: 12, updatedAt: 25,
   },
   {
@@ -775,15 +792,27 @@ const dNotes = [
     createdAt: 13, updatedAt: 70,
   },
   {
-    id: 'bl7', title: '', categoryId: 'c8', tags: [], content: '',
+    id: 'bl7', title: '', categoryId: 'c7', tags: [], content: '',
     attachments: [{ id: 'y2', disk: 'att_bbb.jpg', name: 'img1.jpg', size: 100 }],
     createdAt: 14, updatedAt: 65,
   },
   {
-    /* 真机现场：同一篇被复制进了另一个文件夹，标题正文一字不差 */
-    id: 'copy2', title: 'CSS 布局速查', categoryId: 'c3', tags: [],
+    /* 同一个附件、但放在另一个文件夹：跨文件夹不判 */
+    id: 'bl8', title: '', categoryId: 'c8', tags: [], content: '',
+    attachments: [{ id: 'z3', disk: 'att_ccc.jpg', name: 'img1.jpg', size: 100 }],
+    createdAt: 15, updatedAt: 66,
+  },
+  {
+    /* 同一个文件夹里、标题正文一字不差：老备份留下的复制品 */
+    id: 'copy2', title: 'CSS 布局速查', categoryId: 'c1', tags: [],
     content: '<h2>Flex 常用组合</h2><p>display:flex 居中</p><p>min-width:0 解决溢出</p>',
     createdAt: 60, updatedAt: 200,
+  },
+  {
+    /* 同一篇出现在另一个文件夹：那是层级汇总，不动 */
+    id: 'copy4', title: 'CSS 布局速查', categoryId: 'c3', tags: [],
+    content: '<h2>Flex 常用组合</h2><p>display:flex 居中</p><p>min-width:0 解决溢出</p>',
+    createdAt: 62, updatedAt: 210,
   },
   {
     /* 同题不同文件夹、内容有差别：可能真是两份要分开维护的，不动 */
@@ -806,20 +835,24 @@ ok('标题只差空格 / 大小写也认作同一篇',
   (dStat.pairs.find((p) => p.keep === 'keep1') || {}).title === 'CSS 布局速查');
 ok('同标题但内容不同（相似度低）不合并，避免误删另一篇同题笔记',
   !dNotes.find((n) => n.id === 'other2').deletedAt);
-/* 真机现场：同一篇「新版本随手记测试」同时出现在「前端开发」和「页面布局」里，
-   标题正文连附件都一样 —— 判重以前要求同分类，跨文件夹的复制品永远合不掉。 */
-ok('同一篇被复制进另一个文件夹（标题正文一字不差）→ 认作复制品合并',
+/* 真机现场（2026-11-27 复盘）：那篇「无标题笔记」只在「页面布局」里一份，
+   「前端开发」列表里看到的第 3 篇是子分类汇总上来的，本来就同一篇。
+   所以判重必须限定同一个分类：跨文件夹的一律不动。 */
+ok('同一个文件夹里标题正文一字不差的复制品 → 合并',
   !!dNotes.find((n) => n.id === 'copy2').deletedAt
   && dNotes.find((n) => n.id === 'copy2').mergedInto === 'keep1');
+ok('同一篇出现在另一个文件夹（层级汇总看得见）→ 不合并',
+  !dNotes.find((n) => n.id === 'copy4').deletedAt);
 ok('同题不同文件夹但内容有差别 → 不合并（可能真是两份要分开维护的）',
   !dNotes.find((n) => n.id === 'copy3').deletedAt);
-/* 真机反馈（学习素材 / 前端开发 + 页面布局各一篇，一摸一样）：无标题笔记以前
-   被整类排除在判重之外，于是同一份草稿在两个分类里各留一份，永远合不掉。 */
-ok('无标题笔记按正文判重：同样文字的两篇（哪怕分类不同）合并成一篇',
+/* 无标题笔记没有名字可认，只能按正文判；同样限定同文件夹。 */
+ok('无标题笔记按正文判重：同一文件夹内文字相同才合并成一篇',
   !!dNotes.find((n) => n.id === 'un2').deletedAt
   && dNotes.find((n) => n.id === 'un2').mergedInto === 'un1'
   && !dNotes.find((n) => n.id === 'un1').deletedAt
   && !dNotes.find((n) => n.id === 'un3').deletedAt);
+ok('无标题笔记跨文件夹即使文字相同也不合并',
+  !dNotes.find((n) => n.id === 'un4').deletedAt);
 ok('空稿（无正文无附件）只留最新一份；附件清单不同则不合并、绝不丢图',
   dNotes.filter((n) => n.id === 'bl1' || n.id === 'bl2').filter((n) => n.deletedAt).length === 1
   && !dNotes.find((n) => n.id === 'bl3').deletedAt
@@ -831,6 +864,8 @@ ok('附件按「文件名 + 大小」认身份：id 不同也能认出是同一�
   !!dNotes.find((n) => n.id === 'bl7').deletedAt
   && dNotes.find((n) => n.id === 'bl7').mergedInto === 'bl6'
   && dNotes.find((n) => n.id === 'bl6').attachments.length === 1);
+ok('同一张图放在另一个文件夹 → 不合并（跨文件夹一律不动）',
+  !dNotes.find((n) => n.id === 'bl8').deletedAt);
 ok('合并是幂等的：再跑一次不会重复处理',
   SJCats.dedupeNotes(dNotes, 2000).count === 0 && Number(dropNote.deletedAt) === 1000);
 ok('体检入口也带上了重复笔记合并（一个入口管所有脏数据）',

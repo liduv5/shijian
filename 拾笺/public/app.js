@@ -1242,6 +1242,17 @@
 
     const frag = document.createDocumentFragment();
     const pins = new Set(pinnedIds());
+    /* 选中父分类时，列表会把子分类的笔记一并列出来（层级汇总，不是重复）。
+       行上标一句它实际落在哪个子分类，免得同一篇在两层各出现一次被当成两份。 */
+    const scopeCat = state.selCat && state.selCat !== 'all'
+      && state.selCat !== 'starred' && state.selCat !== 'uncat'
+      && !String(state.selCat).startsWith('tag:');
+    const fromCat = (n) => {
+      if (!scopeCat || !n.categoryId || n.categoryId === state.selCat) return '';
+      const c = state.categories.find((x) => x.id === n.categoryId);
+      if (!c) return '';
+      return `<span class="sj-from" title="这篇在子分类「${escapeHtml(c.name)}」里">${escapeHtml(c.name)}</span>`;
+    };
     for (const n of list) {
       const card = document.createElement('div');
       card.className = 'note-card' + (state.selNote === n.id ? ' active' : '') + (batchSel.has(n.id) ? ' selected' : '');
@@ -1259,6 +1270,7 @@
         ${n.tags && n.tags.length ? `<div class="note-card-tags">${n.tags.slice(0, 3).map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
         <div class="note-card-snippet">${escapeHtml(snippet) || '空笔记'}</div>
         <div class="note-card-foot">
+          ${fromCat(n)}
           <span>${fmtDate(n.updatedAt)}</span>
           ${n.attachments && n.attachments.length ? `<span class="dot"></span><span class="att-badge">${I.paperclip}${n.attachments.length}</span>` : ''}
         </div>`;
