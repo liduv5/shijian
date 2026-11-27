@@ -4470,71 +4470,28 @@
     });
   }
 
-  function deleteCategory(cat) {
+  async function deleteCategory(cat) {
     const count = subtreeCount(cat.id, state.notes);
-    /* 有笔记就一律不让删（用户 2026-11-27 定）：分类只是容器，笔记才是内容。
-       原来还能选「连同笔记一起删」，等于给一次误触留了条 30 天后自动清空的路。
-       想删就先把笔记移走。 */
+    /* 只有「空的叶子分类」才允许删（用户 2026-11-27 定）。
+       分类只是容器，笔记才是内容；子分类则是结构本身。这两样还在时，
+       静默删掉等于替用户做了一次看不见的整理，所以一律拦下，只给一句提示。 */
     if (count > 0) {
       toast(`此分类下有 ${count} 篇笔记，无法删除。请先把笔记移到别处再试。`, 3200);
       return;
     }
     const subs = state.categories.filter((c) => c.parentId === cat.id);
-    const choices = subs.length
-      ? `<div class="modal-choices">
-        <label class="choice sel" data-mode="move">
-          <span class="radio"></span>
-          <span><b>保留子类别，移到上一级</b><span>子类别不会丢，只是挂到上一层</span></span>
-        </label>
-        <label class="choice" data-mode="delete">
-          <span class="radio"></span>
-          <span><b>连同子类别一起删除</b><span>${subs.length} 个空子类别一并删掉</span></span>
-        </label>
-      </div>`
-      : '';
-    const m = openModal(`
-      <h3>删除类别「${escapeHtml(cat.name)}」</h3>
-      <p>该类别下没有笔记${subs.length ? `，但有 ${subs.length} 个空子类别` : ''}。删除后不可恢复。</p>
-      ${choices}
-      <div class="modal-actions">
-        <button class="btn ghost" data-act="cancel">取消</button>
-        <button class="btn danger" data-act="ok">删除类别</button>
-      </div>`);
-    let mode = subs.length ? 'move' : 'delete';
-    $$('.choice', m).forEach((c) => {
-      c.addEventListener('click', () => {
-        $$('.choice', m).forEach((x) => x.classList.remove('sel'));
-        c.classList.add('sel');
-        mode = c.dataset.mode;
-      });
-    });
-    m.querySelector('[data-act="cancel"]').onclick = closeModal;
-    m.querySelector('[data-act="ok"]').onclick = async () => {
-      closeModal();
-      const ids = new Set([cat.id]);
-      let changed = true;
-      while (changed) {
-        changed = false;
-        for (const c of state.categories) {
-          if (c.parentId && ids.has(c.parentId) && !ids.has(c.id)) { ids.add(c.id); changed = true; }
-        }
-      }
-      try {
-        await api(`/api/categories/${cat.id}?strategy=${mode}`, { method: 'DELETE' });
-        if (mode === 'move') {
-          state.notes.forEach((n) => { if (ids.has(n.categoryId)) n.categoryId = cat.parentId || null; });
-          state.categories.forEach((c) => { if (c.parentId === cat.id) c.parentId = cat.parentId || null; });
-        } else {
-          setState({ notes: state.notes.filter((n) => !ids.has(n.categoryId)) });
-        }
-        setState({ categories: state.categories.filter((c) => !ids.has(c.id)) });
-        if (!noteById(state.selNote)) closeEditor();
-        if (ids.has(state.selCat)) setState({ selCat: 'all' });
-        renderTree();
-        renderList();
-        toast('类别已删除');
-      } catch (e) { toast(e.message); }
-    };
+    if (subs.length) {
+      toast(`此分类下还有 ${subs.length} 个子分类，无法删除。请先处理子分类。`, 3200);
+      return;
+    }
+    try {
+      await api(`/api/categories/${cat.id}`, { method: 'DELETE' });
+      setState({ categories: state.categories.filter((c) => c.id !== cat.id) });
+      if (cat.id === state.selCat) setState({ selCat: 'all' });
+      renderTree();
+      renderList();
+      toast('类别已删除');
+    } catch (e) { toast(e.message); }
   }
 
   /* 移动笔记到分类。云端是手机端没有拖拽才加的；桌面端虽然能拖树里的笔记行，

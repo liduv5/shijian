@@ -21,7 +21,7 @@
   const LS_LAST = 'sj_last_sync';
   const LS_LAST_PULL = 'sj_last_pull';
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对。 */
-  const BUILD = '2026-11-27-185';
+  const BUILD = '2026-11-27-186';
   let session = null;
   let pendingOtp = null;
   let cooldownTimer = null;
