@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-181 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-182 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-27-181';
+const BUILD = '2026-11-27-182';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -1235,12 +1235,42 @@ ok('发现新版本：三层探测 + 顶部更新按钮 + 清缓存重开（手�
   && indexSrc.indexOf("const\\s+VERSION\\s*=\\s*'sj-") >= 0
   && /fetch\(probe, \{ cache: 'no-store' \}\)/.test(indexSrc)
   && /m\[1\] > SWV/.test(indexSrc)
-  && /searchParams\.set\('sjup'/.test(indexSrc)
+  && /t\.searchParams\.set\(param \|\| 'sjup'/.test(indexSrc)
   && /getRegistrations\(\)/.test(indexSrc)
   && /caches\.delete\(k\)/.test(indexSrc)
   && /setInterval\(checkUpdate, 60000\)/.test(indexSrc)
   && /visibilitychange/.test(indexSrc)
   && /setTimeout\(finish, 4000\)/.test(indexSrc));
+
+/* 「划掉重进，每次都有发现新版本」：去重标记原本存在 sessionStorage，手机上把
+   应用从最近任务划掉，sessionStorage 就没了，于是每次冷启动都重新弹一遍。
+   标记必须放 localStorage —— 同一个版本最多提示一次，跨会话有效。 */
+ok('更新提示去重标记在 localStorage，划掉重进不会重复弹',
+  /localStorage\.getItem\(UPDATE_SEEN \+ SWV\)/.test(indexSrc)
+  && /localStorage\.setItem\(UPDATE_SEEN \+ SWV, '1'\)/.test(indexSrc)
+  && !/sessionStorage\.(get|set)Item\(UPDATE_SEEN/.test(indexSrc));
+
+/* 探测命中后先自己修（注销 SW + 清缓存 + 重开），不必让用户每次去点按钮。
+   自愈只在刚启动的一分钟内、页面在前台、且没停在输入框里时动手，防止把正在
+   写的内容刷掉；每个目标版本只自动试一次，失败回落成顶部提示。 */
+ok('探测到本页落后会先自动修一次，不必用户每次点按钮',
+  /function autoHeal\(target\) \{/.test(indexSrc)
+  && /Date\.now\(\) - BOOT_AT > 60000/.test(indexSrc)
+  && /document\.visibilityState !== 'visible'/.test(indexSrc)
+  && /isContentEditable/.test(indexSrc)
+  && /localStorage\.getItem\(HEAL_KEY \+ target\) === '1'/.test(indexSrc)
+  && /if \(!autoHeal\(SWV\)\) showUpdateTip\(\)/.test(indexSrc)
+  && /if \(!autoHeal\(m\[1\]\)\) showUpdateTip\(\)/.test(indexSrc)
+  && /refreshNow\('sjfix'\)/.test(indexSrc));
+
+/* 自愈/更新都要清缓存重开，但下载中转缓存里是正在下载的文件字节，不能一起删。 */
+ok('清缓存时保留下载中转缓存 sjdl-v1',
+  /ks\.filter\(function \(k\) \{ return k !== 'sjdl-v1'; \}\)/.test(indexSrc));
+
+/* 新 SW 装好会 skipWaiting + claim，接管是毫秒级；此刻已有 installing / waiting
+   说明正在换，静默等它。否则每次发版后的第一次冷启动都会误报一条提示。 */
+ok('新 SW 正在安装/等待接管时不误报',
+  /if \(r && \(r\.installing \|\| r\.waiting\)\) return;/.test(indexSrc));
 
 /* 点「点此更新」后按钮文案变成「正在更新…」，比原来长。flex 默认允许收缩，
    窄屏上会被挤成两行、文字顶出圆角墨灰底。三块都锁 nowrap + 不收缩，

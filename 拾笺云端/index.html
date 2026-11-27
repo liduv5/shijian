@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-27-181';
+  var SWV = '2026-11-27-182';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -91,19 +91,24 @@
        ① 页面是新的，但 app.js 还是旧构建（HTML 与脚本各缓存一份，最常见）
        ② 接管页面的 Service Worker 仍停在旧版本
        ③ 服务器上的 sw.js 版本已领先本页（常驻后台不关页也会发现）
-     点「点此更新」才清缓存重开 —— 由用户决定时机，不打断正在写的东西。
-     所有样式内联，不依赖可能被缓存的 style.css；每次会话每个版本只提示一次。 */
+     探测到之后先自己修一次（清缓存重开），只有修不动才提示 —— 用户不该为
+     「版本没换过来」反复点按钮。所有样式内联，不依赖可能被缓存的 style.css。 */
+  /* 提示去重标记必须放 localStorage：手机上把应用从最近任务里划掉再进来，
+     sessionStorage 会被清空，于是每次冷启动都重新弹一遍 —— 这就是「划掉重进，
+     每次都有发现新版本」。放 localStorage 后同一个版本最多提示一次。 */
   var UPDATE_SEEN = 'sj_update_seen_';
+  var HEAL_KEY = 'sj_autoheal_';
+  var BOOT_AT = Date.now();
   var updateShown = false;
   function showUpdateTip() {
     if (updateShown || document.getElementById('sjUpdateTip')) return;
-    try { if (sessionStorage.getItem(UPDATE_SEEN + SWV) === '1') return; } catch (_) {}
+    try { if (localStorage.getItem(UPDATE_SEEN + SWV) === '1') return; } catch (_) {}
     if (document.readyState === 'loading' || !document.body) {
       document.addEventListener('DOMContentLoaded', function () { showUpdateTip(); }, false);
       return;
     }
     updateShown = true;
-    try { sessionStorage.setItem(UPDATE_SEEN + SWV, '1'); } catch (_) {}
+    try { localStorage.setItem(UPDATE_SEEN + SWV, '1'); } catch (_) {}
     var box = document.createElement('div');
     box.id = 'sjUpdateTip';
     box.setAttribute('role', 'status');
@@ -134,40 +139,80 @@
     if (go) go.onclick = function () {
       go.disabled = true;
       go.textContent = '正在更新…';
-      try { if (window.SJSaveNow) window.SJSaveNow(); } catch (_) {}
-      var done = false;
-      var finish = function () {
-        if (done) return;
-        done = true;
-        var t = new URL(location.href);
-        t.searchParams.set('sjup', String(Date.now()));
-        location.replace(t.toString());
-      };
-      /* 老内核的 Promise 链可能一直挂着；4 秒兜底硬刷，保证一定能离开旧页面。 */
-      setTimeout(finish, 4000);
-      if (!('serviceWorker' in navigator)) { finish(); return; }
-      Promise.resolve()
-        .then(function () { return navigator.serviceWorker.getRegistrations(); })
-        .then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })
-        .catch(function () {})
-        .then(function () { return window.caches ? caches.keys() : []; })
-        .then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); })
-        .catch(function () {})
-        .then(finish, finish);
+      refreshNow('sjup');
     };
+  }
+  /* 注销 SW + 清缓存 + 带时间戳重开。更新按钮与自动自愈共用同一套动作，
+     免得两条路径的行为慢慢走偏。 */
+  function refreshNow(param) {
+    try { if (window.SJSaveNow) window.SJSaveNow(); } catch (_) {}
+    var done = false;
+    var finish = function () {
+      if (done) return;
+      done = true;
+      var t = new URL(location.href);
+      t.searchParams.set(param || 'sjup', String(Date.now()));
+      location.replace(t.toString());
+    };
+    /* 老内核的 Promise 链可能一直挂着；4 秒兜底硬刷，保证一定能离开旧页面。 */
+    setTimeout(finish, 4000);
+    if (!('serviceWorker' in navigator)) { finish(); return; }
+    Promise.resolve()
+      .then(function () { return navigator.serviceWorker.getRegistrations(); })
+      .then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })
+      .catch(function () {})
+      .then(function () { return window.caches ? caches.keys() : []; })
+      .then(function (ks) {
+        /* 下载中转缓存（sjdl-v1）里是正在下载的文件字节，别一起清掉。 */
+        return Promise.all(ks.filter(function (k) { return k !== 'sjdl-v1'; })
+          .map(function (k) { return caches.delete(k); }));
+      })
+      .catch(function () {})
+      .then(finish, finish);
+  }
+  /* 自动自愈：探测到「本页确实落后」时直接修，不再等用户点。
+     只在刚启动的一分钟内、页面在前台、且没停在输入框里时动手 ——
+     否则用户正写到一半，一条定时探测就可能把内容刷掉。
+     每个目标版本只自动试一次（标记按目标版本存，不会死循环）；
+     已经试过还是旧版，就回落成顶部提示，交用户自己挑时机。 */
+  function autoHeal(target) {
+    try {
+      if (!target) return false;
+      if (Date.now() - BOOT_AT > 60000) return false;
+      if (document.visibilityState !== 'visible') return false;
+      var a = document.activeElement;
+      if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName || ''))) return false;
+      if (localStorage.getItem(HEAL_KEY + target) === '1') return false;
+      localStorage.setItem(HEAL_KEY + target, '1');
+    } catch (_) { return false; }
+    refreshNow('sjfix');
+    return true;
   }
   function checkUpdate() {
     /* ① HTML 是新版、脚本还是旧版 */
     try {
       var appB = window.__SJ_APP_BUILD__;
-      if (appB && appB !== SWV) { showUpdateTip(); return; }
+      if (appB && appB !== SWV) {
+        if (!autoHeal(SWV)) showUpdateTip();
+        return;
+      }
     } catch (_) {}
-    /* ② 接管页面的 SW 仍是旧版 */
+    /* ② 接管页面的 SW 仍是旧版。新 SW 装好会 skipWaiting + claim，接管在毫秒级
+       完成；此刻若已有 installing / waiting，说明正在换，静默等它，别误报。 */
     try {
       var c = ('serviceWorker' in navigator) ? navigator.serviceWorker.controller : null;
       if (c) {
         var have = new URL(c.scriptURL).searchParams.get('v') || '';
-        if (have && have !== SWV) { showUpdateTip(); return; }
+        if (have && have !== SWV) {
+          var reg = navigator.serviceWorker.getRegistration ? navigator.serviceWorker.getRegistration() : null;
+          if (reg && reg.then) {
+            reg.then(function (r) {
+              if (r && (r.installing || r.waiting)) return;
+              if (!autoHeal(SWV)) showUpdateTip();
+            }).catch(function () { if (!autoHeal(SWV)) showUpdateTip(); });
+          } else if (!autoHeal(SWV)) showUpdateTip();
+          return;
+        }
       }
     } catch (_) {}
     /* ③ 服务器上已发了更新的版本；sw.js 本身不在 SW 资源白名单里，
@@ -180,7 +225,7 @@
           var m = /const\s+VERSION\s*=\s*'sj-([^']+)'/.exec(txt || '');
           /* 只有服务器版本「领先」才提示：CDN 万一吐出旧副本，不能反过来误报。
              版本号固定 YYYY-MM-DD-NNN，字典序即时间序。 */
-          if (m && m[1] > SWV) showUpdateTip();
+          if (m && m[1] > SWV) { if (!autoHeal(m[1])) showUpdateTip(); }
         })
         .catch(function () {});
     } catch (_) {}
