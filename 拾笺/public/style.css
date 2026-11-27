@@ -995,14 +995,12 @@ html[data-theme="dark"] #homeNewNote:hover {
 .note-card-foot .dot { width: 2px; height: 2px; border-radius: 50%; background: currentColor; opacity: .6; }
 .note-card-foot .att-badge { display: inline-flex; align-items: center; gap: 3px; }
 .note-card-foot svg { width: 11px; height: 11px; }
-/* 父分类列表里混进来的子分类笔记：标出它真正归属的分类。
-   和标签做视觉区分 —— 细描边、不填色，一眼看出这是「位置」不是「标签」。 */
+/* 父分类列表里混进来的子分类笔记：标出它真正归属的分类，用层级路径。
+   纯文字、不加底色，跟标签区分开；太长时省略，完整路径在 title 里。 */
 .note-card-foot .sj-from {
-  flex: none;
-  max-width: 46%;
-  padding: 0 6px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 72%;
   color: var(--text-3);
   font-size: 10.5px;
   line-height: 15px;

@@ -1243,15 +1243,16 @@
     const frag = document.createDocumentFragment();
     const pins = new Set(pinnedIds());
     /* 选中父分类时，列表会把子分类的笔记一并列出来（层级汇总，不是重复）。
-       行上标一句它实际落在哪个子分类，免得同一篇在两层各出现一次被当成两份。 */
+       行上标出它真正的归属，用和首页卡片同一套层级路径（学习素材 / 前端开发 / 页面布局），
+       免得同一篇在两层各出现一次被当成两份。 */
     const scopeCat = state.selCat && state.selCat !== 'all'
       && state.selCat !== 'starred' && state.selCat !== 'uncat'
       && !String(state.selCat).startsWith('tag:');
     const fromCat = (n) => {
       if (!scopeCat || !n.categoryId || n.categoryId === state.selCat) return '';
-      const c = state.categories.find((x) => x.id === n.categoryId);
-      if (!c) return '';
-      return `<span class="sj-from" title="这篇在子分类「${escapeHtml(c.name)}」里">${escapeHtml(c.name)}</span>`;
+      const path = catPath(n.categoryId);
+      if (!path) return '';
+      return `<span class="sj-from" title="这篇在「${escapeHtml(path)}」里">${escapeHtml(path)}</span>`;
     };
     for (const n of list) {
       const card = document.createElement('div');

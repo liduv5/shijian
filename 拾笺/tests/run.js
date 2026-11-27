@@ -625,8 +625,13 @@ ok('父分类列表里来自子分类的笔记，行上标出所属分类',
 ok('只在选中具体分类时标注（全部 / 收藏 / 未分类 / 标签伪类别不标）',
   /state\.selCat !== 'starred' && state\.selCat !== 'uncat'/.test(js)
   && /!String\(state\.selCat\)\.startsWith\('tag:'\)/.test(js));
-ok('标注样式细描边不填色，和标签区分开',
-  /\.note-card-foot \.sj-from \{/.test(css) && /border-radius: 999px/.test(css));
+/* 用户 2026-11-27 定：平铺状态下的分类要写成层级路径，
+   和首页卡片同一套（学习素材 / 前端开发 / 页面布局），不只写父级名字。 */
+ok('归属标注用完整层级路径（复用首页卡片的 catPath）',
+  /const path = catPath\(n\.categoryId\)/.test(js) && /\$\{escapeHtml\(path\)\}/.test(js));
+ok('标注样式是纯文字：不加底色 / 描边，太长省略',
+  /\.note-card-foot \.sj-from \{/.test(css) && /text-overflow: ellipsis/.test(css)
+  && !/\.note-card-foot \.sj-from \{[^}]*border-radius/.test(css));
 
 console.log('分类自动去重（2026-11-26）');
 /* 重复分类的根治：建类时就不许重名 + 启动 / 导入 / 同步时自动合并。

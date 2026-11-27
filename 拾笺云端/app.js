@@ -1235,15 +1235,16 @@
     const frag = document.createDocumentFragment();
     const pins = new Set(pinnedIds());
     /* 选中父分类时，列表会把子分类的笔记一并列出来（层级汇总，不是重复）。
-       行上标一句它实际落在哪个子分类，免得同一篇在两层各出现一次被当成两份。 */
+       行上标出它真正的归属，用和首页卡片同一套层级路径（学习素材 / 前端开发 / 页面布局），
+       免得同一篇在两层各出现一次被当成两份。 */
     const scopeCat = state.selCat && state.selCat !== 'all'
       && state.selCat !== 'starred' && state.selCat !== 'uncat'
       && !String(state.selCat).startsWith('tag:');
     const fromCat = (n) => {
       if (!scopeCat || !n.categoryId || n.categoryId === state.selCat) return '';
-      const c = state.categories.find((x) => x.id === n.categoryId);
-      if (!c) return '';
-      return `<span class="sj-from" title="这篇在子分类「${escapeHtml(c.name)}」里">${escapeHtml(c.name)}</span>`;
+      const path = catPath(n.categoryId);
+      if (!path) return '';
+      return `<span class="sj-from" title="这篇在「${escapeHtml(path)}」里">${escapeHtml(path)}</span>`;
     };
     for (const n of list) {
       const card = document.createElement('div');
@@ -3267,7 +3268,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-27-189';
+  const APP_BUILD = '2026-11-27-190';
   /* 暴露给 index.html 的内联版本守卫：HTML 每次都是新的、脚本可能还是缓存里的旧版，
      内联脚本拿这个值一比就知道要不要弹「发现新版本」，不用等用户去点某个功能。 */
   window.__SJ_APP_BUILD__ = APP_BUILD;
