@@ -768,12 +768,34 @@ const dNotes = [
     id: 'bl5', title: '无标题笔记', categoryId: 'c1', tags: [], content: '',
     attachments: [{ id: 'q9' }], createdAt: 12, updatedAt: 25,
   },
+  {
+    /* 同一张图被两台设备各存一份：id / 磁盘名都换了，文件名和大小一样 */
+    id: 'bl6', title: '无标题笔记', categoryId: 'c7', tags: [], content: '',
+    attachments: [{ id: 'x1', disk: 'att_aaa.jpg', name: 'img1.jpg', size: 100 }],
+    createdAt: 13, updatedAt: 70,
+  },
+  {
+    id: 'bl7', title: '', categoryId: 'c8', tags: [], content: '',
+    attachments: [{ id: 'y2', disk: 'att_bbb.jpg', name: 'img1.jpg', size: 100 }],
+    createdAt: 14, updatedAt: 65,
+  },
+  {
+    /* 真机现场：同一篇被复制进了另一个文件夹，标题正文一字不差 */
+    id: 'copy2', title: 'CSS 布局速查', categoryId: 'c3', tags: [],
+    content: '<h2>Flex 常用组合</h2><p>display:flex 居中</p><p>min-width:0 解决溢出</p>',
+    createdAt: 60, updatedAt: 200,
+  },
+  {
+    /* 同题不同文件夹、内容有差别：可能真是两份要分开维护的，不动 */
+    id: 'copy3', title: '会议纪要模板', categoryId: 'c3', tags: ['工作'],
+    content: '<p>本周例会：进度同步、排期确认、下周安排</p>', createdAt: 61, updatedAt: 45,
+  },
 ];
 const dStat = SJCats.dedupeNotes(dNotes, 1000);
 const keepNote = dNotes.find((n) => n.id === 'keep1');
 const dropNote = dNotes.find((n) => n.id === 'drop1');
 ok('同标题 + 同分类 + 正文几乎一样的两份合并成一份（留最新那份）',
-  dStat.count === 4
+  dStat.count === 6
   && !!dStat.pairs.find((p) => p.keep === 'keep1' && p.drop === 'drop1'));
 ok('被合并的那份软删进回收站，不硬删；并留下 mergedInto 指向保留项',
   Number(dropNote.deletedAt) === 1000 && dropNote.mergedInto === 'keep1');
@@ -784,6 +806,13 @@ ok('标题只差空格 / 大小写也认作同一篇',
   (dStat.pairs.find((p) => p.keep === 'keep1') || {}).title === 'CSS 布局速查');
 ok('同标题但内容不同（相似度低）不合并，避免误删另一篇同题笔记',
   !dNotes.find((n) => n.id === 'other2').deletedAt);
+/* 真机现场：同一篇「新版本随手记测试」同时出现在「前端开发」和「页面布局」里，
+   标题正文连附件都一样 —— 判重以前要求同分类，跨文件夹的复制品永远合不掉。 */
+ok('同一篇被复制进另一个文件夹（标题正文一字不差）→ 认作复制品合并',
+  !!dNotes.find((n) => n.id === 'copy2').deletedAt
+  && dNotes.find((n) => n.id === 'copy2').mergedInto === 'keep1');
+ok('同题不同文件夹但内容有差别 → 不合并（可能真是两份要分开维护的）',
+  !dNotes.find((n) => n.id === 'copy3').deletedAt);
 /* 真机反馈（学习素材 / 前端开发 + 页面布局各一篇，一摸一样）：无标题笔记以前
    被整类排除在判重之外，于是同一份草稿在两个分类里各留一份，永远合不掉。 */
 ok('无标题笔记按正文判重：同样文字的两篇（哪怕分类不同）合并成一篇',
@@ -796,6 +825,12 @@ ok('空稿（无正文无附件）只留最新一份；附件清单不同则不�
   && !dNotes.find((n) => n.id === 'bl3').deletedAt
   && dNotes.filter((n) => n.id === 'bl3' || n.id === 'bl4').filter((n) => n.deletedAt).length === 1
   && !dNotes.find((n) => n.id === 'bl5').deletedAt);
+/* 真机那两篇空稿：同一张图，两台设备各自存了一次 —— id 不同，文件名和大小相同。
+   以前拿 id 判身份，就永远认不出是同一份。 */
+ok('附件按「文件名 + 大小」认身份：id 不同也能认出是同一张图，合并后不留重复附件',
+  !!dNotes.find((n) => n.id === 'bl7').deletedAt
+  && dNotes.find((n) => n.id === 'bl7').mergedInto === 'bl6'
+  && dNotes.find((n) => n.id === 'bl6').attachments.length === 1);
 ok('合并是幂等的：再跑一次不会重复处理',
   SJCats.dedupeNotes(dNotes, 2000).count === 0 && Number(dropNote.deletedAt) === 1000);
 ok('体检入口也带上了重复笔记合并（一个入口管所有脏数据）',

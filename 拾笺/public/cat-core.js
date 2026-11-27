@@ -299,13 +299,26 @@
     return true;
   }
 
-  /* 重复笔记合并：同一篇在两台设备 / 老备份里各存了一份，id 不同、标题一样，
+  /* 附件身份：优先用「文件名 + 大小」。同一份文件被两台设备各存一次时，
+     id 和磁盘名都会换，但文件名、大小不变 —— 拿 id 判重，复制品就会被当成
+     两份不同内容，永远合不掉（真机上那两篇「无标题笔记」就是这样卡住的）。 */
+  function attKey(a) {
+    if (!a) return '';
+    const name = String(a.name || '').trim();
+    if (name) return 'n:' + name + '|' + (Number(a.size) || 0);
+    return String(a.id || a.disk || a.path || '');
+  }
+
+  /* 重复笔记合并：同一篇在两台设备 / 老备份 / 两个文件夹里各存了一份，
      界面上就是两条。以前只能人工比对删一条，现在进出库时自动认。
      两种辨认方式：
-       · 有标题：标题归一后相同 + 分类相同，正文纯文本重合度 ≥ 0.85，
-         或 ≥ 0.6 且标签完全一致；同标题不同分类多半是刻意复制，不动
+       · 有标题：标题归一后相同（**不再要求同分类** —— 真机上就是同一篇被
+         分别落进了「前端开发」和「页面布局」），正文判据分两档：
+         同文件夹看重合度（≥ 0.85，或 ≥ 0.6 且标签一致）；
+         跨文件夹必须一字不差 —— 同一个名字、几乎一样的内容放在两个文件夹，
+         也可能真是两份要分开维护的东西，只有完全复制品才动手
        · 无标题（含默认名「无标题笔记」）：没有名字可认，只能按内容判 ——
-         正文纯文本完全相同 + 附件清单完全相同才算同一篇（分类不同也认）；
+         正文纯文本相同 + 附件清单（文件名 + 大小）相同才算同一篇；
          空稿本来就不该落库，是旧版本「点了新建没写」留下的残留
      保留 updatedAt 最新的一份（用户最后一次改的那份），其余的软删进回收站
      （30 天内可恢复），标签 / 星标 / 附件并到保留的那份。绝不硬删。 */
@@ -319,20 +332,14 @@
       const untitled = title.length < 2 || /^(无标题笔记|无标题|untitled)$/i.test(title);
       let k;
       if (untitled) {
-        /* 没有名字可认，只能按「内容」判：正文纯文本 + 附件清单。
-           两篇的内容完全一样，才认作同一篇；分类不同也认（真机上同一份草稿
-           就被两台设备分别存进了两个文件夹） */
         const text = plainText(n.content);
         const raw = Array.isArray(n.attachments) ? n.attachments : [];
-        const attKeys = raw
-          .map((a) => (a && (a.id || a.disk || a.path || a.name)) || '')
-          .filter(Boolean)
-          .sort();
+        const attKeys = raw.map(attKey).filter(Boolean).sort();
         /* 有附件却说不出身份的，宁可不判 —— 合错了就是把别人的图弄丢。 */
         if (attKeys.length !== raw.length) continue;
         k = 'U' + SEP + (text ? 't:' + text : '') + '|' + attKeys.join(',');
       } else {
-        k = normName(title) + SEP + (n.categoryId || '');
+        k = normName(title);
       }
       const g = groups.get(k);
       if (g) g.items.push(n); else groups.set(k, { untitled, items: [n] });
@@ -359,7 +366,12 @@
           const dropText = plainText(drop.content);
           if (!dropText) continue;
           sim = diceSim(keepText, dropText);
-          if (!(sim >= 0.85 || (sim >= 0.6 && sameTagSet(keep.tags, drop.tags)))) continue;
+          const crossCat = (keep.categoryId || '') !== (drop.categoryId || '');
+          /* 跨文件夹只认「一字不差」的复制品；同文件夹才允许带差异的旧稿。 */
+          const same = crossCat
+            ? keepText === dropText
+            : (sim >= 0.85 || (sim >= 0.6 && sameTagSet(keep.tags, drop.tags)));
+          if (!same) continue;
         }
 
         /* 合并到保留项：标签并集（最多 10 个）、星标取或、附件并集、创建时间取更早。 */
@@ -374,9 +386,9 @@
         keep.tags = tags;
         if (drop.starred) keep.starred = true;
         const atts = Array.isArray(keep.attachments) ? keep.attachments.slice() : [];
-        const attKeys = new Set(atts.map((a) => (a && (a.id || a.disk || a.path || a.name)) || ''));
+        const attKeys = new Set(atts.map(attKey).filter(Boolean));
         for (const a of (drop.attachments || [])) {
-          const key = (a && (a.id || a.disk || a.path || a.name)) || '';
+          const key = attKey(a);
           if (!key || attKeys.has(key)) continue;
           attKeys.add(key);
           atts.push(a);

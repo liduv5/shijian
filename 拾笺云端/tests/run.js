@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-187 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-188 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-27-187';
+const BUILD = '2026-11-27-188';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -1606,16 +1606,28 @@ const cDup = [
     content: '<h2>本周例会</h2><p>时间：周一 14:00，参会：全体成员</p>',
     createdAt: 6, updatedAt: 400,
   },
+  {
+    /* 同题不同文件夹、但正文有差别：可能真是两份要分开维护的 */
+    id: 'm4', title: '会议纪要模板', categoryId: 'c3', tags: ['工作'],
+    content: '<h2>本周例会</h2><p>时间：周一 14:00，参会：全体成员与记录人</p>',
+    createdAt: 7, updatedAt: 350,
+  },
 ];
 const cDupStat = cloudCat.dedupeNotes(cDup, 9000);
 const cKeep = cDup.find((n) => n.id === 'm1');
 ok('同标题 + 同分类 + 正文高度相似的两份合并，留 updatedAt 最新那份',
-  cDupStat.count === 1 && cDupStat.pairs[0].keep === 'm1' && cDupStat.pairs[0].drop === 'm2');
+  cDupStat.count === 2
+  && !!cDupStat.pairs.find((p) => p.keep === 'm1' && p.drop === 'm2'));
 ok('被合并的一份进回收站（软删，30 天内可恢复），不硬删',
   Number(cDup.find((n) => n.id === 'm2').deletedAt) === 9000
   && cDup.find((n) => n.id === 'm2').mergedInto === 'm1');
-ok('分类不同不算同一篇（同题模板放在不同文件夹是两份独立的）',
-  !cDup.find((n) => n.id === 'm3').deletedAt);
+/* 真机现场：「新版本随手记测试」同时出现在「前端开发」和「页面布局」，
+   连附件都一样。以前判重要求同分类，这种复制品永远合不掉。 */
+ok('跨文件夹但一字不差 → 认作复制品合并（同一篇被复制进了另一个目录）',
+  Number(cDup.find((n) => n.id === 'm3').deletedAt) === 9000
+  && cDup.find((n) => n.id === 'm3').mergedInto === 'm1');
+ok('跨文件夹且正文有差别 → 不合并，避免把两份真东西合成一份',
+  !cDup.find((n) => n.id === 'm4').deletedAt);
 ok('合并后标签并集去重，最多 10 个', cKeep.tags.join(',') === '工作,模板');
 
 /* 手机端真机反馈：学习素材下「前端开发」和「页面布局」各有一篇
