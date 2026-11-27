@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-183 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-184 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-27-183';
+const BUILD = '2026-11-27-184';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -389,6 +389,20 @@ ok('新建按钮只对文字有效：inline-block 且左对齐到子分类名称
   /\.sj-mgr-new \{[\s\S]{0,220}margin-left: 72px/.test(styleSrc) &&
   styleSrc.indexOf('.sj-mgr-new-card .sj-mgr-new { margin-left: 0; }') >= 0 &&
   !/\.sj-mgr-new \{\s*display: block; width: 100%/.test(styleSrc));
+/* 一级分类（学习素材 / 工作记录 …）以前这块位置是一个 aria-hidden 的空白占位，
+   于是这一页里根文件夹既不能改名也不能删除，只有子分类有把手。 */
+ok('一级分类也有把手：与子分类同一颗 mgr-grip，不再留空白占位',
+  appSrc.indexOf('sj-mgr-grip-space') < 0 &&
+  /isRoot \? '点击编辑文件夹，拖动排序' : '点击编辑类别，拖动排序'/.test(appSrc) &&
+  appSrc.indexOf("if (a === 'mgr-grip') { openCatEditor(act.dataset.id); return; }") >= 0);
+ok('根文件夹拖动整张卡片挪位（卡片即一棵子树），不靠 elementFromPoint',
+  /isRoot: row\.classList\.contains\('sj-mgr-root'\)/.test(appSrc) &&
+  /card: row\.closest\('\.sj-mgr-card\[data-root\]'\)/.test(appSrc) &&
+  /MGR_BODY\.insertBefore\(catDrag\.card, ref \|\| MGR_BODY\.querySelector\('\.sj-mgr-new-card'\)\)/.test(appSrc) &&
+  /\.sj-mgr-card\.sj-mgr-dragging \{/.test(styleSrc));
+ok('根文件夹的编辑弹窗不摆色板：色条只对子分类有意义',
+  /ED_SW\.style\.display = cat\.parentId \? 'flex' : 'none'/.test(appSrc) &&
+  /ED_CHIP\.style\.display = cat\.parentId \? '' : 'none'/.test(appSrc));
 
 /* ---- 分类去重：已改为全自动（2026-11-26）----
    重复应当被拦在源头（建类查重 / 同步合并 / 启动自愈），

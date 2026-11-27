@@ -3255,7 +3255,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-27-183';
+  const APP_BUILD = '2026-11-27-184';
   /* 暴露给 index.html 的内联版本守卫：HTML 每次都是新的、脚本可能还是缓存里的旧版，
      内联脚本拿这个值一比就知道要不要弹「发现新版本」，不用等用户去点某个功能。 */
   window.__SJ_APP_BUILD__ = APP_BUILD;
@@ -6507,9 +6507,12 @@
       const lead = isRoot
         ? ICON_FOLDER
         : `<span class="sj-mgr-chip c${chipIndex(cat)}"></span>`;
-      const grip = isRoot
-        ? '<span class="sj-mgr-grip-space" aria-hidden="true"></span>'
-        : `<button type="button" class="sj-mgr-grip" data-act="mgr-grip" data-id="${id}" aria-label="点击编辑类别，拖动排序">${ICON_GRIP}</button>`;
+      /* 一级分类以前留的是一块 aria-hidden 的空白占位，于是「学习素材」
+         「工作记录」这些根文件夹在这一页里既不能改名也不能删除 —— 只有子分类有把手。
+         这里统一成同一个把手：点子分类进编辑弹窗，点根文件夹同样进编辑弹窗，
+         拖动则整张卡片（连同它的子树）一起挪位。 */
+      const grip = `<button type="button" class="sj-mgr-grip" data-act="mgr-grip" data-id="${id}" `
+        + `aria-label="${isRoot ? '点击编辑文件夹，拖动排序' : '点击编辑类别，拖动排序'}">${ICON_GRIP}</button>`;
       /* 图一（华为备忘录）文件夹行没有折叠箭头，子分类一律平铺，故不再输出 caret。 */
       return `<div class="sj-mgr-row${isRoot ? ' sj-mgr-root' : ''}" data-cat-id="${id}" data-parent="${parent}" data-depth="${depth}" style="--row-pad:${pad}px; padding-left:${pad}px">`
         + `<span class="sj-mgr-main">${lead}<span class="sj-mgr-name">${escapeHtml(cat.name)}</span></span>`
@@ -6605,6 +6608,10 @@
       if (ED_NAME) ED_NAME.value = cat.name;
       paintEditorSwatches();
       paintEditorChip();
+      /* 根文件夹在列表里是一枚灰色文件夹图标，没有色条可染 —— 给它摆一排
+         选了也不会有任何变化的色块，等于假按钮。子分类才显示色板。 */
+      if (ED_SW) ED_SW.style.display = cat.parentId ? 'flex' : 'none';
+      if (ED_CHIP) ED_CHIP.style.display = cat.parentId ? '' : 'none';
       EDITOR.classList.remove('hidden');
       if (typeof hideCtx === 'function') hideCtx();
       setTimeout(() => { if (ED_NAME) { ED_NAME.focus(); ED_NAME.select(); } }, 40);
@@ -6691,6 +6698,8 @@
         catDrag = {
           grip, row,
           parent: row.dataset.parent || '',
+          isRoot: row.classList.contains('sj-mgr-root'),
+          card: row.closest('.sj-mgr-card[data-root]'),
           x: e.clientX, y: e.clientY, moved: false,
         };
       });
@@ -6699,8 +6708,26 @@
         if (!catDrag.moved && Math.hypot(e.clientX - catDrag.x, e.clientY - catDrag.y) < 10) return;
         if (!catDrag.moved) {
           catDrag.moved = true;
-          catDrag.row.classList.add('sj-mgr-dragging');
+          const dragged = catDrag.isRoot ? (catDrag.card || catDrag.row) : catDrag.row;
+          dragged.classList.add('sj-mgr-dragging');
           try { catDrag.grip.setPointerCapture(e.pointerId); } catch (_) {}
+        }
+        /* 根文件夹：一张卡片 = 一棵子树，拖动时整卡挪位。
+           这里不能用 elementFromPoint —— 手指永远压在自己那张卡上，
+           于是改成按每条卡片中线算插入点。 */
+        if (catDrag.isRoot) {
+          if (!catDrag.card) return;
+          const cards = Array.from(MGR_BODY.querySelectorAll('.sj-mgr-card[data-root]'));
+          if (cards.length < 2) return;
+          let ref = null;
+          for (const c of cards) {
+            if (c === catDrag.card) continue;
+            const b = c.getBoundingClientRect();
+            if (e.clientY < b.top + b.height / 2) { ref = c; break; }
+          }
+          /* 落点找不到就排到「新建文件夹」那张卡前面，别沉到底部去 */
+          MGR_BODY.insertBefore(catDrag.card, ref || MGR_BODY.querySelector('.sj-mgr-new-card'));
+          return;
         }
         const under = document.elementFromPoint(e.clientX, e.clientY);
         const target = under && under.closest('.sj-mgr-row[data-cat-id]');
@@ -6714,6 +6741,7 @@
         catDrag = null;
         try { d.grip.releasePointerCapture(e.pointerId); } catch (_) {}
         d.row.classList.remove('sj-mgr-dragging');
+        if (d.card) d.card.classList.remove('sj-mgr-dragging');
         if (!d.moved) return;                 // 纯点击：由 click 事件打开编辑弹窗
         catDragJustMoved = true;              // 拖拽后抑制紧随的 click，避免误弹编辑框
         await saveCatOrder(d.parent);
@@ -6722,6 +6750,7 @@
       MGR_BODY.addEventListener('pointercancel', (e) => {
         if (!catDrag) return;
         catDrag.row.classList.remove('sj-mgr-dragging');
+        if (catDrag.card) catDrag.card.classList.remove('sj-mgr-dragging');
         catDrag = null;
       });
     }
