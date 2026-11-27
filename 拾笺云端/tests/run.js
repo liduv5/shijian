@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-190 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-191 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-27-190';
+const BUILD = '2026-11-27-191';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -361,14 +361,15 @@ ok('分类下有子分类也拒绝删除，同样只提示',
   /if \(subs\.length\) \{\s*toast\(`此分类下还有 \$\{subs\.length\} 个子分类，无法删除/.test(appSrc) &&
   /state\.categories\.filter\(\(c\) => c\.parentId === cat\.id\)/.test(appSrc) &&
   !/strategy=\$\{mode\}/.test(appSrc));
-/* 父分类列表汇总子分类的笔记：行上标出真实归属，手机上就不会再误认成重复。
-   用户 2026-11-27 定：分类写成层级路径，和电脑端首页卡片一致
-   （学习素材 / 前端开发 / 页面布局），不只写父级名字。 */
-ok('父分类列表里来自子分类的笔记，行上标出完整层级路径（手机端同样）',
-  /const scopeCat = state\.selCat && state\.selCat !== 'all'/.test(appSrc)
-  && /const path = catPath\(n\.categoryId\)/.test(appSrc)
+/* 父分类列表汇总子分类的笔记。2026-11-27 用户定：一份列表里要统一，
+   直接属于当前分类的那篇也要标层级路径（学习素材 / 前端开发），
+   否则同一屏有的带路径有的不带，看不出这篇在哪一层。 */
+ok('平铺列表每篇都标出完整层级路径（含当前分类直属的，手机端同样）',
+  /const fromCat = \(n\) => \{[\s\S]{0,220}?catPath\(n\.categoryId\)/.test(appSrc)
   && /\$\{fromCat\(n\)\}/.test(appSrc)
+  && appSrc.indexOf('const scopeCat') < 0
   && /\.note-card-foot \.sj-from \{/.test(styleSrc));
+ok('没有分类的笔记写「未分类」', /escapeHtml\(path\) \|\| '未分类'/.test(appSrc));
 ok('8 色板定义齐全，老分类回退黄/青/绿/红不跳色',
   appSrc.indexOf('const CAT_PALETTE = [') >= 0 &&
   (appSrc.match(/'#[0-9a-f]{6}'/g) || []).length >= 8 &&

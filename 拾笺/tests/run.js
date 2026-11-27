@@ -616,15 +616,14 @@ ok('有子分类也拒绝删除，同样只提示',
   js.indexOf('modal-choices') < 0 &&
   !/strategy=\$\{mode\}/.test(js));
 /* 真机复盘：父分类的列表本来就会汇总子分类的笔记，同一篇在两层各出现一次。
-   行上标出它真正归属的子分类，不用再靠猜「这算不算重复」。 */
-ok('父分类列表里来自子分类的笔记，行上标出所属分类',
-  /const scopeCat = state\.selCat && state\.selCat !== 'all'/.test(js)
-  && /const fromCat = \(n\) =>/.test(js)
-  && /<span class="sj-from"/.test(js)
-  && /\$\{fromCat\(n\)\}/.test(js) && js.indexOf('fromCat') >= 0);
-ok('只在选中具体分类时标注（全部 / 收藏 / 未分类 / 标签伪类别不标）',
-  /state\.selCat !== 'starred' && state\.selCat !== 'uncat'/.test(js)
-  && /!String\(state\.selCat\)\.startsWith\('tag:'\)/.test(js));
+   2026-11-27 用户定：一份列表里要么都标、要么都不标 —— 直接属于当前分类的
+   那篇也要标，否则同一屏里有的带路径有的不带，看不出这篇到底在哪一层。 */
+ok('平铺列表每篇都标出所属分类（含当前分类直属的笔记）',
+  /const fromCat = \(n\) => \{[\s\S]{0,220}?catPath\(n\.categoryId\)/.test(js)
+  && /\$\{fromCat\(n\)\}/.test(js)
+  && js.indexOf('const scopeCat') < 0);
+ok('没有分类的笔记写「未分类」，不再按视图挑着标',
+  /escapeHtml\(path\) \|\| '未分类'/.test(js));
 /* 用户 2026-11-27 定：平铺状态下的分类要写成层级路径，
    和首页卡片同一套（学习素材 / 前端开发 / 页面布局），不只写父级名字。 */
 ok('归属标注用完整层级路径（复用首页卡片的 catPath）',

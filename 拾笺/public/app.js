@@ -1242,17 +1242,13 @@
 
     const frag = document.createDocumentFragment();
     const pins = new Set(pinnedIds());
-    /* 选中父分类时，列表会把子分类的笔记一并列出来（层级汇总，不是重复）。
-       行上标出它真正的归属，用和首页卡片同一套层级路径（学习素材 / 前端开发 / 页面布局），
-       免得同一篇在两层各出现一次被当成两份。 */
-    const scopeCat = state.selCat && state.selCat !== 'all'
-      && state.selCat !== 'starred' && state.selCat !== 'uncat'
-      && !String(state.selCat).startsWith('tag:');
+    /* 平铺列表统一标出笔记所属的层级路径（学习素材 / 前端开发 / 页面布局），
+       直接属于当前分类的也标 —— 用户 2026-11-27 定：同一份列表里，
+       有的有路径有的没有，看不出「这篇到底在哪一层」。没分类的写「未分类」。 */
     const fromCat = (n) => {
-      if (!scopeCat || !n.categoryId || n.categoryId === state.selCat) return '';
       const path = catPath(n.categoryId);
-      if (!path) return '';
-      return `<span class="sj-from" title="这篇在「${escapeHtml(path)}」里">${escapeHtml(path)}</span>`;
+      const tip = path ? ` title="这篇在「${escapeHtml(path)}」里"` : '';
+      return `<span class="sj-from"${tip}>${escapeHtml(path) || '未分类'}</span>`;
     };
     for (const n of list) {
       const card = document.createElement('div');
