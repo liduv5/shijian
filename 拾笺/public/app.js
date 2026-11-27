@@ -227,12 +227,12 @@
 
   /* ---------------------------------------------------------- Toast */
   let toastTimer;
-  function toast(msg) {
+  function toast(msg, ms) {
     const el = $('#toast');
     el.textContent = msg;
     el.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('show'), 2000);
+    toastTimer = setTimeout(() => el.classList.remove('show'), ms || 2000);
   }
 
   /* ---------------------------------------------------------- Markdown */
@@ -4472,24 +4472,35 @@
 
   function deleteCategory(cat) {
     const count = subtreeCount(cat.id, state.notes);
-    const m = openModal(`
-      <h3>删除类别「${escapeHtml(cat.name)}」</h3>
-      <p>该类别下共有 ${count} 篇笔记（含子类别）。请选择处理方式：</p>
-      <div class="modal-choices">
+    /* 有笔记就一律不让删（用户 2026-11-27 定）：分类只是容器，笔记才是内容。
+       原来还能选「连同笔记一起删」，等于给一次误触留了条 30 天后自动清空的路。
+       想删就先把笔记移走。 */
+    if (count > 0) {
+      toast(`此分类下有 ${count} 篇笔记，无法删除。请先把笔记移到别处再试。`, 3200);
+      return;
+    }
+    const subs = state.categories.filter((c) => c.parentId === cat.id);
+    const choices = subs.length
+      ? `<div class="modal-choices">
         <label class="choice sel" data-mode="move">
           <span class="radio"></span>
-          <span><b>保留笔记，移到上一级</b><span>笔记不会丢失，子类别一并上移</span></span>
+          <span><b>保留子类别，移到上一级</b><span>子类别不会丢，只是挂到上一层</span></span>
         </label>
         <label class="choice" data-mode="delete">
           <span class="radio"></span>
-          <span><b>连同笔记一起删除</b><span>类别直接删除；笔记连同附件移到回收站，30 天内可恢复</span></span>
+          <span><b>连同子类别一起删除</b><span>${subs.length} 个空子类别一并删掉</span></span>
         </label>
-      </div>
+      </div>`
+      : '';
+    const m = openModal(`
+      <h3>删除类别「${escapeHtml(cat.name)}」</h3>
+      <p>该类别下没有笔记${subs.length ? `，但有 ${subs.length} 个空子类别` : ''}。删除后不可恢复。</p>
+      ${choices}
       <div class="modal-actions">
         <button class="btn ghost" data-act="cancel">取消</button>
         <button class="btn danger" data-act="ok">删除类别</button>
       </div>`);
-    let mode = 'move';
+    let mode = subs.length ? 'move' : 'delete';
     $$('.choice', m).forEach((c) => {
       c.addEventListener('click', () => {
         $$('.choice', m).forEach((x) => x.classList.remove('sel'));

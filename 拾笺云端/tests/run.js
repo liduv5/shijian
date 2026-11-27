@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-184 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-27-185 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-27-184';
+const BUILD = '2026-11-27-185';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -348,6 +348,12 @@ ok('编辑弹窗删除复用 deleteCategory、取消关闭弹窗',
   appSrc.indexOf('deleteCategory(cat);') >= 0 &&
   appSrc.indexOf('function closeCatEditor()') >= 0 &&
   indexSrc.indexOf('data-act="editor-close"') >= 0);
+/* 用户 2026-11-27 定：分类下有笔记就一律不让删，只给一句「无法删除」。
+   原来的「连同笔记一起删除」等于一次误触 + 30 天后自动清空。 */
+ok('分类下有笔记就拒绝删除：只提示，不再提供「连同笔记一起删」',
+  /if \(count > 0\) \{\s*toast\(`此分类下有 \$\{count\} 篇笔记，无法删除/.test(appSrc) &&
+  appSrc.indexOf('连同笔记一起删除') < 0 &&
+  /let mode = subs\.length \? 'move' : 'delete'/.test(appSrc));
 ok('8 色板定义齐全，老分类回退黄/青/绿/红不跳色',
   appSrc.indexOf('const CAT_PALETTE = [') >= 0 &&
   (appSrc.match(/'#[0-9a-f]{6}'/g) || []).length >= 8 &&

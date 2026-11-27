@@ -601,6 +601,16 @@ ok('内核支持 Node 与浏览器两种加载方式',
   && /root\.SJMDConvCore = factory\(\)/.test(mdconvCore)
   && /root\.SJCats = factory\(\)/.test(read('cat-core.js')));
 
+console.log('分类下有笔记就不让删（2026-11-27）');
+/* 用户定：分类只是容器，笔记才是内容。有笔记就只提示「无法删除」，
+   不再给「连同笔记一起删」——那等于一次误触 + 30 天后自动清空。 */
+ok('子树里有笔记就拒绝删除，只弹提示',
+  /if \(count > 0\) \{\s*toast\(`此分类下有 \$\{count\} 篇笔记，无法删除/.test(js) &&
+  js.indexOf('连同笔记一起删除') < 0);
+ok('空分类才走确认框：有子类别时问「上移还是连删」',
+  /let mode = subs\.length \? 'move' : 'delete'/.test(js) &&
+  js.indexOf('该类别下没有笔记') >= 0);
+
 console.log('分类自动去重（2026-11-26）');
 /* 重复分类的根治：建类时就不许重名 + 启动 / 导入 / 同步时自动合并。
    判定逻辑在 public/cat-core.js（与云端逐字相同），这里直接 require 真跑。 */
