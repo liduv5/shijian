@@ -746,6 +746,42 @@ ok('全路径只剩一层壳：catPath 直接转调内核',
   /function catPath\(id\) \{\s*return SJCats\.catPathOf\(state\.categories, id\);/.test(js));
 
 
+console.log('笔记层纯逻辑进内核（2026-11-28）');
+/* 两端 app.js 有 122 个函数逐字相同，转义 / 空判定 / 排序 / 高亮是最危险的几类。
+   收进 notes-core.js 后内核一份，界面只留同名壳。 */
+const SJNotesCore = require('../public/notes-core.js');
+const nSample = [
+  { id: 'a', title: 'B', updatedAt: 300, createdAt: 100 },
+  { id: 'b', title: 'A', updatedAt: 200, createdAt: 300 },
+  { id: 'c', title: 'C', updatedAt: 100, createdAt: 200 },
+];
+const nIds = (list) => list.map((n) => n.id).join('');
+ok('排序口径在核心里：更新时间 / 创建时间 / 标题三种模式',
+  nIds(SJNotesCore.sortNotes(nSample, 'updated')) === 'abc'
+  && nIds(SJNotesCore.sortNotes(nSample, 'created')) === 'bca'
+  && nIds(SJNotesCore.sortNotes(nSample, 'title')) === 'bac'
+  && nIds(SJNotesCore.sortNotes(nSample, 'nonsense')) === 'abc');
+ok('置顶恒在最前，且不就地改动传入数组',
+  nIds(SJNotesCore.sortNotes(nSample, 'updated', new Set(['c']))) === 'cab' && nIds(nSample) === 'abc');
+ok('空判定：只有 <br> / &nbsp; 算空，有标题 / 标签 / 收藏都不算',
+  SJNotesCore.blankContent('<p><br></p>') === true
+  && SJNotesCore.blankContent('<p>&nbsp;</p>') === true
+  && SJNotesCore.blankContent('<p>字</p>') === false
+  && SJNotesCore.isBlankNote({ content: '<p><br></p>' }) === true
+  && SJNotesCore.isBlankNote({ content: '<p><br></p>', tags: ['a'] }) === false
+  && SJNotesCore.isBlankNote({ content: '<p><br></p>', starred: true }) === false);
+ok('高亮先转义再包 <mark>（搜索词带尖括号不会打断标签）',
+  SJNotesCore.escapeHtml('<img src=x onerror=1>') === '&lt;img src=x onerror=1&gt;'
+  && SJNotesCore.highlightText('a<b', '<b') === 'a<mark>&lt;b</mark>');
+ok('app.js 里不再留自己的转义表与排序比较函数',
+  !/'&': '&amp;'/.test(js) && !/return list\.slice\(\)\.sort\(/.test(js)
+  && /function escapeHtml\(s\) \{\s*return SJNotesCore\.escapeHtml\(s\);/.test(js)
+  && /return SJNotesCore\.sortNotes\(list, mode, new Set\(pinnedIds\(\)\)\)/.test(js));
+ok('notes-core 在 app.js 之前加载',
+  html.indexOf('src="/notes-core.js"') > 0
+  && html.indexOf('src="/notes-core.js"') < html.indexOf('src="/app.js"'));
+
+
 console.log('状态与刷新收口（2026-11-26）');
 /* 以前 state 有 50 处直接赋值、工具条高亮有 8 处零散调用，
    「缩进改完没标脏」「换了块对齐图标不动」都是这么来的。 */

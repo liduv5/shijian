@@ -28,6 +28,9 @@ const SHARED = [
   /* 分类身份 / 去重判定：两端 + 同步必须用同一套规则，否则「算不算重复」
      各算一套，去重本身就会变成新的重复源。 */
   'public/cat-core.js',
+  /* 笔记层纯逻辑（转义 / 空判定 / 排序 / 高亮）：2026-11-28 从两端 app.js
+     收出来，之前这四类被复制成 122 个逐字相同的函数，改一处忘一处。 */
+  'public/notes-core.js',
 ];
 
 const write = process.argv.includes('--write');

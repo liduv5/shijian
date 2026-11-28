@@ -15,7 +15,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-28-197';
+const BUILD = '2026-11-28-198';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -23,7 +23,10 @@ const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflic
   'mdconv-core.js', 'richtext-core.js',
   /* 2026-11-26：分类身份 / 去重判定也收成两端一份，
      否则「算不算重复」各算一套，去重本身会变成新的重复源。 */
-  'cat-core.js'];
+  'cat-core.js',
+  /* 2026-11-28：笔记层纯逻辑（转义 / 空判定 / 排序 / 高亮）收成两端一份。
+     这四类以前在两端 app.js 里各写一遍，escapeHtml 少一处转义就是 XSS。 */
+  'notes-core.js'];
 
 let pass = 0, fail = 0;
 function ok(name, cond) {
@@ -1831,6 +1834,48 @@ ok('快照选择与自动同步样式只增不改旧类名（窄屏不串版）'
 ok('本机存储写满时逐级自动瘦身：裁版本 → 清过期回收站 → 放弃版本历史',
   /const freedTrash = kept\.length !== db\.notes\.length;/.test(localSrc)
   && /notes: db\.notes\.map\(stripAtt\), versions: \{\},/.test(localSrc));
+
+console.log('\n[8] 笔记层纯逻辑内核（2026-11-28）');
+/* 两端 app.js 里 184 个同名函数，122 个逐字相同。转义 / 空判定 / 排序 / 高亮
+   是其中最危险的四类：escapeHtml 少一处就是 XSS，排序规则漂了两台设备顺序不同。
+   收进 notes-core.js 后，内核一份，app.js 只留同名壳。 */
+const notesCore = require(path.join(CLOUD, 'notes-core.js'));
+const SAMPLE = [
+  { id: 'a', title: 'B', updatedAt: 300, createdAt: 100 },
+  { id: 'b', title: 'A', updatedAt: 200, createdAt: 300 },
+  { id: 'c', title: 'C', updatedAt: 100, createdAt: 200 },
+];
+const ids = (list) => list.map((n) => n.id).join('');
+ok('排序内核可独立加载（UMD，Node 与浏览器同一份）', /root\.SJNotesCore = factory\(\)/.test(fs.readFileSync(path.join(CLOUD, 'notes-core.js'), 'utf8')));
+ok('默认按更新时间倒序', ids(notesCore.sortNotes(SAMPLE, 'updated')) === 'abc');
+ok('可按创建时间 / 标题排序，未知模式回落到更新时间',
+  ids(notesCore.sortNotes(SAMPLE, 'created')) === 'bca'
+  && ids(notesCore.sortNotes(SAMPLE, 'title')) === 'bac'
+  && ids(notesCore.sortNotes(SAMPLE, 'nonsense')) === 'abc');
+ok('置顶恒在最前，且不改动传入的数组',
+  ids(notesCore.sortNotes(SAMPLE, 'updated', new Set(['c']))) === 'cab'
+  && ids(SAMPLE) === 'abc');
+ok('空判定：只有 <br> / &nbsp; 的正文算空，有标题 / 标签 / 附件都不算',
+  notesCore.blankContent('<p><br></p>') === true
+  && notesCore.blankContent('<p>&nbsp;</p>') === true
+  && notesCore.blankContent('<p>字</p>') === false
+  && notesCore.isBlankNote({ title: ' ', content: '<p><br></p>' }) === true
+  && notesCore.isBlankNote({ content: '<p><br></p>', tags: ['a'] }) === false
+  && notesCore.isBlankNote({ content: '<p><br></p>', starred: true }) === false);
+ok('高亮先转义再包 <mark>，搜索词里的尖括号不会打断标签',
+  notesCore.escapeHtml('<img src=x onerror=1>') === '&lt;img src=x onerror=1&gt;'
+  && notesCore.highlightText('a<b', '<b') === 'a<mark>&lt;b</mark>'
+  && !/<b>/.test(notesCore.highlightText('a<b', '<b')));
+ok('两端的 app.js 里不再留自己的转义表 / 排序比较函数',
+  !/'&': '&amp;'/.test(appSrc) && !/return list\.slice\(\)\.sort\(/.test(appSrc)
+  && /function escapeHtml\(s\) \{\s*return SJNotesCore\.escapeHtml\(s\);/.test(appSrc)
+  && /return SJNotesCore\.sortNotes\(list, mode, new Set\(pinnedIds\(\)\)\)/.test(appSrc));
+ok('notes-core 在 app.js 之前加载（云端 / 桌面同一顺序）',
+  indexSrc.indexOf('notes-core.js') > 0 && indexSrc.indexOf('notes-core.js') < indexSrc.indexOf('/app.js')
+  && fs.readFileSync(path.join(DESKTOP, 'public', 'index.html'), 'utf8').indexOf('notes-core.js')
+     < fs.readFileSync(path.join(DESKTOP, 'public', 'index.html'), 'utf8').indexOf('/app.js'));
+ok('离线预缓存里有 notes-core（漏了就是首屏白屏）',
+  /'\/notes-core\.js'/.test(swSrc) && sw.ASSET_PATHS.has('/notes-core.js'));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

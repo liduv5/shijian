@@ -127,19 +127,11 @@
 
   /* 富文本编辑器空聚焦会留下 <p><br></p>，判空时要剥掉标签只剩文本。 */
   function blankContent(s) {
-    const t = String(s || '');
-    return !t.replace(/<br\s*\/?>/gi, '').replace(/<[^>]+>/g, '')
-      .replace(/&nbsp;|\u00a0/gi, ' ').trim();
+    return SJNotesCore.blankContent(s);
   }
 
   function isBlankNote(n) {
-    if (!n) return true;
-    if (String(n.title || '').trim()) return false;
-    if (!blankContent(n.content)) return false;
-    if (n.tags && n.tags.length) return false;
-    if (n.attachments && n.attachments.length) return false;
-    if (n.starred) return false;
-    return true;
+    return SJNotesCore.isBlankNote(n);
   }
 
   function discardDraft() {
@@ -246,8 +238,10 @@
     window.turndownPluginGfm
   );
 
+  /* 转义、空判定、排序、高亮的口径都在 notes-core.js（两端一份）。
+     这里只留同名的壳，调用点不用改，也不会有人再在本地改一份实现。 */
   function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    return SJNotesCore.escapeHtml(s);
   }
 
   function renderMarkdown(md) {
@@ -763,10 +757,8 @@
     if (!term) return;
     const el = row.querySelector('.tree-note-name');
     if (!el) return;
-    const safe = escapeHtml(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    try {
-      el.innerHTML = escapeHtml(el.textContent).replace(new RegExp('(' + safe + ')', 'ig'), '<mark>$1</mark>');
-    } catch (_) {}
+    /* 拼 <mark> 与转义都在 notes-core，这里只管把结果放回节点。 */
+    el.innerHTML = SJNotesCore.highlightText(el.textContent, term);
   }
 
   function renderSearchResults(tree) {
@@ -945,16 +937,10 @@
     try { localStorage.setItem(PIN_KEY, JSON.stringify(ids.slice(0, 200))); } catch (_) {}
   }
   function sortNotes(list) {
+    /* 内核只管「给定模式与置顶集合怎么排」，偏好存储留在界面层读。 */
     let mode = 'updated';
     try { mode = localStorage.getItem(SORT_KEY) || 'updated'; } catch (_) {}
-    const pins = new Set(pinnedIds());
-    return list.slice().sort((a, b) => {
-      const pa = pins.has(a.id) ? 1 : 0, pb = pins.has(b.id) ? 1 : 0;
-      if (pa !== pb) return pb - pa;                       // 置顶恒在最前
-      if (mode === 'created') return (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0);
-      if (mode === 'title') return String(a.title || '').localeCompare(String(b.title || ''), 'zh');
-      return (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0);
-    });
+    return SJNotesCore.sortNotes(list, mode, new Set(pinnedIds()));
   }
   function batchNotes() { return state.notes.filter((n) => batchSel.has(n.id)); }
   function exitBatch() { batchMode = false; batchSel.clear(); renderList(); renderTree(); }
