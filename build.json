@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-28-201",
+  "build": "2026-11-28-202",
   "note": "构建号唯一真源。改这里，然后 node scripts/bump-build.js 写入 8 个文件；--next 自动进位，--check 只校验不写。"
 }

@@ -1108,5 +1108,11 @@ ok('媒体模块的模块内状态不泄漏到 app.js：点空白收起尺寸条
   && /function hideImgSizerOnOutside\(e\)/.test(mediaJs)
   && /hideImgSizerOnOutside,/.test(mediaJs));
 
+/* 同一类拆分遗留的桌面侧防线：媒体块不碰 app.js 私有作用域的 NARROW，
+   正文的图片尺寸监听只绑一次。 */
+ok('桌面媒体块不引用 app.js 私有 NARROW，正文图片尺寸只绑一次',
+  !/\bNARROW\s*\(/.test(mediaJs)
+  && (js.match(/bindImgResize\(\$\('#richPane'\), 'rich'\)/g) || []).length === 1);
+
 console.log(`\n结果：${pass} 通过，${fail} 失败`);
 process.exit(fail ? 1 : 0);

@@ -15,7 +15,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-28-201';
+const BUILD = '2026-11-28-202';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -631,7 +631,7 @@ ok('写正文时图片保持图片：手机端进编辑先转富文本，不再�
   uiSrc.indexOf('function toRichEditor()') >= 0 &&
   /function toRichEditor\(\)[\s\S]{0,420}noteHtml/.test(appSrc) &&
   /setNoteMode[\s\S]{0,2200}toRichEditor\(\);/.test(appSrc) &&
-  uiSrc.indexOf('if (NARROW()) return;') >= 0 &&
+  uiSrc.indexOf('if (isNarrow()) return;') >= 0 &&
   indexSrc.indexOf('id="sjImgBar"') >= 0 &&
   appSrc.indexOf('function selectImg(img)') >= 0 &&
   appSrc.indexOf('function moveImg(dir)') >= 0 &&
@@ -1900,7 +1900,7 @@ ok('shapeOf 只描述结构不描述值（差分测试靠它避开随机 id 与�
   JSON.stringify(contract.shapeOf({ id: 'a1', tags: ['x'], meta: { n: 1 } }))
     === JSON.stringify({ id: 'string', meta: { n: 'number' }, tags: ['array', 'string'] }));
 ok('云端媒体块也已拆到 app-media.js，工厂注入后调用点不变',
-  /const media = window\.SJAppMedia\(\{ \$, \$\$, I, toast, onRichInput, exec \}\)/.test(appSrc)
+  /const media = window\.SJAppMedia\(\{ \$, \$\$, I, toast, onRichInput, exec, isNarrow: \(\) => NARROW\(\) \}\)/.test(appSrc)
   && !/function bindImgResize\(/.test(appSrc) && /function bindImgResize\(/.test(mediaSrc)
   && indexSrc.indexOf('app-media.js') > 0 && indexSrc.indexOf('app-media.js') < indexSrc.indexOf('/app.js')
   && sw.ASSET_PATHS.has('/app-media.js'));
@@ -1950,6 +1950,16 @@ ok('媒体模块的模块内状态不泄漏到 app.js：点空白收起尺寸条
   && !/if \(!imgSizer \|\| imgSizer\.classList/.test(appSrc)
   && /function hideImgSizerOnOutside\(e\)/.test(mediaSrc)
   && /hideImgSizerOnOutside,/.test(mediaSrc));
+
+/* 构建 201 后用户反馈：新建笔记点正文无效。实跑抓到云端 app-media.js 的
+   bindImgResize 直接用了 app.js 作用域的 NARROW —— 每次点 #richPane 都抛
+   ReferenceError；而且云端把 bindImgResize 绑了两次，一次点击抛两遍。
+   NARROW 在 app.js 后面才用 const 定义，必须惰性传壳，不能传值。 */
+ok('媒体块不直接引用 app.js 私有 NARROW，正文图片尺寸只绑一次',
+  !/\bNARROW\s*\(/.test(mediaSrc)
+  && /isNarrow\(\)/.test(mediaSrc)
+  && /isNarrow: \(\) => NARROW\(\)/.test(appSrc)
+  && (appSrc.match(/bindImgResize\(\$\('#richPane'\), 'rich'\)/g) || []).length === 1);
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

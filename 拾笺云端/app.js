@@ -236,7 +236,9 @@
   }
 
   /* 图片与 Markdown 渲染按功能拆到 app-media.js，这里注入依赖后取回函数。 */
-  const media = window.SJAppMedia({ $, $$, I, toast, onRichInput, exec });
+  /* isNarrow 用惰性壳传进去：NARROW 在本文件后面才用 const 定义，
+     这里直接传值会撞暂时性死区；点正文时才求值，口径仍只有 NARROW 一份。 */
+  const media = window.SJAppMedia({ $, $$, I, toast, onRichInput, exec, isNarrow: () => NARROW() });
   const { renderMarkdown, decorate, ensureImgSizer, readImgPct, liveImgWidth, applyImgWidth, openImgSizer, closeImgSizer, cropEnsureUI, cropFetchDataUrl, cropClose, cropPaint, cropClamp, cropRatioOf, cropApplyRatio, cropReset, cropDrag, cropDone, openImgCrop, bindImgResize } = media;
 
   document.addEventListener('click', (e) => {
@@ -2846,7 +2848,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-28-201';
+  const APP_BUILD = '2026-11-28-202';
   /* 暴露给 index.html 的内联版本守卫：HTML 每次都是新的、脚本可能还是缓存里的旧版，
      内联脚本拿这个值一比就知道要不要弹「发现新版本」，不用等用户去点某个功能。 */
   window.__SJ_APP_BUILD__ = APP_BUILD;
@@ -5249,8 +5251,7 @@
     if (NARROW() && IMG_SHEET) { e.preventDefault(); openImgSheet(); return; }
     pickImage('gallery');
   });
-  /* 点正文里的图片 → 弹尺寸工具条 */
-  bindImgResize($('#richPane'), 'rich');
+  /* 点正文里的图片 → 弹尺寸工具条（只绑一次：重复绑会让一次点击抛两次异常） */
   bindImgResize($('#richPane'), 'rich');
 
   /* ---- 附件面板三态：open / collapsed / hidden ----

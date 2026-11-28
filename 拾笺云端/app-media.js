@@ -10,7 +10,7 @@
    ============================================================ */
 window.SJAppMedia = function (ctx) {
   'use strict';
-  const { $, $$, I, toast, onRichInput, exec } = ctx;
+  const { $, $$, I, toast, onRichInput, exec, isNarrow } = ctx;
 
   function renderMarkdown(md) {
     let html = marked.parse(md || '');
@@ -383,7 +383,7 @@ window.SJAppMedia = function (ctx) {
     container.addEventListener('click', (e) => {
       /* 手机端走详情页自己的图片操作条（上移/下移/删除），不开桌面这条宽度条；
          这里直接放行，别 stopPropagation，否则点正文进编辑会被它吃掉。 */
-      if (NARROW()) return;
+      if (isNarrow()) return;
       const img = e.target.closest ? e.target.closest('img') : null;
       if (!img || !container.contains(img)) return;
       e.preventDefault();
