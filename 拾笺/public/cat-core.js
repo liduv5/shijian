@@ -79,15 +79,48 @@
     return ids;
   }
 
+  /* 分类全路径：从根到这一层用 sep 连起来，找不到该 id 就是空串。
+     界面上「学习素材 / 前端开发 / 页面布局」这句话、移动分类弹层的选项、
+     笔记卡片上的来源标签，都取这一份。以前两端 app.js 各写一份向上遍历，
+     分隔符或层数上限一改就得改两处，改漏一处就是两边显示不一样。 */
+  function catPathOf(cats, id, sep) {
+    const joiner = sep == null ? ' / ' : sep;
+    const byId = new Map();
+    for (const c of (cats || [])) if (c && c.id) byId.set(c.id, c);
+    const parts = [];
+    let cur = byId.get(id);
+    let guard = 0;
+    while (cur && guard++ < MAX_DEPTH) {
+      parts.unshift(cur.name);
+      cur = cur.parentId ? byId.get(cur.parentId) : null;
+    }
+    return parts.join(joiner);
+  }
+
+  /* 计数口径，整个应用只有这一处：
+       total —— 本层 + 所有后代层的笔记篇数（子树汇总）
+       own   —— 只算直接放在这一层的
+       sub   —— total - own，即「子分类里还有几篇」
+     树上写「1 + 3」，图例写「本层篇数 + 子分类篇数」，删除确认里说「含 N 篇」，
+     全是这三个数派生出来的文案。以前四处各算一遍，193 那次就漏掉了手机分类面板。
+     加号前后都是笔记篇数，不是子分类个数。 */
+  function catCounts(cats, notes, id) {
+    const ids = subtreeIds(cats, id);
+    let total = 0;
+    let own = 0;
+    for (const n of (notes || [])) {
+      if (!n || !ids.has(n.categoryId)) continue;
+      total++;
+      if (n.categoryId === id) own++;
+    }
+    return { total, own, sub: total - own };
+  }
+
   /* 内容权重：直属笔记优先（×1000），再看子树规模。合并时保留内容多的
      那一份，树不会因此变浅、笔记看起来也不会「换了个篮子」。 */
   function richness(cat, cats, notes) {
     const ids = subtreeIds(cats, cat.id);
-    let n = 0;
-    for (const note of (notes || [])) {
-      if (note && ids.has(note.categoryId)) n++;
-    }
-    return n * 1000 + ids.size;
+    return catCounts(cats, notes, cat.id).total * 1000 + ids.size;
   }
 
   function cmpText(a, b) {
@@ -551,7 +584,8 @@
 
   return {
     normName, cleanName, catKey, siblingOf, uniqueName,
-    subtreeIds, mergeCats, dedupeCats, resolveId, remapAll, pickDuplicateCatIds,
+    subtreeIds, catPathOf, catCounts,
+    mergeCats, dedupeCats, resolveId, remapAll, pickDuplicateCatIds,
     normTag, healTags, healIntegrity, dedupeNotes, plainText, diceSim,
   };
 }));

@@ -635,20 +635,8 @@
   });
 
   /* ---------------------------------------------------------- 渲染：目录树 */
-  function subtreeCount(catId, notes) {
-    const ids = new Set([catId]);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const c of state.categories) {
-        if (c.parentId && ids.has(c.parentId) && !ids.has(c.id)) {
-          ids.add(c.id);
-          changed = true;
-        }
-      }
-    }
-    return notes.filter((n) => ids.has(n.categoryId)).length;
-  }
+  /* 分类计数的口径不在这里 —— `SJCats.catCounts()` 一处算，两端 + 手机面板共用。
+     这里只负责把 { total, own, sub } 变成界面上的字。 */
 
   /* —— 合并导航树：分类/伪节点下直接嵌套笔记行；伪节点可展开列出笔记 —— */
   function isOpen(key) {
@@ -875,9 +863,7 @@
     row.style.paddingLeft = 4 + depth * 18 + 'px';
     /* 计数拆成「本层 + 子分类」：父分类允许直接放笔记，只显示一个总数，
        用户拿树一数会以为算错了（真机问过「4 是怎么算的」）。 */
-    const total = subtreeCount(cat.id, state.notes);
-    const ownCnt = state.notes.filter((n) => n.categoryId === cat.id).length;
-    const subCnt = total - ownCnt;
+    const { total, own: ownCnt, sub: subCnt } = SJCats.catCounts(state.categories, state.notes, cat.id);
     const countText = subCnt > 0 ? `${ownCnt} + ${subCnt}` : String(total);
     const countTip = subCnt > 0 ? `本层 ${ownCnt} 篇、子分类 ${subCnt} 篇` : `${total} 篇笔记`;
     row.innerHTML = `
@@ -1182,14 +1168,7 @@
       list = list.filter((n) => (n.tags || []).includes(tag));
     }
     else if (state.selCat !== 'all') {
-      const ids = new Set([state.selCat]);
-      let changed = true;
-      while (changed) {
-        changed = false;
-        for (const c of state.categories) {
-          if (c.parentId && ids.has(c.parentId) && !ids.has(c.id)) { ids.add(c.id); changed = true; }
-        }
-      }
+      const ids = SJCats.subtreeIds(state.categories, state.selCat);
       list = list.filter((n) => ids.has(n.categoryId));
     }
     return sortNotes(list);
@@ -1320,15 +1299,7 @@
      丢掉的卡片信息补回来；文件夹卡 = 名字 + 子文件夹数 + 笔记数 + 最后更新。 */
   let homeTab = 'notes';
   function catPath(id) {
-    const parts = [];
-    let c = state.categories.find((x) => x.id === id);
-    let guard = 0;
-    while (c && guard++ < 12) {
-      parts.unshift(c.name);
-      const pid = c.parentId;
-      c = pid ? state.categories.find((x) => x.id === pid) : null;
-    }
-    return parts.join(' / ');
+    return SJCats.catPathOf(state.categories, id);
   }
   /* 编辑区第二行那句「分类名 ▾ · 创建于 …」。
      分类单独做成按钮：之前整行是一个可点元素，鼠标移到日期上也会高亮，
@@ -1397,7 +1368,7 @@
       }
       grid.innerHTML = folds.map((c) => {
         const subs = state.categories.filter((k) => k.parentId === c.id).length;
-        const cnt = subtreeCount(c.id, state.notes);
+        const cnt = SJCats.catCounts(state.categories, state.notes, c.id).total;
         const ns = notesUnder(c.id);
         const last = ns.length ? Math.max(...ns.map((n) => Number(n.updatedAt) || 0)) : 0;
         return `<article class="home-card folder" data-cid="${c.id}">
@@ -3271,7 +3242,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-28-196';
+  const APP_BUILD = '2026-11-28-197';
   /* 暴露给 index.html 的内联版本守卫：HTML 每次都是新的、脚本可能还是缓存里的旧版，
      内联脚本拿这个值一比就知道要不要弹「发现新版本」，不用等用户去点某个功能。 */
   window.__SJ_APP_BUILD__ = APP_BUILD;
@@ -4450,14 +4421,9 @@
   /* 分类建错层后只能重建、重建又被「有笔记不能删」卡死。
      本地接口本来就支持 parentId（含环检测），补一个选择框就通了。 */
   function moveCategory(cat) {
-    const block = new Set([cat.id]);
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const c of state.categories) {
-        if (c.parentId && block.has(c.parentId) && !block.has(c.id)) { block.add(c.id); grew = true; }
-      }
-    }
+    /* 自身 + 全部后代都不能当新父级，否则会把分类挂到自己底下成环。
+       子树只有内核一处算法，这里不再各写一遍。 */
+    const block = SJCats.subtreeIds(state.categories, cat.id);
     const targets = state.categories
       .filter((c) => !block.has(c.id))
       .map((c) => ({ id: c.id, path: catPath(c.id) }))
@@ -4510,14 +4476,7 @@
 
   async function deleteCategory(cat) {
     /* 先算出整棵子树：计数、提示、删除范围都用这一份，不会出现「提示 3 篇、删掉 5 篇」。 */
-    const ids = new Set([cat.id]);
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const c of state.categories) {
-        if (c.parentId && ids.has(c.parentId) && !ids.has(c.id)) { ids.add(c.id); grew = true; }
-      }
-    }
+    const ids = SJCats.subtreeIds(state.categories, cat.id);
     const affected = state.notes.filter((n) => ids.has(n.categoryId));
     const subs = state.categories.filter((c) => ids.has(c.id) && c.id !== cat.id).length;
 
@@ -6496,17 +6455,6 @@
     });
 
     /* ---- 分类面板 ---- */
-    function folderCount(id) {
-      const ids = new Set([id]);
-      let changed = true;
-      while (changed) {
-        changed = false;
-        for (const c of state.categories) {
-          if (c.parentId && ids.has(c.parentId) && !ids.has(c.id)) { ids.add(c.id); changed = true; }
-        }
-      }
-      return state.notes.filter((n) => ids.has(n.categoryId)).length;
-    }
     function catRow(key, label, icon, count, indent) {
       return `<button type="button" class="sj-cat-row${String(state.selCat) === String(key) ? ' on' : ''}${indent ? ' sj-cat-indent' : ''}" data-cat="${escapeHtml(key)}" style="--dl:52px">`
         + `${icon}<span class="sj-cat-name">${escapeHtml(label)}</span><span class="sj-cat-n">${count}</span></button>`;
@@ -6559,9 +6507,7 @@
          根行现在「1 + 3 ⌄」并排：数字是可以对账的明细，箭头只管展开。
          箭头用 15px 线性小箭头（构建 194）：原来的文字「⌄」在 20px 字号下又粗又飘，
          和 15px 的数字不搭。 */
-      const total = folderCount(cat.id);
-      const own = state.notes.filter((n) => n.categoryId === cat.id).length;
-      const sub = total - own;
+      const { total, own, sub } = SJCats.catCounts(state.categories, state.notes, cat.id);
       const countText = sub > 0 ? `${own} + ${sub}` : String(total);
       const countHtml = `<span class="sj-cat-n"${sub > 0 ? ` title="本层 ${own} 篇、子分类 ${sub} 篇"` : ''}>${countText}</span>`;
       const tail = (isRoot && kids.length)

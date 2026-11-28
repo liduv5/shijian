@@ -2,8 +2,9 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-28-196 基线重建。
-   注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
+   来源：历史提交 a1882fe 的 tests/run.js，按当前基线重建。
+   注意：构建号只有 build.json 一份真源（node scripts/bump-build.js），
+         换版本不要手改下面的 BUILD；访问码换版时改 SC。 */
 'use strict';
 
 const fs = require('fs');
@@ -14,7 +15,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-28-196';
+const BUILD = '2026-11-28-197';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -118,6 +119,21 @@ for (const f of verFiles) {
   const s = fs.readFileSync(path.join(CLOUD, f), 'utf8');
   ok(f + ' 版本为 ' + BUILD, s.indexOf(f === 'sw.js' ? 'sj-' + BUILD : BUILD) >= 0);
 }
+/* 构建号只有 build.json 一份真源（2026-11-28）。以前手工改 8 个文件，
+   改漏一处就是「页面提示发现新版本、SW 还咬着旧壳」。这里逐文件扫日期串：
+   任何一处与 build.json 不同、或某个文件一处都没有，都算漂移。 */
+const buildSrc = fs.readFileSync(path.join(CLOUD, '..', 'build.json'), 'utf8');
+const buildJson = JSON.parse(buildSrc);
+ok('build.json 就是测试认的那个版本', buildJson.build === BUILD);
+const bumpScript = path.join(CLOUD, '..', 'scripts', 'bump-build.js');
+ok('构建号有唯一写入入口（scripts/bump-build.js，带 --check）',
+  fs.existsSync(bumpScript) && /--check/.test(fs.readFileSync(bumpScript, 'utf8')));
+const drift = [];
+for (const f of ['app.js', 'dl.html', 'index.html', 'mobilesync.js', 'pwa.js', 'quick.html', 'sw.js', 'tests/run.js']) {
+  const toks = (fs.readFileSync(path.join(CLOUD, f), 'utf8').match(/20\d\d-\d\d-\d\d-\d{3}/g) || []);
+  if (!toks.length || toks.some((t) => t !== BUILD)) drift.push(f + '(' + toks.join('|') + ')');
+}
+ok('8 个文件的构建号全部等于 build.json，没有手改漏掉的', drift.length === 0);
 const stale = files(CLOUD).filter((f) => !/\.(png|ico|woff2?|json)$/i.test(f))
   .filter((f) => /SSYXUMSNMI|2120533470581252096/.test(fs.readFileSync(f, 'utf8')));
 ok('云端旧链接/旧码零残留', stale.length === 0);
@@ -297,8 +313,7 @@ ok('分类面板按截图分卡排列、子分类缩进、带展开箭头',
 /* 手机端真机反馈（构建 193）：分类页只给汇总数（学习素材干脆一个数都没有），
    和电脑端目录树的「本层 + 子分类」对不上。两边现在同一口径。 */
 ok('手机分类页的计数也拆成「本层 + 子分类」，与电脑端目录树一致',
-  /const total = folderCount\(cat\.id\);/.test(appSrc) &&
-  /const own = state\.notes\.filter\(\(n\) => n\.categoryId === cat\.id\)\.length;/.test(appSrc) &&
+  /const \{ total, own, sub \} = SJCats\.catCounts\(state\.categories, state\.notes, cat\.id\);/.test(appSrc) &&
   /const countText = sub > 0 \? `\$\{own\} \+ \$\{sub\}` : String\(total\);/.test(appSrc) &&
   /title="本层 \$\{own\} 篇、子分类 \$\{sub\} 篇"/.test(appSrc));
 ok('根文件夹既有数字又有展开箭头（以前一颗 ⌄ 顶掉了数字）',
@@ -399,8 +414,15 @@ ok('树上计数显示「本层 + 子分类」',
 /* 分类改父级：本地接口早支持 parentId，界面现在补上了入口。 */
 ok('分类可以「移动到…」，候选排除自身与后代',
   /function moveCategory\(cat\)/.test(appSrc)
-  && /block\.has\(c\.parentId\)/.test(appSrc)
+  && /const block = SJCats\.subtreeIds\(state\.categories, cat\.id\)/.test(appSrc)
   && /parentId = sel\.value \|\| null/.test(appSrc));
+/* 2026-11-28：同一条口径以前在桌面树、手机树、手机分类面板、删除提示各算一遍，
+   193 那次漏的就是手机面板。现在算法只有内核一处，界面不再自己遍历子树。 */
+ok('手机分类面板的计数也取内核，不再自己算一遍',
+  /const \{ total, own, sub \} = SJCats\.catCounts\(state\.categories, state\.notes, cat\.id\)/.test(appSrc));
+ok('app.js 里已无内联子树遍历（`ids.has(c.parentId)` 这种循环清零）',
+  !/ids\.has\(c\.parentId\)/.test(appSrc) && !/block\.has\(c\.parentId\)/.test(appSrc)
+  && /const ids = SJCats\.subtreeIds\(state\.categories, cat\.id\)/.test(appSrc));
 /* 口径写进应用内说明，手机端也能随手查。 */
 ok('目录旁有「分类与归属说明」入口（手机端同样）',
   /id="helpBtn"/.test(indexSrc) && /function openHelp\(/.test(appSrc)
@@ -1484,6 +1506,28 @@ const mobileSrc = fs.readFileSync(path.join(CLOUD, 'mobilesync.js'), 'utf8');
 const cloudCat = require(path.join(CLOUD, 'cat-core.js'));
 const { mergeCats, resolveId, pickDuplicateCatIds, dedupeCats, siblingOf, uniqueName } = cloudCat;
 ok('云端分类内核可独立加载（UMD，Node 与浏览器同一份）', typeof mergeCats === 'function');
+
+/* 计数与全路径：2026-11-28 从两端 app.js 收进内核。以前同一口径四处各算一遍，
+   手机上「学习素材 1 + 3」和电脑上对不上账就是这么来的。 */
+const cntCats = [
+  { id: 'r', name: '学习素材', parentId: null },
+  { id: 'f', name: '前端开发', parentId: 'r' },
+  { id: 'p', name: '页面布局', parentId: 'f' },
+  { id: 'w', name: '工作', parentId: null },
+];
+const cntNotes = [
+  { id: '1', categoryId: 'r' }, { id: '2', categoryId: 'f' },
+  { id: '3', categoryId: 'p' }, { id: '4', categoryId: 'p' },
+  { id: '5', categoryId: 'w' }, { id: '6', categoryId: null },
+];
+ok('计数口径一处算：子树汇总 / 本层 / 子分类',
+  JSON.stringify(cloudCat.catCounts(cntCats, cntNotes, 'r')) === JSON.stringify({ total: 4, own: 1, sub: 3 })
+  && JSON.stringify(cloudCat.catCounts(cntCats, cntNotes, 'p')) === JSON.stringify({ total: 2, own: 2, sub: 0 }));
+ok('手机上「1 + 3」加得回总数 4',
+  (() => { const c = cloudCat.catCounts(cntCats, cntNotes, 'r'); return c.own + c.sub === c.total; })());
+ok('全路径「学习素材 / 前端开发 / 页面布局」只有一份实现',
+  cloudCat.catPathOf(cntCats, 'p') === '学习素材 / 前端开发 / 页面布局'
+  && cloudCat.catPathOf(cntCats, 'nope') === '');
 
 /* 复刻 11-22 的真实数据：本地 6 个分类，云端同一个分类躺着三套 id。 */
 const LOCAL_CATS = [

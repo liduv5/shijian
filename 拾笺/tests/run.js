@@ -630,7 +630,7 @@ ok('删除范围按整棵子树算，提示里的数字和实际动作同一份'
 /* 分类建错层以前无法改父级：后端早支持 parentId，界面只差一个入口。 */
 ok('分类可以「移动到…」：候选里排除自身与后代，避免成环',
   /function moveCategory\(cat\)/.test(js)
-  && /block\.has\(c\.parentId\)/.test(js)
+  && /const block = SJCats\.subtreeIds\(state\.categories, cat\.id\)/.test(js)
   && /parentId = sel\.value \|\| null/.test(js));
 ok('移动后在树上就地更新，并把新父级展开',
   /if \(p\) p\.expanded = true;/.test(js) && /toast\(parentId \? `已移到/.test(js));
@@ -698,6 +698,52 @@ ok('界面提交前先判重名，反馈不用等一次请求（重名不关弹�
 ok('分类内核在 app.js 之前加载',
   html.indexOf('src="/cat-core.js"') > 0
   && html.indexOf('src="/cat-core.js"') < html.indexOf('src="/app.js"'));
+
+
+console.log('计数与路径收进内核（2026-11-28）');
+/* 前情：同一条「本层 + 子分类」口径，桌面树、手机抽屉树、手机分类面板、
+   删除确认提示各算一遍，193 那次就漏了第四处。现在算法只有 SJCats.catCounts
+   一处，界面只负责把 { total, own, sub } 变成字。 */
+const cntCats = [
+  { id: 'root', name: '学习素材', parentId: null },
+  { id: 'fe', name: '前端开发', parentId: 'root' },
+  { id: 'css', name: '页面布局', parentId: 'fe' },
+  { id: 'other', name: '工作', parentId: null },
+];
+const cntNotes = [
+  { id: 'n1', categoryId: 'root' },
+  { id: 'n2', categoryId: 'fe' },
+  { id: 'n3', categoryId: 'css' },
+  { id: 'n4', categoryId: 'css' },
+  { id: 'n5', categoryId: 'other' },
+  { id: 'n6', categoryId: null },
+];
+ok('口径只有一处：子树汇总、本层、差值三个数一起给',
+  JSON.stringify(SJCats.catCounts(cntCats, cntNotes, 'root')) === JSON.stringify({ total: 4, own: 1, sub: 3 })
+  && JSON.stringify(SJCats.catCounts(cntCats, cntNotes, 'css')) === JSON.stringify({ total: 2, own: 2, sub: 0 })
+  && SJCats.catCounts(cntCats, cntNotes, 'other').total === 1);
+ok('加号两边加得回总数（total 恒等于 own + sub）',
+  ['root', 'fe', 'css', 'other'].every((id) => {
+    const c = SJCats.catCounts(cntCats, cntNotes, id);
+    return c.total === c.own + c.sub;
+  }));
+ok('全路径从根往下拼，找不到的 id 返回空串（调用方回退「未分类」）',
+  SJCats.catPathOf(cntCats, 'css') === '学习素材 / 前端开发 / 页面布局'
+  && SJCats.catPathOf(cntCats, 'root') === '学习素材'
+  && SJCats.catPathOf(cntCats, 'nope') === '');
+ok('子树只有一份算法：自身 + 全部后代，兄弟不串门，且带深度上限防环',
+  (() => {
+    const ids = SJCats.subtreeIds(cntCats, 'root');
+    if (ids.size !== 3 || !ids.has('css') || ids.has('other')) return false;
+    const ring = [{ id: 'x', parentId: 'y' }, { id: 'y', parentId: 'x' }];
+    return SJCats.subtreeIds(ring, 'x').size === 2;
+  })());
+ok('界面不再各写一份子树遍历（ids.has(c.parentId) 这种循环已清零）',
+  !/ids\.has\(c\.parentId\)/.test(js) && !/block\.has\(c\.parentId\)/.test(js));
+ok('目录树的计数直接取内核，不再自己 filter 一遍',
+  /const \{ total, own: ownCnt, sub: subCnt \} = SJCats\.catCounts\(state\.categories, state\.notes, cat\.id\)/.test(js));
+ok('全路径只剩一层壳：catPath 直接转调内核',
+  /function catPath\(id\) \{\s*return SJCats\.catPathOf\(state\.categories, id\);/.test(js));
 
 
 console.log('状态与刷新收口（2026-11-26）');
