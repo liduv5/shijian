@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-28-198';
+  var SWV = '2026-11-28-199';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -964,6 +964,7 @@
 <!-- 笔记层纯逻辑内核（与桌面端同一份文件，md5 校验）：转义 / 空判定 / 排序 / 高亮。
      app.js 里同名函数只是壳，必须排在 app.js 之前。 -->
 <script src="/notes-core.js?sharecode=X4WPKTHLIN" onerror="window.__SJ_LOAD_ERR=1"></script>
+<script src="/api-contract.js?sharecode=X4WPKTHLIN" onerror="window.__SJ_LOAD_ERR=1"></script>
 <script src="/export.js?sharecode=X4WPKTHLIN"></script>
 <script src="/attstore.js?sharecode=X4WPKTHLIN"></script>
 <script src="/local.js?sharecode=X4WPKTHLIN" onerror="window.__SJ_LOAD_ERR=1"></script>
@@ -974,6 +975,7 @@
 <script src="/diffview.js?sharecode=X4WPKTHLIN"></script>
 <script src="/conflict.js?sharecode=X4WPKTHLIN"></script>
 <script src="/e2ee.js?sharecode=X4WPKTHLIN"></script>
+<script src="/app-media.js?sharecode=X4WPKTHLIN" onerror="window.__SJ_LOAD_ERR=1"></script>
 <script src="/app.js?sharecode=X4WPKTHLIN" onerror="window.__SJ_LOAD_ERR=1"></script>
 <script src="/sjplus.js?sharecode=X4WPKTHLIN"></script>
 <script src="/pwa.js?sharecode=X4WPKTHLIN"></script>

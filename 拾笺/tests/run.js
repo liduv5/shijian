@@ -13,6 +13,9 @@ const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
 
 const html = read('index.html');
 const js = read('app.js');
+/* 图片与 Markdown 渲染按功能拆到了 app-media.js；跨文件断言用合并源。 */
+const mediaJs = read('app-media.js');
+const uiJs = js + '\n' + mediaJs;
 const css = read('style.css');
 const exportJs = read('export.js');
 const e2eeJs = read('e2ee.js');
@@ -346,9 +349,9 @@ ok('客户端保留 Markdown 出口：导出 .md', /NoteExport\.toMarkdown/.test
 ok('保险箱导出仍是 Markdown', /function noteMd\(/.test(sjplusJs) && /function htmlToMd\(/.test(sjplusJs));
 ok('粘贴 Markdown 会自动识别成排版', /function looksLikeMarkdown\(/.test(js)
   && /renderMarkdown\(text\)/.test(js));
-ok('云端旧 md 行拉回本地时转成富文本', /SJRenderMarkdown/.test(js) && /SJRenderMarkdown/.test(syncJs));
+ok('云端旧 md 行拉回本地时转成富文本', /SJRenderMarkdown/.test(uiJs) && /SJRenderMarkdown/.test(syncJs));
 ok('renderMarkdown 已导出到全局供 sync.js 用',
-  /window\.SJRenderMarkdown = renderMarkdown/.test(js));
+  /window\.SJRenderMarkdown = renderMarkdown/.test(mediaJs));
 ok('迁移脚本存在且可执行', fs.existsSync(path.join(__dirname, '..', 'scripts', 'migrate-to-rich.js')));
 
 console.log('\n阅读态舒适度（P1：Aa 浮层 / 看大图 / 下拉量宽）');
@@ -380,7 +383,7 @@ ok('阅读态点图片开大图，复用附件查看器；编辑态不受影响'
 /* 点图只该发生一件事：阅读态看大图，编辑态调宽度。
    两边同时触发时，尺寸条会被遮在预览层后面露半截（2026-11-22 用户报的）。 */
 ok('阅读态点图不再弹出图片宽度条（尺寸条是写操作）',
-  /if \(noteMode === 'read'\) return;\s*\n\s*const img = e\.target\.closest/.test(js));
+  /if \(noteMode === 'read'\) return;\s*\n\s*const img = e\.target\.closest/.test(uiJs));
 ok('切回阅读态时自动收起图片宽度条',
   /closeImgSizer\(\);\s*\n\s*placeReadTitle\(\);/.test(js));
 /* noteMode 之前是个「声明了但从不赋值」的死变量，永远停在 'read'：
@@ -1028,6 +1031,41 @@ ok('自动拉取有开关，默认开启（存 localStorage）',
   && /id="syncAuto"/.test(syncJs));
 ok('上传收尾自动清理云端无用附件，不用再点按钮',
   /let gcDone = 0;\s*try \{ gcDone = await gcQueued\(true\); \} catch \(_\) \{\}/.test(syncJs));
+
+/* ---------- 接口契约：约定必须能被机器执行，不能只活在注释里 ---------- */
+console.log('\n接口契约');
+const contract = require(path.join(ROOT, 'api-contract.js'));
+ok('契约覆盖共享端点，PATCH notes 的字段白名单逐项列出',
+  contract.ENDPOINTS.length >= 20
+  && contract.unknownFields('PATCH', '/api/notes/abc', { title: '', oops: 1 })[0] === 'oops'
+  && contract.unknownFields('PATCH', '/api/notes/abc',
+    { categoryId: null, title: '', content: '', format: 'rich', starred: false, tags: [] }).length === 0);
+ok(':id 只吃一段，不会把 /api/notes/a/versions 错配成 /api/notes/:id',
+  contract.find('GET', '/api/notes/a/versions').p === '/api/notes/:id/versions'
+  && contract.find('GET', '/api/notes/a').p === '/api/notes/:id');
+ok('整包导入不设字段白名单（备份格式本来就是自由的）',
+  contract.unknownFields('POST', '/api/import', { anything: 1 }).length === 0);
+ok('桌面 server.js 用契约校验请求体，未知字段回 400 而不是 500',
+  /require\('\.\/public\/api-contract\.js'\)/.test(serverSrc)
+  && /SJContract\.unknownFields\(req\.method/.test(serverSrc)
+  && /e\.status \|\| 500/.test(serverSrc));
+ok('契约两端逐字相同，入口页在 app.js 之前加载它',
+  fs.readFileSync(path.join(ROOT, 'api-contract.js'), 'utf8')
+    === fs.readFileSync(path.join(ROOT, '..', '..', '拾笺云端', 'api-contract.js'), 'utf8')
+  && html.indexOf('/api-contract.js') > 0 && html.indexOf('/api-contract.js') < html.indexOf('/app.js'));
+ok('图片与 Markdown 渲染已按功能拆到 app-media.js，主文件只注入依赖取回函数',
+  /const media = window\.SJAppMedia\(\{ \$, \$\$, I, toast, onRichInput, exec \}\)/.test(js)
+  && !/function renderMarkdown\(/.test(js) && /function renderMarkdown\(/.test(mediaJs)
+  && /window\.SJAppMedia = function \(ctx\)/.test(mediaJs));
+ok('媒体模块在 app.js 之前加载，且离线预缓存里有它',
+  html.indexOf('/app-media.js') > 0 && html.indexOf('/app-media.js') < html.indexOf('/app.js')
+  && fs.readFileSync(path.join(ROOT, '..', '..', '拾笺云端', 'sw.js'), 'utf8').indexOf("'/app-media.js'") > 0);
+const diffSrc = fs.readFileSync(path.join(ROOT, '..', '..', 'scripts', 'contract-diff.js'), 'utf8');
+ok('差分脚本真起桌面服务 + vm 跑云端 local.js，且每一步都要求在契约表里',
+  /cp\.spawn\(process\.execPath, \['server\.js'\]/.test(diffSrc)
+  && /vm\.runInContext\(fs\.readFileSync\(path\.join\(CLOUD, 'local\.js'\)/.test(diffSrc)
+  && /if \(!CONTRACT\.find\(method, p\)\)/.test(diffSrc)
+  && /makeShape\(/.test(diffSrc));
 
 console.log(`\n结果：${pass} 通过，${fail} 失败`);
 process.exit(fail ? 1 : 0);

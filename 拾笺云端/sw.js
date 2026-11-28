@@ -11,7 +11,7 @@
            所有 js/css 全部 403 —— 表现为「界面在、进度条卡住、按钮点不动」。
            所以每个同源请求都由 SW 主动补上访问码，不依赖 cookie。
    ============================================================ */
-const VERSION = 'sj-2026-11-28-198';
+const VERSION = 'sj-2026-11-28-199';
 const CACHE = 'shijian-' + VERSION;
 
 const SC_KEY = 'sharecode';
@@ -60,6 +60,10 @@ const RAW_SHELL = [
   /* 笔记层纯逻辑（转义 / 空判定 / 排序 / 高亮）：app.js 在首屏就要用，
      漏了它离线打开会直接白屏（SJNotes is not defined）。 */
   '/notes-core.js',
+  /* 接口契约：local.js 每次 api() 都要查它，离线时漏了会导致所有写操作报错。 */
+  '/api-contract.js',
+  /* 图片与 Markdown 渲染：app.js 首屏就要从工厂里取回这些函数。 */
+  '/app-media.js',
   '/attstore.js',
   '/mobilesync.js',
   '/export.js',

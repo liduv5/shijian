@@ -445,6 +445,11 @@
     const url = new URL(path, location.origin);
     const seg = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
     const q = url.searchParams;
+    /* 与桌面 server.js 同一份契约：未知字段直接拒绝，不再静默忽略。 */
+    if (window.SJContract) {
+      const bad = window.SJContract.unknownFields(method, url.pathname, body);
+      if (bad.length) throw new Error('未知字段：' + bad.join('、'));
+    }
 
     /* ---------- 全量状态 ---------- */
     if (method === 'GET' && seg[0] === 'state') {
@@ -586,7 +591,9 @@
           db.categories = db.categories.filter((c) => !ids.includes(c.id));
         }
         save();
-        return { ok: true };
+        /* 与桌面 server.js 同形：整枝删时告知进了多少篇，move 时为 0。
+           以前云端少这个字段，前端想提示「3 篇进了回收站」就只能显示 undefined。 */
+        return { ok: true, removedNotes: strategy === 'delete' ? affected.length : 0 };
       }
     }
 

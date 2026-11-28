@@ -31,6 +31,9 @@ const SHARED = [
   /* 笔记层纯逻辑（转义 / 空判定 / 排序 / 高亮）：2026-11-28 从两端 app.js
      收出来，之前这四类被复制成 122 个逐字相同的函数，改一处忘一处。 */
   'public/notes-core.js',
+  /* 两端接口契约：请求体字段白名单 + 差分测试的端点表。
+     server.js 与 local.js 都必须读同一份，否则「哪端认可哪些字段」会漂。 */
+  'public/api-contract.js',
 ];
 
 const write = process.argv.includes('--write');

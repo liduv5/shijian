@@ -15,7 +15,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-28-198';
+const BUILD = '2026-11-28-199';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -26,7 +26,9 @@ const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflic
   'cat-core.js',
   /* 2026-11-28：笔记层纯逻辑（转义 / 空判定 / 排序 / 高亮）收成两端一份。
      这四类以前在两端 app.js 里各写一遍，escapeHtml 少一处转义就是 XSS。 */
-  'notes-core.js'];
+  'notes-core.js',
+  /* 2026-11-28：两端接口契约（请求体字段白名单 + 差分端点表）。 */
+  'api-contract.js'];
 
 let pass = 0, fail = 0;
 function ok(name, cond) {
@@ -176,6 +178,9 @@ const iRun = vbsText.indexOf('WshShell.Run runLine');
 ok('启动.vbs 在 WshShell.Run 前清空 Err（避免空错误描述误报）', iClear >= 0 && iRun >= 0 && iClear < iRun);
 
 const appSrc = fs.readFileSync(path.join(CLOUD, 'app.js'), 'utf8');
+/* 图片与 Markdown 渲染按功能拆到了 app-media.js；跨文件断言用合并源。 */
+const mediaSrc = fs.readFileSync(path.join(CLOUD, 'app-media.js'), 'utf8');
+const uiSrc = appSrc + '\n' + mediaSrc;
 const pwaSrc = fs.readFileSync(path.join(CLOUD, 'pwa.js'), 'utf8');
 const quickSrc = fs.readFileSync(path.join(CLOUD, 'quick.html'), 'utf8');
 ok('随手记/拾笺无自动弹回标记（防双 PWA 串页）',
@@ -623,10 +628,10 @@ ok('桌面端第二行也只有分类名是热区（点日期不弹分类框）'
   /\.meta-cat:hover \{ color: var\(--accent\); background: var\(--accent-soft\); \}/.test(styleSrc));
 
 ok('写正文时图片保持图片：手机端进编辑先转富文本，不再露出 data URI 长串',
-  appSrc.indexOf('function toRichEditor()') >= 0 &&
+  uiSrc.indexOf('function toRichEditor()') >= 0 &&
   /function toRichEditor\(\)[\s\S]{0,420}noteHtml/.test(appSrc) &&
   /setNoteMode[\s\S]{0,2200}toRichEditor\(\);/.test(appSrc) &&
-  appSrc.indexOf('if (NARROW()) return;') >= 0 &&
+  uiSrc.indexOf('if (NARROW()) return;') >= 0 &&
   indexSrc.indexOf('id="sjImgBar"') >= 0 &&
   appSrc.indexOf('function selectImg(img)') >= 0 &&
   appSrc.indexOf('function moveImg(dir)') >= 0 &&
@@ -1265,32 +1270,32 @@ ok('侧栏分类树的展开箭头放大到 13px',
   /\.caret svg \{ width: 13px; height: 13px; \}/.test(styleSrc));
 
 console.log('\n图片裁剪（2026-11-23）');
-ok('图片宽度条有「裁剪」按钮', /data-w="crop"[^>]*>裁剪</.test(appSrc));
-ok('裁剪按钮接到 openImgCrop', /if \(v === 'crop'\) return openImgCrop\(\)/.test(appSrc));
+ok('图片宽度条有「裁剪」按钮', /data-w="crop"[^>]*>裁剪</.test(uiSrc));
+ok('裁剪按钮接到 openImgCrop', /if \(v === 'crop'\) return openImgCrop\(\)/.test(uiSrc));
 ok('裁剪层支持自由 + 原图 + 1:1 / 4:3 / 16:9 比例',
-  /key: 'free'/.test(appSrc) && /key: 'origin'/.test(appSrc)
-  && /key: '1', label: '1:1'/.test(appSrc) && /key: '43', label: '4:3'/.test(appSrc)
-  && /key: '169', label: '16:9'/.test(appSrc));
+  /key: 'free'/.test(uiSrc) && /key: 'origin'/.test(uiSrc)
+  && /key: '1', label: '1:1'/.test(uiSrc) && /key: '43', label: '4:3'/.test(uiSrc)
+  && /key: '169', label: '16:9'/.test(uiSrc));
 ok('裁剪层有 8 个缩放把手与九宫格线',
-  /data-h="nw"/.test(appSrc) && /data-h="se"/.test(appSrc)
-  && /crop-third-v/.test(appSrc) && /crop-third-h/.test(appSrc));
+  /data-h="nw"/.test(uiSrc) && /data-h="se"/.test(uiSrc)
+  && /crop-third-v/.test(uiSrc) && /crop-third-h/.test(uiSrc));
 ok('裁剪结果用 canvas 重绘并按原图类型导出',
-  /ctx\.drawImage\(s\.img, sx, sy, sw, sh, 0, 0, cv\.width, cv\.height\)/.test(appSrc)
-  && /cv\.toDataURL\(keepPng \? 'image\/png' : 'image\/jpeg', 0\.92\)/.test(appSrc));
+  /ctx\.drawImage\(s\.img, sx, sy, sw, sh, 0, 0, cv\.width, cv\.height\)/.test(uiSrc)
+  && /cv\.toDataURL\(keepPng \? 'image\/png' : 'image\/jpeg', 0\.92\)/.test(uiSrc));
 ok('裁剪后替换 img.src 并按原模式落盘',
-  /target\.src = out/.test(appSrc) && /if \(s\.mode === 'rich'\) onRichInput\(\)/.test(appSrc));
+  /target\.src = out/.test(uiSrc) && /if \(s\.mode === 'rich'\) onRichInput\(\)/.test(uiSrc));
 ok('跨域图拉不到时明确提示，不破坏原图',
-  /这张图来自外部站点，无法裁剪/.test(appSrc) && /catch \(_\) \{ return ''; \}/.test(appSrc));
+  /这张图来自外部站点，无法裁剪/.test(uiSrc) && /catch \(_\) \{ return ''; \}/.test(uiSrc));
 ok('裁剪层内点击不冒泡，避免误关宽度条清空 imgMode',
-  /el\.addEventListener\('click', \(e\) => \{\s*e\.stopPropagation\(\);/.test(appSrc));
+  /el\.addEventListener\('click', \(e\) => \{\s*e\.stopPropagation\(\);/.test(uiSrc));
 ok('裁剪样式两端一致（z-index 高于宽度条、把手、比例按钮）',
   /\.crop-ui \{[\s\S]{0,80}z-index: 9100/.test(styleSrc)
   && /\.crop-h\[data-h="nw"\]/.test(styleSrc) && /\.crop-bar button\.on/.test(styleSrc));
 ok('裁剪逻辑与样式两端逐字节一致', (() => {
-  const localApp = fs.readFileSync(path.join(DESKTOP, 'public', 'app.js'), 'utf8');
+  const localApp = fs.readFileSync(path.join(DESKTOP, 'public', 'app-media.js'), 'utf8');
   const localCss = fs.readFileSync(path.join(DESKTOP, 'public', 'style.css'), 'utf8');
   const cut = (s, from, to) => { const a = s.indexOf(from), b = s.indexOf(to, a); return a >= 0 && b > a ? s.slice(a, b) : ''; };
-  const a1 = cut(appSrc, '  /* ---------------------------------------------------------- 图片裁剪', '  function bindImgResize(container, mode) {');
+  const a1 = cut(uiSrc, '  /* ---------------------------------------------------------- 图片裁剪', '  function bindImgResize(container, mode) {');
   const a2 = cut(localApp, '  /* ---------------------------------------------------------- 图片裁剪', '  function bindImgResize(container, mode) {');
   const c1 = cut(styleSrc, '/* ============================================================ 图片裁剪 */', '/* ============================================================ 标签管理 */');
   const c2 = cut(localCss, '/* ============================================================ 图片裁剪 */', '/* ============================================================ 标签管理 */');
@@ -1876,6 +1881,34 @@ ok('notes-core 在 app.js 之前加载（云端 / 桌面同一顺序）',
      < fs.readFileSync(path.join(DESKTOP, 'public', 'index.html'), 'utf8').indexOf('/app.js'));
 ok('离线预缓存里有 notes-core（漏了就是首屏白屏）',
   /'\/notes-core\.js'/.test(swSrc) && sw.ASSET_PATHS.has('/notes-core.js'));
+
+console.log('\n接口契约');
+const contract = require(path.join(CLOUD, 'api-contract.js'));
+ok('云端 local.js 用同一份契约拒绝未知字段',
+  /window\.SJContract\.unknownFields\(method, url\.pathname, body\)/.test(cloudLocal)
+  && /throw new Error\('未知字段：'/.test(cloudLocal));
+ok('契约在 app.js 与 local.js 之前加载，且离线预缓存里有它',
+  indexSrc.indexOf('api-contract.js') > 0
+  && indexSrc.indexOf('api-contract.js') < indexSrc.indexOf('<script src="/local.js')
+  && /'\/api-contract\.js'/.test(swSrc) && sw.ASSET_PATHS.has('/api-contract.js'));
+ok('两端契约逐字相同，字段规则与桌面端一致',
+  fs.readFileSync(path.join(CLOUD, 'api-contract.js'), 'utf8')
+    === fs.readFileSync(path.join(DESKTOP, 'public', 'api-contract.js'), 'utf8')
+  && contract.find('PATCH', '/api/categories/x').p === '/api/categories/:id'
+  && contract.unknownFields('POST', '/api/notes/x/attachments', { name: '', type: '', data: '', size: 0 }).length === 0);
+ok('shapeOf 只描述结构不描述值（差分测试靠它避开随机 id 与时间戳）',
+  JSON.stringify(contract.shapeOf({ id: 'a1', tags: ['x'], meta: { n: 1 } }))
+    === JSON.stringify({ id: 'string', meta: { n: 'number' }, tags: ['array', 'string'] }));
+ok('云端媒体块也已拆到 app-media.js，工厂注入后调用点不变',
+  /const media = window\.SJAppMedia\(\{ \$, \$\$, I, toast, onRichInput, exec \}\)/.test(appSrc)
+  && !/function bindImgResize\(/.test(appSrc) && /function bindImgResize\(/.test(mediaSrc)
+  && indexSrc.indexOf('app-media.js') > 0 && indexSrc.indexOf('app-media.js') < indexSrc.indexOf('/app.js')
+  && sw.ASSET_PATHS.has('/app-media.js'));
+const diffSrc = fs.readFileSync(path.join(CLOUD, '..', 'scripts', 'contract-diff.js'), 'utf8');
+ok('差分脚本覆盖云端存储层，且把桌面样例库作为共同起点',
+  /local\.api\(p, \{ method: m, body: b \}\)/.test(diffSrc)
+  && /loadCloud\(await desktop\('GET', '\/api\/state', null\)\)/.test(diffSrc)
+  && /IGNORE_KEYS/.test(diffSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

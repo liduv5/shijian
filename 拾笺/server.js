@@ -12,6 +12,9 @@ const { mdToRich, toRichHtml } = require('./lib/mdconv.js');
 /* 分类身份 / 去重判定与云端共用同一个内核（public/cat-core.js，逐字相同）。
    桌面端在服务端收口：所有增删改都过这一层，前端绕不过去。 */
 const SJCats = require('./public/cat-core.js');
+/* 两端接口契约：请求体里出现未约定的字段直接 400，不静默忽略。
+   「两端恰好一致」不算约束，只有会报错的规则才算。 */
+const SJContract = require('./public/api-contract.js');
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -410,9 +413,17 @@ function readBody(req) {
     req.on('end', () => {
       if (!chunks.length) return resolve({});
       try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+        const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        const bad = SJContract.unknownFields(req.method, String(req.url || '').split('?')[0], parsed);
+        if (bad.length) {
+          const e = new Error('未知字段：' + bad.join('、'));
+          e.status = 400;
+          reject(e);
+          return;
+        }
+        resolve(parsed);
       } catch (e) {
-        reject(new Error('JSON 解析失败'));
+        reject(e.status ? e : new Error('JSON 解析失败'));
       }
     });
     req.on('error', reject);
@@ -1304,7 +1315,7 @@ const server = http.createServer(async (req, res) => {
     return serveStatic(req, res, pathname);
   } catch (e) {
     console.error(e);
-    if (!res.headersSent) sendError(res, 500, e.message || '服务器内部错误');
+    if (!res.headersSent) sendError(res, e.status || 500, e.message || '服务器内部错误');
     else res.end();
   }
 });
