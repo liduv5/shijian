@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-28-195 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-28-196 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-28-195';
+const BUILD = '2026-11-28-196';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -783,6 +783,16 @@ ok('点 A 打开面板不闪屏：等键盘收完再弹、面板不透明上滑�
   /animation: sj-sheet-up \.18s/.test(styleSrc) &&
   /@keyframes sj-sheet-up \{[\s\S]{0,90}translateY\(18px\)[\s\S]{0,90}translateY\(0\)/.test(styleSrc) &&
   !/\.sj-style-sheet \{[\s\S]{0,900}animation: sj-editor-up/.test(styleSrc) &&
+  /* 分类编辑弹窗是同一个毛病的漏网之鱼（构建 196）：opacity 从 .4 起步，
+     底下那层分类管理页会透出来，看着就是「闪一下」。现在只滑不淡，
+     位移、时长与样式面板对齐；遮罩也改成跟着一起淡入，不再瞬间铺满。 */
+  /@keyframes sj-editor-up \{[\s\S]{0,80}translateY\(18px\)[\s\S]{0,80}translateY\(0\)/.test(styleSrc) &&
+  !/@keyframes sj-editor-up \{[\s\S]{0,130}opacity/.test(styleSrc) &&
+  /\.sj-editor-mask \{[\s\S]{0,170}animation: sj-editor-fade/.test(styleSrc) &&
+  /@keyframes sj-editor-fade \{ to \{ opacity: 1; \} \}/.test(styleSrc) &&
+  /* 手机上不能自动聚焦：软键盘一弹，贴底的弹窗被整个顶上去，和入场动画叠成「闪」 */
+  /window\.matchMedia\('\(pointer: fine\)'\)\.matches/.test(appSrc) &&
+  !/\{ ED_NAME\.focus\(\); ED_NAME\.select\(\); \} \}, 40\)/.test(appSrc) &&
   /* 先量高度再挂类：否则 .app 会先用 360px 默认值起步，下一帧再跳到实测值 */
   /function openSheetNow\(\) \{[\s\S]{0,700}classList\.remove\('hidden'\)[\s\S]{0,200}syncSheetHeight\(\)[\s\S]{0,200}classList\.add\('sj-style-open'\)/.test(appSrc) &&
   /* 光标行不是「动画一结束就一把滚过去」：等视口安静，再缓动滑到位（首次点 A 闪屏的根因） */

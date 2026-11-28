@@ -3271,7 +3271,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-28-195';
+  const APP_BUILD = '2026-11-28-196';
   /* 暴露给 index.html 的内联版本守卫：HTML 每次都是新的、脚本可能还是缓存里的旧版，
      内联脚本拿这个值一比就知道要不要弹「发现新版本」，不用等用户去点某个功能。 */
   window.__SJ_APP_BUILD__ = APP_BUILD;
@@ -6758,7 +6758,17 @@
       if (ED_CHIP) ED_CHIP.style.display = cat.parentId ? '' : 'none';
       EDITOR.classList.remove('hidden');
       if (typeof hideCtx === 'function') hideCtx();
-      setTimeout(() => { if (ED_NAME) { ED_NAME.focus(); ED_NAME.select(); } }, 40);
+      /* 手机上不自动聚焦。这个面板第一行是色板、下面才是名称，软键盘一弹就把
+         色板顶出视野；而且它是贴着底部的弹窗，键盘改变视口高度时会整个被顶上去，
+         和入场动画的位移叠在一起，看起来就是「闪一下、不平滑」。
+         改成用户点输入框再弹键盘，时机和位置都由用户掌握。
+         有实体指针的宽屏（窄窗口的桌面浏览器）仍自动聚焦，省一次点击。 */
+      if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
+        setTimeout(() => {
+          if (!ED_NAME || !edCat) return;
+          try { ED_NAME.focus({ preventScroll: true }); ED_NAME.select(); } catch (e) { ED_NAME.focus(); }
+        }, 200);
+      }
     }
     if (ED_SW) ED_SW.addEventListener('click', (e) => {
       const b = e.target.closest('[data-c]');

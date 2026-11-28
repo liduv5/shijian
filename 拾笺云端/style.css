@@ -3770,20 +3770,30 @@ html[data-theme="dark"] .pwd-tip button { color: #1c1a17; }
     display: block; position: fixed; z-index: 90; inset: 0;
   }
   .sj-cat-editor.hidden { display: none; }
+  /* 遮罩和面板同一条时间轴：只做 opacity，不做位移，两者一起「上来」。
+     以前遮罩是瞬间铺满、面板却从 opacity .4 淡入 —— 在 .34 的黑底上，
+     半透明的浅色面板会先透出底下那层列表，看着就是「闪了一下」。 */
   .sj-editor-mask {
     position: absolute; inset: 0; background: rgba(0, 0, 0, .34);
+    opacity: 0; animation: sj-editor-fade .18s var(--ease) forwards;
   }
+  @keyframes sj-editor-fade { to { opacity: 1; } }
   .sj-editor-sheet {
     position: absolute; left: 0; right: 0; bottom: 0;
     padding: 18px 20px calc(20px + env(safe-area-inset-bottom, 0px));
     background: var(--surface);
     border-radius: 20px 20px 0 0;
     box-shadow: 0 -12px 40px -12px rgba(0, 0, 0, .22);
-    animation: sj-editor-up .2s var(--ease);
+    /* 只走位移、不碰 opacity：淡入会让面板在中途半透明，露出底下的分类列表。
+       这是样式面板（sj-sheet-up）早就踩过的同一个坑，这里漏了 —— 参数直接对齐：
+       18px / .18s、只滑不淡，两处摸起来是同一个手感。
+       will-change 让它单独合成一层，键盘顶起视口时不跟页面一起重绘。 */
+    animation: sj-editor-up .18s var(--ease) both;
+    will-change: transform;
   }
   @keyframes sj-editor-up {
-    from { transform: translateY(24px); opacity: .4; }
-    to { transform: translateY(0); opacity: 1; }
+    from { transform: translateY(18px); }
+    to { transform: translateY(0); }
   }
   .sj-editor-head {
     display: flex; align-items: center; justify-content: space-between;
