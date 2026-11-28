@@ -2848,7 +2848,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-28-203';
+  const APP_BUILD = '2026-11-28-204';
   /* 暴露给 index.html 的内联版本守卫：HTML 每次都是新的、脚本可能还是缓存里的旧版，
      内联脚本拿这个值一比就知道要不要弹「发现新版本」，不用等用户去点某个功能。 */
   window.__SJ_APP_BUILD__ = APP_BUILD;
@@ -6825,16 +6825,28 @@
     function cmPaint() {
       const pane = $('#richPane');
       if (!pane) return;
-      /* 窄屏编辑态就一直画（不再只在面板打开时）：这样收起面板那一刻光标是连续的，
-         不会「先藏掉再等原生重绘」中间空一拍。宽屏仍用系统原生光标。 */
+      /* 窄屏编辑态就一直画自绘光标，宽屏仍用系统原生光标。
+         2026-11-28：用户反馈「进编辑态光标闪一下就不见」。真机上键盘弹起时
+         会把焦点短暂抢走、正文被压缩到只剩一条——原来这两个时刻都会 cmHide()，
+         而原生光标又被 caret-color:transparent 藏掉，于是藏了就再也不回来。
+         这里改成：只要是编辑态，绝不因为「暂时失焦 / 光标行滚出可视区」而隐藏，
+         位置按可视区 clamp，光标始终看得见。 */
       const editing = document.body.classList.contains('sj-note-edit');
-      const focused = document.activeElement === pane;
-      /* 面板「已经弹出来」或「正在等键盘收完」都算在调格式：光标不能断。
-         等键盘的那 200~600ms 里正文刚 blur 过，系统不画光标，只能靠自绘这根顶上，
-         否则键盘往下走、光标也没了，看着同样像闪一下（用户 2026-11-21 反馈）。 */
-      if (!NARROW() || !editing || !(focused || styleSheetOpen() || styleSheetPending())) { cmHide(); return; }
-      const r = cmLiveRange();
-      if (!r || !r.collapsed) { cmHide(); return; }
+      if (!NARROW() || !editing) { cmHide(); return; }
+      let r = cmLiveRange();
+      if (!r || !r.collapsed) {
+        /* 选区还没进正文 / 被扩选时，退回上次位置；连上次都没有就在正文开头
+           造一个折叠选区——宁可画在开头，也不要出现「一根都没有」。 */
+        r = (cmRange && pane.contains(cmRange.startContainer)) ? cmRange
+          : (savedRange && pane.contains(savedRange.startContainer)) ? savedRange : null;
+        if (!r) {
+          try {
+            r = document.createRange();
+            r.setStart(pane.firstChild || pane, 0);
+            r.collapse(true);
+          } catch (_) { cmHide(); return; }
+        }
+      }
       let box = null;
       try { const rs = r.getClientRects(); if (rs && rs.length) box = rs[rs.length - 1]; } catch (_) {}
       if (!box) {
@@ -6848,20 +6860,19 @@
       const el = cmEnsure();
       const lh = parseFloat(window.getComputedStyle(pane).lineHeight) || 22;
       const h = Math.round(box.height || lh);
-      const y = Math.round(box.top);
-      /* 滚出正文可视区就收起来（原生光标这时也不在可视区，不会两根打架）。
-         面板开着时只看上边界：正文底边被抬起的过程中，光标行会短暂落到
-         「看不见的底边」以下，那时它其实躲在面板后面（面板 z-index 更高），
-         照样画着——不然这一百多毫秒里两根光标都没有，看着就是闪一下。 */
-      const sheetUp = styleSheetOpen();
-      if (y + h < pr.top || (!sheetUp && y > pr.bottom)) { cmHide(); return; }
+      /* 光标行滚出正文可视区：不再隐藏，夹到上下边界继续画。
+         键盘弹起把正文压到只剩一条时尤其关键——那时藏掉就再也回不来。 */
+      const y = Math.round(Math.max(pr.top + 2, Math.min(box.top, pr.bottom - h - 2)));
       el.style.left = Math.round(box.left) + 'px';
       el.style.top = y + 'px';
       el.style.height = h + 'px';
       const col = cmColorAt(r);
       if (col) el.style.background = col;
+      /* 常亮：不再用闪烁定时器切 .blink-off。用户反复遇到「闪着闪着就没了」，
+         最稳的做法是根本没有「闪」这个动作；自绘光标像一根静止的竖线，
+         只要还在编辑就一直在。 */
       el.classList.remove('hidden');
-      /* 确实画出来了才把原生光标藏掉，避免出现「一根光标都没有」 */
+      el.classList.remove('blink-off');
       document.body.classList.add('sj-caret-drawn');
     }
     /* 选区变了、滚动了、调完格式都走这里：位置重算一遍 */
@@ -6897,15 +6908,6 @@
       /* 兜底：个别内核滚动时不派发 scroll（或被节流得很厉害），
          每 250ms 对一次位置，代价只有一次 getClientRects。 */
       setInterval(cmPaint, 250);
-      /* 闪烁交给 JS 驱动：原来用 CSS animation 把 opacity 在整整一半时间设成 0，
-         而原生光标又被 body.sj-caret-drawn 设成 transparent。国产内核在
-         「有焦点但键盘没弹 / 后台 / 省电」时很容易把 CSS 动画停在透明那帧，
-         于是两根光标都没有，看着就像正文点不动（用户 2026-11-28 反馈）。
-         JS 定时器即使被节流，最暗也只到 .blink-off 的 .38，始终看得见。 */
-      setInterval(() => {
-        const m = cmEnsure();
-        if (!m.classList.contains('hidden')) m.classList.toggle('blink-off');
-      }, 530);
     })();
     /* 面板是 fixed 定位，量出真实高度交给 CSS，把编辑区整体抬到它上方 */
     function syncSheetHeight() {

@@ -15,7 +15,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-28-203';
+const BUILD = '2026-11-28-204';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -758,9 +758,10 @@ ok('光标常驻 + 面板不误关：收键盘后焦点仍在正文，点正文�
   /pane\.addEventListener\('scroll'[\s\S]{0,200}cmPaint\(\)/.test(appSrc) &&
   /* 兜底对位改成全局定时（cmPaint 自己判断该不该画） */
   /setInterval\(cmPaint, 250\)/.test(appSrc) &&
-  /* 窄屏编辑态就一直画，不是只在面板打开时：收起那一刻光标要连续；
-     「正在等键盘收完」也算在调格式，否则等待那几百毫秒里一根光标都没有 */
-  /!NARROW\(\) \|\| !editing \|\| !\(focused \|\| styleSheetOpen\(\) \|\| styleSheetPending\(\)\)/.test(appSrc) &&
+  /* 窄屏编辑态一直画，且不再因失焦 / 面板状态而隐藏：
+     键盘弹起会短暂抢焦点、把正文压短，那时藏掉就再也回不来 */
+  /if \(!NARROW\(\) \|\| !editing\) \{ cmHide\(\); return; \}/.test(appSrc) &&
+  !/!\(focused \|\| styleSheetOpen\(\) \|\| styleSheetPending\(\)\)/.test(appSrc) &&
   /document\.addEventListener\('selectionchange', cmPaint\)/.test(appSrc));
 
 ok('收起样式面板不闪屏：高度回落有过渡、键盘不抢着弹、光标不断',
@@ -796,14 +797,19 @@ ok('自绘光标跟着字色变：改成紫字，光标就是紫的',
   /const col = cmColorAt\(r\);[\s\S]{0,80}el\.style\.background = col/.test(appSrc) &&
   /\.sj-caret-mark \{[\s\S]{0,220}background: var\(--text\)/.test(styleSrc));
 
-ok('自绘光标不再闪到全透明：原生被藏时不能出现「一根光标都没有」',
-  /* 不再用 CSS animation 把 opacity 打到 0——内核卡在透明帧时原生又被藏 */
+ok('自绘光标常亮不闪、编辑态下绝不因失焦/滚出可视区而消失',
+  /* 完全没有闪烁：CSS 动画、JS 定时器、.blink-off 都不许再出现 */
   !/animation:\s*sj-caret-blink/.test(styleSrc) &&
   !/@keyframes\s+sj-caret-blink/.test(styleSrc) &&
-  /* 最暗只到 .38，且由 JS 定时器切 .blink-off（卡住也看得见） */
-  /\.sj-caret-mark\.blink-off \{ opacity: \.38; \}/.test(styleSrc) &&
-  /setInterval\(\(\) => \{[\s\S]{0,180}classList\.toggle\('blink-off'\)[\s\S]{0,40}\}, 530\)/.test(appSrc) &&
-  /!m\.classList\.contains\('hidden'\)/.test(appSrc));
+  !/blink-off/.test(styleSrc) &&
+  !/toggle\('blink-off'\)/.test(appSrc) &&
+  /* 编辑态只排除「非窄屏 / 非编辑」；不再因 focus / styleSheet 状态而隐藏 */
+  /if \(!NARROW\(\) \|\| !editing\) \{ cmHide\(\); return; \}/.test(appSrc) &&
+  /* 选区不在正文时造一个折叠选区兜底，不留「一根都没有」的空窗 */
+  /r = document\.createRange\(\);[\s\S]{0,120}r\.collapse\(true\)/.test(appSrc) &&
+  /* 滚出可视区改成 clamp 到边界，不再 cmHide */
+  /Math\.max\(pr\.top \+ 2, Math\.min\(box\.top, pr\.bottom - h - 2\)\)/.test(appSrc) &&
+  !/y \+ h < pr\.top \|\| \(!sheetUp && y > pr\.bottom\)/.test(appSrc));
 
 ok('点 A 打开面板不闪屏：等键盘收完再弹、面板不透明上滑、高度只量一次、光标行滑过去而不是跳过去',
   /* 面板要占 378px 底边：可视区只剩「键盘那么点高」时先别弹，
@@ -815,8 +821,8 @@ ok('点 A 打开面板不闪屏：等键盘收完再弹、面板不透明上滑�
   /function whenViewportQuiet\([\s\S]{0,900}> 640/.test(appSrc) &&
   /* 等着的时候再点一下 A 算取消；收起面板也把等待掐掉 */
   /if \(styleSheetPending\(\)\) \{[\s\S]{0,200}stopViewportQuiet\(\)/.test(appSrc) &&
-  /* 等待期间正文已经 blur，系统不画光标；自绘这根要顶上，不能跟着消失 */
-  /function cmPaint\(\)[\s\S]{0,700}focused \|\| styleSheetOpen\(\) \|\| styleSheetPending\(\)/.test(appSrc) &&
+  /* 等待期间正文已经 blur，系统不画光标；自绘这根无条件顶上（编辑态不隐藏） */
+  /if \(!NARROW\(\) \|\| !editing\) \{ cmHide\(\); return; \}/.test(appSrc) &&
   /function closeStyleSheet\(\) \{[\s\S]{0,200}stopViewportQuiet\(\)/.test(appSrc) &&
   /* 面板出场只滑不淡：opacity 从 .4 起步时，下面上抬的正文会透出来 */
   /animation: sj-sheet-up \.18s/.test(styleSrc) &&
