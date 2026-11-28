@@ -3586,18 +3586,31 @@ html[data-theme="dark"] .pwd-tip button { color: #1c1a17; }
   .sj-cat-row.on { color: var(--accent); background: transparent; }
   .sj-cat-row.on .ico { color: var(--accent); }
   .sj-cat-row.on .sj-cat-n { color: var(--accent); }
+  /* 展开箭头：15px 线性小箭头，比原来的文字「⌄」轻，和 15px 的数字同一视觉重量 */
   .sj-cat-toggle {
-    width: 30px; flex: none; border: 0; background: transparent;
-    color: var(--text-3); font-size: 20px; line-height: 1;
-    transition: transform .15s var(--ease);
-    touch-action: manipulation;
+    width: 26px; height: 26px; flex: none; border: 0; background: transparent;
+    display: grid; place-items: center;
+    color: var(--text-3); touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
-  .sj-cat-toggle.closed { transform: rotate(-90deg); }
+  .sj-cat-toggle svg {
+    width: 15px; height: 15px; display: block;
+    fill: none; stroke: currentColor; stroke-width: 2;
+    stroke-linecap: round; stroke-linejoin: round;
+    opacity: .8;
+    transition: transform .15s var(--ease);
+  }
+  .sj-cat-toggle.closed svg { transform: rotate(-90deg); }
   .sj-cat-sep {
     margin: 4px 8px 12px; padding: 0;
     font-family: var(--mgr-font, var(--font-ui));
     font-size: 14px; color: var(--text-3);
     display: flex; align-items: center; justify-content: space-between;
+  }
+  /* 「1 + 3」的图例：小一号、更淡，只解释数字，不抢文件夹名 */
+  .sj-cat-legend {
+    margin-left: 6px;
+    font-size: 12px; color: var(--text-3); opacity: .75;
   }
   .sj-cat-sep button {
     border: 0; background: transparent; color: var(--accent);
