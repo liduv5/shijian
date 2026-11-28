@@ -620,6 +620,10 @@ ok('空叶子仍然直接删，不再多问一遍',
 ok('树上计数显示「本层 + 子分类」，并带明细 title',
   /const countText = subCnt > 0 \? `\$\{ownCnt\} \+ \$\{subCnt\}` : String\(total\)/.test(js)
   && /title="\$\{countTip\}"/.test(js));
+/* 用户 2026-11-28 定：加号前后都是「篇数」，不是「子分类个数」，顺序固定本层在前。 */
+ok('帮助里写死口径：加号前后都是篇数，不是子分类个数',
+  js.indexOf('加号前后都是笔记篇数，不是子分类个数') >= 0 &&
+  js.indexOf('本层篇数 + 子分类篇数') >= 0);
 ok('删除范围按整棵子树算，提示里的数字和实际动作同一份',
   /state\.notes\.filter\(\(n\) => ids\.has\(n\.categoryId\)\)/.test(js)
   && /本层 \$\{own\} 篇、子分类 \$\{subNotes\} 篇/.test(js));

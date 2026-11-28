@@ -3271,7 +3271,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-28-194';
+  const APP_BUILD = '2026-11-28-195';
   /* 暴露给 index.html 的内联版本守卫：HTML 每次都是新的、脚本可能还是缓存里的旧版，
      内联脚本拿这个值一比就知道要不要弹「发现新版本」，不用等用户去点某个功能。 */
   window.__SJ_APP_BUILD__ = APP_BUILD;
@@ -4499,7 +4499,7 @@
       <ul class="help-list">
         <li><b>一篇笔记只属于一个分类。</b>选中父分类时，列表会把子分类的笔记一起列出来，那是汇总视图，不是复制了一份。</li>
         <li><b>行尾的灰字是真实位置。</b>例如「学习素材 / 前端开发 / 页面布局」，说明这篇挂在这一层，而不是当前选中的那层。</li>
-        <li><b>树上的数字是「本层 + 子分类」。</b>例如 1 + 3：本层 1 篇、子分类 3 篇。</li>
+        <li><b>树上的数字是「本层篇数 + 子分类篇数」。</b>加号前后都是笔记篇数，不是子分类个数：1 + 3 表示这一层直接放了 1 篇，它下面的子分类里还有 3 篇。</li>
         <li><b>删除有内容的分类时，由你决定内容去哪：</b>整枝移到回收站（30 天内可恢复），或只拆这一层、把笔记并入上一级。</li>
         <li><b>想让同一份内容出现在多个地方，用标签。</b>复制成两篇就会变成两份互相独立的笔记。</li>
       </ul>
@@ -6584,8 +6584,10 @@
         + catRow('starred', '我的收藏', ICON_STAR, star, false)
         + `<button type="button" class="sj-cat-row" data-act="trash">${ICON_TRASH}<span class="sj-cat-name">最近删除</span><span class="sj-cat-n"></span></button>`
         + '</div>'
-        /* 「1 + 3」这写法本身不自明，标题里补一句图例，免得再被问「为什么读书笔记也是 1 + 3」 */
-        + '<div class="sj-cat-sep"><span>文件夹<span class="sj-cat-legend">（本层 + 子分类）</span></span><button type="button" data-act="manage">管理</button></div>';
+        /* 口径固定下来（用户 2026-11-28 定）：加号前 = 本层直接放的笔记篇数，
+           加号后 = 子分类里的笔记篇数，两个都是「篇」，不是子分类个数。
+           图例直接把这句写在标题旁，标题里补一句图例，免得再被问「为什么读书笔记也是 1 + 3」 */
+        + '<div class="sj-cat-sep"><span>文件夹<span class="sj-cat-legend">（本层篇数 + 子分类篇数）</span></span><button type="button" data-act="manage">管理</button></div>';
       const roots = state.categories.filter((c) => !c.parentId).sort(byOrder);
       if (!roots.length) html += '<div class="sj-cat-card sj-cat-empty">还没有文件夹</div>';
       /* 每个顶层文件夹单独一张卡：根行 + 缩进子分类 + 卡内「新建」，与截图一致。 */

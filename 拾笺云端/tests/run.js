@@ -2,7 +2,7 @@
    运行：node 拾笺云端/tests/run.js
    覆盖：① SW 版本/访问码白名单（防 v1.7.2 回归）；② 中文全文检索；
          ③ 同步冲突判定；④ 发布前静态校验（版本/旧码/语法/共享文件/VBS 编码）。
-   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-28-194 基线重建。
+   来源：历史提交 a1882fe 的 tests/run.js，按当前 2026-11-28-195 基线重建。
    注意：版本号与访问码换版时必须同步改 BUILD / SC。 */
 'use strict';
 
@@ -14,7 +14,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-28-194';
+const BUILD = '2026-11-28-195';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -316,10 +316,15 @@ ok('展开箭头改成线性小图标，不再是 20px 的文字「⌄」',
   /\.sj-cat-toggle\.closed svg \{ transform: rotate\(-90deg\); \}/.test(styleSrc));
 /* 「1 + 3」本身不自明：读书笔记本层还有一篇「第二条随手记」，用户会以为算错。
    分隔行里补一行淡色图例，把口径写在界面上。 */
-ok('文件夹标题旁给出「本层 + 子分类」图例',
+ok('文件夹标题旁给出「本层篇数 + 子分类篇数」图例，顺序固定',
   appSrc.indexOf('sj-cat-legend') >= 0 &&
-  appSrc.indexOf('本层 + 子分类') >= 0 &&
+  appSrc.indexOf('（本层篇数 + 子分类篇数）') >= 0 &&
   /\.sj-cat-legend \{[^}]*font-size: 12px/.test(styleSrc));
+/* 用户 2026-11-28 定：加号前后都是「篇数」，不是「子分类个数」，顺序固定为本层在前。
+   这层意思必须写在界面上，否则 1 + 2 / 1 + 3 会被读成「1 个文件夹 + N 篇」。 */
+ok('帮助里写死口径：加号前后都是篇数，不是子分类个数',
+  appSrc.indexOf('加号前后都是笔记篇数，不是子分类个数') >= 0 &&
+  appSrc.indexOf('本层篇数 + 子分类篇数') >= 0);
 ok('分类管理页 DOM 节点存在：#sjManageMenu', indexSrc.indexOf('id="sjManageMenu"') >= 0);
 ok('点「管理」先弹「新建文件夹 / 编辑」两步菜单（不直接进编辑页）',
   appSrc.indexOf('showManageMenu(r.right - 180, r.bottom + 6)') >= 0 &&
