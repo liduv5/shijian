@@ -2848,7 +2848,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-28-202';
+  const APP_BUILD = '2026-11-28-203';
   /* 暴露给 index.html 的内联版本守卫：HTML 每次都是新的、脚本可能还是缓存里的旧版，
      内联脚本拿这个值一比就知道要不要弹「发现新版本」，不用等用户去点某个功能。 */
   window.__SJ_APP_BUILD__ = APP_BUILD;
@@ -6897,6 +6897,15 @@
       /* 兜底：个别内核滚动时不派发 scroll（或被节流得很厉害），
          每 250ms 对一次位置，代价只有一次 getClientRects。 */
       setInterval(cmPaint, 250);
+      /* 闪烁交给 JS 驱动：原来用 CSS animation 把 opacity 在整整一半时间设成 0，
+         而原生光标又被 body.sj-caret-drawn 设成 transparent。国产内核在
+         「有焦点但键盘没弹 / 后台 / 省电」时很容易把 CSS 动画停在透明那帧，
+         于是两根光标都没有，看着就像正文点不动（用户 2026-11-28 反馈）。
+         JS 定时器即使被节流，最暗也只到 .blink-off 的 .38，始终看得见。 */
+      setInterval(() => {
+        const m = cmEnsure();
+        if (!m.classList.contains('hidden')) m.classList.toggle('blink-off');
+      }, 530);
     })();
     /* 面板是 fixed 定位，量出真实高度交给 CSS，把编辑区整体抬到它上方 */
     function syncSheetHeight() {

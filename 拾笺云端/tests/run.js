@@ -15,7 +15,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-28-202';
+const BUILD = '2026-11-28-203';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -795,6 +795,15 @@ ok('自绘光标跟着字色变：改成紫字，光标就是紫的',
   /function cmColorAt\(r\) \{[\s\S]{0,420}getComputedStyle\(n\)\.color/.test(appSrc) &&
   /const col = cmColorAt\(r\);[\s\S]{0,80}el\.style\.background = col/.test(appSrc) &&
   /\.sj-caret-mark \{[\s\S]{0,220}background: var\(--text\)/.test(styleSrc));
+
+ok('自绘光标不再闪到全透明：原生被藏时不能出现「一根光标都没有」',
+  /* 不再用 CSS animation 把 opacity 打到 0——内核卡在透明帧时原生又被藏 */
+  !/animation:\s*sj-caret-blink/.test(styleSrc) &&
+  !/@keyframes\s+sj-caret-blink/.test(styleSrc) &&
+  /* 最暗只到 .38，且由 JS 定时器切 .blink-off（卡住也看得见） */
+  /\.sj-caret-mark\.blink-off \{ opacity: \.38; \}/.test(styleSrc) &&
+  /setInterval\(\(\) => \{[\s\S]{0,180}classList\.toggle\('blink-off'\)[\s\S]{0,40}\}, 530\)/.test(appSrc) &&
+  /!m\.classList\.contains\('hidden'\)/.test(appSrc));
 
 ok('点 A 打开面板不闪屏：等键盘收完再弹、面板不透明上滑、高度只量一次、光标行滑过去而不是跳过去',
   /* 面板要占 378px 底边：可视区只剩「键盘那么点高」时先别弹，

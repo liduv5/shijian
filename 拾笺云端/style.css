@@ -4340,13 +4340,14 @@ html[data-theme="dark"] .pwd-tip button { color: #1c1a17; }
     width: 2px; border-radius: 1px;
     background: var(--text);
     pointer-events: none;
-    animation: sj-caret-blink 1.06s steps(1) infinite;
+    /* 闪烁不交给 CSS animation：它会把 opacity 在整整一半时间设成 0，
+       而原生光标被 body.sj-caret-drawn 设成 transparent。国产内核在
+       「有焦点但键盘没弹 / 后台 / 省电」时很容易把动画停在透明那帧，
+       结果一根光标都没有，看着就像正文点不动（用户 2026-11-28 反馈）。
+       改由 app.js 的定时器切 .blink-off，且最暗也留 .38，卡住也看得见。 */
   }
+  .sj-caret-mark.blink-off { opacity: .38; }
   .sj-caret-mark.hidden { display: none; }
-  @keyframes sj-caret-blink {
-    0%, 49% { opacity: 1; }
-    50%, 100% { opacity: 0; }
-  }
   /* 只有自绘光标真的画出来了才藏原生光标：万一本脚本没画出（选区不在这里、
      失焦等），原生光标还在，用户不会「一根都没有」 */
   body.sj-caret-drawn .rich-pane { caret-color: transparent; }
