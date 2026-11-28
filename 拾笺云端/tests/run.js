@@ -15,7 +15,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-28-199';
+const BUILD = '2026-11-28-200';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -1909,6 +1909,32 @@ ok('差分脚本覆盖云端存储层，且把桌面样例库作为共同起点'
   /local\.api\(p, \{ method: m, body: b \}\)/.test(diffSrc)
   && /loadCloud\(await desktop\('GET', '\/api\/state', null\)\)/.test(diffSrc)
   && /IGNORE_KEYS/.test(diffSrc));
+
+/* 2026-11-28：最近删除直达回收站；「翻旧笔记 / 整库 Markdown 包」按用户确认移除。 */
+const plusSrc = fs.readFileSync(path.join(CLOUD, 'sjplus.js'), 'utf8');
+ok('手机「最近删除」直达回收站，不再借工具按钮中转',
+  /if \(a === 'trash' && window\.SJPlusTrash\) window\.SJPlusTrash\(\)/.test(appSrc)
+  && !/const b = \$('#sjPlusToolsBtn'); if \(b\) b\.click\(\)/.test(appSrc));
+ok('云端「导入/导出」子菜单不再有「导出 Markdown」中转项',
+  !/\{ label: '导出 Markdown', icon: I\.download, onClick: \(\) => \{ const el = \$('#sjPlusToolsBtn')/.test(appSrc));
+ok('工具按钮自身就是回收站，不再弹「更多工具」三项菜单',
+  /btn\.onclick = openTrash;/.test(plusSrc)
+  && !/function openMenu\(/.test(plusSrc)
+  && !/更多工具/.test(plusSrc.replace(/\/\*[\s\S]*?\*\//g, '')));
+ok('翻旧笔记与整库 Markdown 导出的代码与样式已彻底移除',
+  !/function openReview\(|function exportMd\(|function zipStore\(|function crc32\(|function noteMd\(|function htmlToMd\(/.test(plusSrc)
+  && !/sjplus-menu|sjplus-review|sjplus-rew/.test(fs.readFileSync(path.join(CLOUD, 'sjplus.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, ''))
+  && !/翻一条旧笔记|导出 Markdown 包/.test(plusSrc.replace(/\/\*[\s\S]*?\*\//g, '')));
+ok('单篇 Markdown 导出仍在（NoteExport），未受整库包移除影响',
+  /NoteExport\.toMarkdown/.test(appSrc));
+
+/* 2026-11-28 实跑抓到的拆分遗留：imgSizer 留在 app-media.js 作用域，
+   app.js 的点击监听却直接引用它 —— 每次点击都抛 ReferenceError。 */
+ok('媒体模块的模块内状态不泄漏到 app.js：点空白收起尺寸条走导出函数',
+  /media\.hideImgSizerOnOutside\(e\)/.test(appSrc)
+  && !/if \(!imgSizer \|\| imgSizer\.classList/.test(appSrc)
+  && /function hideImgSizerOnOutside\(e\)/.test(mediaSrc)
+  && /hideImgSizerOnOutside,/.test(mediaSrc));
 
 console.log('\n结果：' + pass + ' 通过，' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

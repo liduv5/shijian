@@ -346,7 +346,10 @@ ok('服务端转换层拦住了危险协议',
 ok('客户端保留 Markdown 出口：源码查看', /function showMarkdownSource\(/.test(js)
   && /td\.turndown/.test(js));
 ok('客户端保留 Markdown 出口：导出 .md', /NoteExport\.toMarkdown/.test(js));
-ok('保险箱导出仍是 Markdown', /function noteMd\(/.test(sjplusJs) && /function htmlToMd\(/.test(sjplusJs));
+ok('单篇 Markdown 导出仍在（NoteExport），sjplus 只留回收站入口',
+  /NoteExport\.toMarkdown/.test(js)
+  && /SJPlusTrash = openTrash/.test(sjplusJs)
+  && !/function exportMd\(/.test(sjplusJs) && !/function openReview\(/.test(sjplusJs));
 ok('粘贴 Markdown 会自动识别成排版', /function looksLikeMarkdown\(/.test(js)
   && /renderMarkdown\(text\)/.test(js));
 ok('云端旧 md 行拉回本地时转成富文本', /SJRenderMarkdown/.test(uiJs) && /SJRenderMarkdown/.test(syncJs));
@@ -1066,6 +1069,31 @@ ok('差分脚本真起桌面服务 + vm 跑云端 local.js，且每一步都要�
   && /vm\.runInContext\(fs\.readFileSync\(path\.join\(CLOUD, 'local\.js'\)/.test(diffSrc)
   && /if \(!CONTRACT\.find\(method, p\)\)/.test(diffSrc)
   && /makeShape\(/.test(diffSrc));
+
+/* 2026-11-28：最近删除直达回收站；「翻旧笔记 / 整库 Markdown 包」按用户确认移除。 */
+ok('手机「最近删除」直达回收站，不再借工具按钮中转',
+  /if \(a === 'trash' && window\.SJPlusTrash\) window\.SJPlusTrash\(\)/
+    .test(fs.readFileSync(path.join(ROOT, '..', '..', '拾笺云端', 'app.js'), 'utf8'))
+  && !/const b = \$('#sjPlusToolsBtn'); if \(b\) b\.click\(\)/
+    .test(fs.readFileSync(path.join(ROOT, '..', '..', '拾笺云端', 'app.js'), 'utf8')));
+ok('工具按钮自身就是回收站，不再弹「更多工具」三项菜单',
+  /btn\.onclick = openTrash;/.test(sjplusJs)
+  && !/function openMenu\(/.test(sjplusJs)
+  && !/更多工具/.test(sjplusJs.replace(/2026-11-28[\s\S]*?\*\//, '').replace(/\/\*[\s\S]*?\*\//g, '')));
+ok('翻旧笔记与整库 Markdown 导出的代码与样式已彻底移除',
+  !/function openReview\(|function exportMd\(|function zipStore\(|function crc32\(|function noteMd\(|function htmlToMd\(/.test(sjplusJs)
+  && !/sjplus-menu|sjplus-review|sjplus-rew/.test(read('sjplus.css').replace(/\/\*[\s\S]*?\*\//g, ''))
+  && !/翻一条旧笔记|导出 Markdown 包/.test(sjplusJs.replace(/\/\*[\s\S]*?\*\//g, '')));
+ok('两端 sjplus 逐字相同（真源在 public，手工同步）',
+  sjplusJs === fs.readFileSync(path.join(ROOT, '..', '..', '拾笺云端', 'sjplus.js'), 'utf8'));
+
+/* 2026-11-28 实跑抓到的拆分遗留：imgSizer 留在 app-media.js 作用域，
+   app.js 的点击监听却直接引用它 —— 每次点击都抛 ReferenceError。 */
+ok('媒体模块的模块内状态不泄漏到 app.js：点空白收起尺寸条走导出函数',
+  /media\.hideImgSizerOnOutside\(e\)/.test(js)
+  && !/if \(!imgSizer \|\| imgSizer\.classList/.test(js)
+  && /function hideImgSizerOnOutside\(e\)/.test(mediaJs)
+  && /hideImgSizerOnOutside,/.test(mediaJs));
 
 console.log(`\n结果：${pass} 通过，${fail} 失败`);
 process.exit(fail ? 1 : 0);

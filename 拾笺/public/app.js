@@ -249,10 +249,7 @@
   const { renderMarkdown, decorate, ensureImgSizer, readImgPct, liveImgWidth, applyImgWidth, openImgSizer, closeImgSizer, cropEnsureUI, cropFetchDataUrl, cropClose, cropPaint, cropClamp, cropRatioOf, cropApplyRatio, cropReset, cropDrag, cropDone, openImgCrop, bindImgResize } = media;
 
   document.addEventListener('click', (e) => {
-    if (!imgSizer || imgSizer.classList.contains('hidden')) return;
-    if (imgSizer.contains(e.target)) return;
-    if (e.target.closest && e.target.closest('img')) return;
-    closeImgSizer();
+    media.hideImgSizerOnOutside(e);
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeImgSizer();

@@ -240,10 +240,7 @@
   const { renderMarkdown, decorate, ensureImgSizer, readImgPct, liveImgWidth, applyImgWidth, openImgSizer, closeImgSizer, cropEnsureUI, cropFetchDataUrl, cropClose, cropPaint, cropClamp, cropRatioOf, cropApplyRatio, cropReset, cropDrag, cropDone, openImgCrop, bindImgResize } = media;
 
   document.addEventListener('click', (e) => {
-    if (!imgSizer || imgSizer.classList.contains('hidden')) return;
-    if (imgSizer.contains(e.target)) return;
-    if (e.target.closest && e.target.closest('img')) return;
-    closeImgSizer();
+    media.hideImgSizerOnOutside(e);
   });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeImgSizer();
@@ -2849,7 +2846,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-28-199';
+  const APP_BUILD = '2026-11-28-200';
   /* 暴露给 index.html 的内联版本守卫：HTML 每次都是新的、脚本可能还是缓存里的旧版，
      内联脚本拿这个值一比就知道要不要弹「发现新版本」，不用等用户去点某个功能。 */
   window.__SJ_APP_BUILD__ = APP_BUILD;
@@ -6504,9 +6501,10 @@
           return;
         }
         hideCatSheet();
-        if (a === 'trash') {
-          const b = $('#sjPlusToolsBtn'); if (b) b.click();
-        }
+        /* 最近删除 = 回收站，直达。以前这里点的是「更多工具」按钮，
+           于是弹出回收站 / 翻旧笔记 / 导出 Markdown 三选一 —— 文不对题，
+           后两项用户也确认不需要。 */
+        if (a === 'trash' && window.SJPlusTrash) window.SJPlusTrash();
         return;
       }
       const row = e.target.closest('[data-cat]');
@@ -7651,7 +7649,6 @@
         showCtx(r.right - 168, r.top + 4, [
           { label: '导入备份', icon: I.download, onClick: () => { const el = $('#importBtn'); if (el) el.click(); } },
           { label: '导出备份', icon: I.download, onClick: () => { const el = $('#exportBtn'); if (el) el.click(); } },
-          { label: '导出 Markdown', icon: I.download, onClick: () => { const el = $('#sjPlusToolsBtn'); if (el) el.click(); } },
         ]);
       } else if (act === 'theme') { const el = $('#themeBtn'); if (el) el.click(); }
     }

@@ -397,5 +397,15 @@ window.SJAppMedia = function (ctx) {
     });
   }
 
-  return { renderMarkdown, decorate, ensureImgSizer, readImgPct, liveImgWidth, applyImgWidth, openImgSizer, closeImgSizer, cropEnsureUI, cropFetchDataUrl, cropClose, cropPaint, cropClamp, cropRatioOf, cropApplyRatio, cropReset, cropDrag, cropDone, openImgCrop, bindImgResize };
+  /* 点空白处收起尺寸条：imgSizer 是模块内状态，不能让 app.js 直接摸。
+     2026-11-28 修：拆分时 app.js 的解构里没有 imgSizer，那段监听每次点击
+     都抛 ReferenceError，顺带让「点别处关闭」彻底失效。 */
+  function hideImgSizerOnOutside(e) {
+    if (!imgSizer || imgSizer.classList.contains('hidden')) return;
+    if (imgSizer.contains(e.target)) return;
+    if (e.target.closest && e.target.closest('img')) return;
+    closeImgSizer();
+  }
+
+  return { renderMarkdown, decorate, ensureImgSizer, readImgPct, liveImgWidth, applyImgWidth, openImgSizer, closeImgSizer, hideImgSizerOnOutside, cropEnsureUI, cropFetchDataUrl, cropClose, cropPaint, cropClamp, cropRatioOf, cropApplyRatio, cropReset, cropDrag, cropDone, openImgCrop, bindImgResize };
 };
