@@ -15,7 +15,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-28-204';
+const BUILD = '2026-11-28-205';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -1415,6 +1415,20 @@ ok('同一版本第二次仍报新版：再彻底重来一次，之后闭嘴',
   && /if \(seen\) \{\s*if \(!typingNow\(\) && hardReset\(\)\) return;/.test(indexSrc.replace(/\n/g, ' '))
   && /localStorage\.getItem\(HARD_KEY \+ SWV\) === '1'/.test(indexSrc)
   && /refreshNow\('sjfix'\)/.test(indexSrc));
+
+/* 2026-11-29：发布 204 后用户仍反馈「编辑态光标闪一下就不见」。真机复现是
+   SW 换版触发 controllerchange → pwa.js 整页 reload，编辑态和光标一起被抹掉。
+   pwa.js 原来自己写 /^(INPUT|TEXTAREA)$/ 判断「正在输入」，正文是
+   contenteditable 的 DIV 根本匹配不上。口径必须只有一份：index.html 的
+   typingNow()（认 isContentEditable），并暴露给 pwa.js 调用。 */
+ok('SW 换版不刷掉编辑态：输入判断只有一份，认 contenteditable',
+  /window\.__SJTypingNow = typingNow;/.test(indexSrc)
+  && /a\.isContentEditable \|\| \/\^\(INPUT\|TEXTAREA\|SELECT\)\$/.test(indexSrc)
+  && /typeof window\.__SJTypingNow === 'function/.test(pwaSrc)
+  && /window\.__SJTypingNow\(\)/.test(pwaSrc)
+  && !/\/\^\(INPUT\|TEXTAREA\)\$\/\.test\(ae\.tagName\)/.test(pwaSrc)
+  && /classList\.contains\('sj-note-edit'\)/.test(pwaSrc)
+  && /location\.reload\(\)/.test(pwaSrc));
 
 /* 站点 HTML / JS 的响应没有 Cache-Control（网关不发），不主动绕开的话浏览器会
    按启发式新鲜度自己留一份旧副本 —— 那就是「手机上永远换不过来」的根源：

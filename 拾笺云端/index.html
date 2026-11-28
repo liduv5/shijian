@@ -19,7 +19,7 @@
      内联兜底注册必须和 pwa.js / 速记页用**完全相同**的脚本 URL：两个不同
      v= 会互相顶替安装，每次启动都触发 controllerchange → 整页自动刷新，
      刚点开的列表抽屉被刷掉，看起来就是「闪一下又回到笔记」。 */
-  var SWV = '2026-11-28-204';
+  var SWV = '2026-11-28-205';
   window.__SJ_SWV__ = SWV;
   try {
     var saved = localStorage.getItem(SC_LS) || '';
@@ -109,6 +109,11 @@
       return !!(a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName || '')));
     } catch (_) { return false; }
   }
+  /* 「是否正在输入」只此一份：pwa.js 换版刷新、自动自愈、更新提示都走这里。
+     2026-11-29：pwa.js 曾自己写了一份只认 INPUT|TEXTAREA 的判断，
+     正文是 contenteditable 的 DIV，于是编辑态被误判为「没在输入」而整页刷新，
+     用户看到的就是「光标闪一下就没了」。 */
+  window.__SJTypingNow = typingNow;
   function showUpdateTip() {
     if (updateShown || document.getElementById('sjUpdateTip')) return;
     var seen = false;

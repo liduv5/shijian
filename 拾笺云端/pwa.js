@@ -54,7 +54,7 @@
          发布清单五处同步改：index.html 的 SWV、sw.js 的 VERSION、
          mobilesync.js 的 BUILD、quick.html 末尾注册脚本的 SWV、这里的兜底值。
          优先读内联脚本给的 SWV，保证各处 register() 用同一个脚本 URL。 */
-      const SW_BUILD = window.__SJ_SWV__ || '2026-11-28-204';
+      const SW_BUILD = window.__SJ_SWV__ || '2026-11-28-205';
       navigator.serviceWorker.register('/sw.js?sharecode=' + encodeURIComponent(sc) + '&v=' + SW_BUILD, { scope: '/' })
         .then((reg) => {
           pushCode(reg);
@@ -84,8 +84,17 @@
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       try {
         if (!hadController || !navigator.serviceWorker.controller) return;
-        const ae = document.activeElement;
-        if (ae && /^(INPUT|TEXTAREA)$/.test(ae.tagName)) return;
+        /* 「正在输入」的口径只有一份：index.html 的 typingNow()，它认
+           contenteditable。这里曾自己写 /^(INPUT|TEXTAREA)$/，正文是
+           contenteditable 的 DIV 根本匹配不上，于是编辑态被当成空闲而整页刷新，
+           光标闪一下就没了（用户 2026-11-29 反馈）。 */
+        const typing = typeof window.__SJTypingNow === 'function'
+          ? window.__SJTypingNow()
+          : (() => { const a = document.activeElement; return !!(a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName || ''))); })();
+        if (typing) return;
+        /* 编辑态无论焦点在哪都不刷：正文可能刚 blur（键盘弹起/工具栏），
+           那一刻刷新同样会把正在写的笔记和光标一起抹掉。 */
+        if (document.body.classList.contains('sj-note-edit')) return;
         if (document.visibilityState !== 'visible') return;
         if (Date.now() - lastActionAt < 5000) return;
         if (document.body.classList.contains('m-list') || document.body.classList.contains('m-tree')) return;
