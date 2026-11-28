@@ -1536,7 +1536,7 @@ html[data-theme="dark"] .sj-tip {
 .modal-root {
   position: fixed;
   inset: 0;
-  z-index: 300;
+  z-index: 330; /* 高于回收站弹层(320)：从回收站里再弹确认时，必须压在它上面 */
   background: rgba(20, 22, 24, .38);
   backdrop-filter: blur(2px);
   display: grid;

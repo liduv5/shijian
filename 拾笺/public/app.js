@@ -5477,8 +5477,10 @@
       renderTree(); renderList(); renderTags();
     },
   };
-  /* 供 sjplus.js（回收站 / 回顾 / 整库导出）调用 */
+  /* 供 sjplus.js（回收站）调用 */
   window.SJRefresh = () => { renderTree(); renderList(); };
+  /* 统一确认弹层：回收站的永久删除也走这里，不再用浏览器原生 confirm */
+  window.SJConfirm = openConfirm;
   window.SJOpenNote = (id) => openNote(id);
   /* -72：崩溃恢复提示排到首屏之后，不与启动渲染抢 DOM。 */
   setTimeout(offerEditDraft, 600);

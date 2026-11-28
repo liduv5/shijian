@@ -1087,6 +1087,19 @@ ok('翻旧笔记与整库 Markdown 导出的代码与样式已彻底移除',
 ok('两端 sjplus 逐字相同（真源在 public，手工同步）',
   sjplusJs === fs.readFileSync(path.join(ROOT, '..', '..', '拾笺云端', 'sjplus.js'), 'utf8'));
 
+/* 2026-11-28：永久删除改走应用内确认弹层。原生 confirm 在手机上把域名当标题，
+   字号、按钮都跟拾笺自己的弹层不搭；确认层必须压在回收站弹层之上。 */
+const modalZ = Number((/\.modal-root \{[^}]*?z-index:\s*(\d+)/.exec(css) || [])[1] || 0);
+const plusZ = Number((/\.sjplus-mask \{[^}]*?z-index:\s*(\d+)/.exec(read('sjplus.css')) || [])[1] || 0);
+ok('回收站永久删除走应用内确认弹层，不再用浏览器原生 confirm',
+  /window\.SJConfirm = openConfirm;/.test(js)
+  && !/window\.confirm\(/.test(sjplusJs)
+  && /window\.SJConfirm\(\{/.test(sjplusJs)
+  && /title: isEmpty \? '清空回收站' : '彻底删除笔记'/.test(sjplusJs)
+  && /confirmText: '永久删除'/.test(sjplusJs)
+  && /danger: true/.test(sjplusJs)
+  && modalZ > plusZ);
+
 /* 2026-11-28 实跑抓到的拆分遗留：imgSizer 留在 app-media.js 作用域，
    app.js 的点击监听却直接引用它 —— 每次点击都抛 ReferenceError。 */
 ok('媒体模块的模块内状态不泄漏到 app.js：点空白收起尺寸条走导出函数',

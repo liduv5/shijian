@@ -2846,7 +2846,7 @@
 
   /* 发布版本标记：与 index.html 的 SWV 等六处同步，供维护核对，
      不参与界面，也不影响运行。 */
-  const APP_BUILD = '2026-11-28-200';
+  const APP_BUILD = '2026-11-28-201';
   /* 暴露给 index.html 的内联版本守卫：HTML 每次都是新的、脚本可能还是缓存里的旧版，
      内联脚本拿这个值一比就知道要不要弹「发现新版本」，不用等用户去点某个功能。 */
   window.__SJ_APP_BUILD__ = APP_BUILD;
@@ -7767,8 +7767,10 @@
 
   window.SJBoot = boot;
   window.SJSaveNow = saveNow;
-  /* 供 sjplus.js（回收站 / 回顾 / 整库导出）调用 */
+  /* 供 sjplus.js（回收站）调用 */
   window.SJRefresh = () => { renderTree(); renderList(); };
+  /* 统一确认弹层：回收站的永久删除也走这里，不再用浏览器原生 confirm */
+  window.SJConfirm = openConfirm;
   window.SJOpenNote = (id) => openNote(id);
   /* -70：草稿没有真实 id，不能把它当 keepId 交给同步 / 重载流程。 */
   window.SJCurrentNoteId = () => (state.selNote === DRAFT_ID ? '' : (state.selNote || ''));

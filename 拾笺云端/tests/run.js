@@ -15,7 +15,7 @@ const crypto = require('crypto');
 
 const CLOUD = path.join(__dirname, '..');
 const DESKTOP = path.join(CLOUD, '..', '拾笺');
-const BUILD = '2026-11-28-200';
+const BUILD = '2026-11-28-201';
 const SC = 'X4WPKTHLIN';
 const SHARED = ['export.js', 'sjplus.js', 'sjplus.css', 'backlinks.js', 'conflict.js', 'diffview.js', 'fts.js',
   /* 2026-11-26：富文本⇄Markdown 的内核也收成两端一份，
@@ -1927,6 +1927,21 @@ ok('翻旧笔记与整库 Markdown 导出的代码与样式已彻底移除',
   && !/翻一条旧笔记|导出 Markdown 包/.test(plusSrc.replace(/\/\*[\s\S]*?\*\//g, '')));
 ok('单篇 Markdown 导出仍在（NoteExport），未受整库包移除影响',
   /NoteExport\.toMarkdown/.test(appSrc));
+
+/* 2026-11-28：永久删除改走应用内确认弹层。原生 confirm 在手机上把域名当标题，
+   字号、按钮都跟拾笺自己的弹层不搭；云端 modal-root 原来比 sjplus-mask 低，
+   不抬上来会确认框藏在回收站后面。 */
+const modalZ = Number((/\.modal-root \{[^}]*?z-index:\s*(\d+)/.exec(styleSrc) || [])[1] || 0);
+const plusZ = Number((/\.sjplus-mask \{[^}]*?z-index:\s*(\d+)/.exec(
+  fs.readFileSync(path.join(CLOUD, 'sjplus.css'), 'utf8')) || [])[1] || 0);
+ok('回收站永久删除走应用内确认弹层，不再用浏览器原生 confirm',
+  /window\.SJConfirm = openConfirm;/.test(appSrc)
+  && !/window\.confirm\(/.test(plusSrc)
+  && /window\.SJConfirm\(\{/.test(plusSrc)
+  && /title: isEmpty \? '清空回收站' : '彻底删除笔记'/.test(plusSrc)
+  && /confirmText: '永久删除'/.test(plusSrc)
+  && /danger: true/.test(plusSrc)
+  && modalZ > plusZ);
 
 /* 2026-11-28 实跑抓到的拆分遗留：imgSizer 留在 app-media.js 作用域，
    app.js 的点击监听却直接引用它 —— 每次点击都抛 ReferenceError。 */

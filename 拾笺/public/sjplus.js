@@ -86,13 +86,23 @@
           sjRefresh(); ctx.close(); openTrash(); toast('已恢复到笔记列表');
         } else if (act === 'purge' || act === 'empty') {
           const targets = act === 'empty' ? list : list.filter((n) => n.id === id);
-          if (!window.confirm(act === 'empty'
-            ? '清空回收站？这 ' + targets.length + ' 篇笔记将被永久删除，无法恢复。'
-            : '彻底删除这篇笔记？无法恢复。')) return;
-          if (window.SJAttGC) targets.forEach((n) => window.SJAttGC.collect(n));
-          if (act === 'empty') await sjReq('/api/trash', 'DELETE');
-          else await sjReq('/api/trash/' + encodeURIComponent(id), 'DELETE');
-          sjRefresh(); ctx.close(); openTrash(); toast('已永久删除');
+          const isEmpty = act === 'empty';
+          /* 原生 confirm 在手机上把域名当标题，字号和按钮都跟拾笺自己的弹层不搭。
+             统一走 app.js 的 openConfirm —— 确认弹层只留一份实现，这里只给文案。 */
+          window.SJConfirm({
+            title: isEmpty ? '清空回收站' : '彻底删除笔记',
+            message: isEmpty
+              ? '这 ' + targets.length + ' 篇笔记将被永久删除，无法恢复。'
+              : '这篇笔记将被永久删除，无法恢复。',
+            confirmText: '永久删除',
+            danger: true,
+            onConfirm: async () => {
+              if (window.SJAttGC) targets.forEach((n) => window.SJAttGC.collect(n));
+              if (isEmpty) await sjReq('/api/trash', 'DELETE');
+              else await sjReq('/api/trash/' + encodeURIComponent(id), 'DELETE');
+              sjRefresh(); ctx.close(); openTrash(); toast('已永久删除');
+            },
+          });
         }
       });
   }
